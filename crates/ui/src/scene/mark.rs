@@ -17,7 +17,7 @@ const SHIMMER: f32 = 0.35;
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Glyph {
     text: char,
-    fg: Rgba8,
+    fg: Color,
 }
 
 struct Lines {
@@ -129,7 +129,7 @@ fn draw(mark: Mark, elapsed: u64, clock: Option<u64>) -> Grid {
     }
 }
 
-fn depth(layer: i32) -> Rgba8 {
+fn depth(layer: i32) -> Color {
     let front = (LAYERS - layer) as f32 / (LAYERS - 1) as f32;
     blend(stage().plate, palette().text, 0.14 + front * 0.34)
 }
@@ -279,7 +279,7 @@ fn put(grid: &mut Grid, x: i32, y: i32, glyph: Option<Glyph>) {
     }
 }
 
-fn stroke(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), lines: &Lines, fg: Rgba8) {
+fn stroke(grid: &mut Grid, outline: &[(i32, i32)], (ox, oy): (i32, i32), lines: &Lines, fg: Color) {
     let tall = outline.iter().map(|point| point.1).max().unwrap_or(0);
     let wide = outline.iter().map(|point| point.0).max().unwrap_or(0);
     for y in 0..=tall {

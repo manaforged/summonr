@@ -1,6 +1,4 @@
-use sigil::prelude::{
-    LayoutStyle, NodeBuilder, Paint, Position, Signal, Widget, container, effect, signal,
-};
+use sigil::prelude::{NodeBuilder, Paint, Position, Signal, Widget, container, effect, signal};
 use sigil::reactive::untrack;
 use sigil::widgets::Orientation;
 use summonr_agent::prefs::{Axis, Part, Shape};
@@ -15,13 +13,12 @@ type Drawn = (App, Signal<Bounds>);
 /// The panes as their split tree, or the zoomed pane alone.
 pub(crate) fn view() -> NodeBuilder {
     let revision = with(|split| split.revision).unwrap_or_else(|| signal(0));
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .fill_height()
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             revision.with(|_| ());
             let Some((panes, shape)) = with(|split| {
@@ -77,31 +74,31 @@ fn split(panes: &[Drawn], axis: Axis, parts: &[Part], path: Vec<usize>) -> NodeB
         inner.push(i);
         #[allow(clippy::cast_precision_loss, reason = "a share is at most WHOLE")]
         let share = part.share as f32;
-        row = row
-            .pane(node(panes, &part.shape, inner, true))
-            .initial(share)
-            .min(least)
-            .commit();
+        let pane = row.pane(node(panes, &part.shape, inner, true));
+        row = match axis {
+            Axis::Right => pane.width(share).min_width(least),
+            Axis::Down => pane.height(share).min_height(least),
+        }
+        .commit();
     }
     row.settle_bind(settled).into()
 }
 
 fn cell(app: &App, at: usize, bounds: Signal<Bounds>, framed: bool) -> NodeBuilder {
     let focus = with(|split| split.focus).unwrap_or_else(|| signal(0));
-    let cell = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .flex_basis(0.0)
-                .fill_height()
-                .min_size(0.0, 0.0)
-                .position(Position::Relative),
-        )
+    let cell = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .flex_basis(0.0)
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
+        .position(Position::Relative)
         .bounds_reactive(bounds);
     if !framed {
         return cell.child(super::super::terminal::pane(app.clone()));
     }
-    cell.border_w(1)
+    cell.border_width(1)
         .border_color(DIVIDER)
         .pointer_down(move |_| {
             if focus.peek() != at {
@@ -120,39 +117,31 @@ fn cell(app: &App, at: usize, bounds: Signal<Bounds>, framed: bool) -> NodeBuild
 
 /// Four thin edges around the focused pane; edges only, so clicks reach the pane.
 fn ring() -> Vec<NodeBuilder> {
-    let edge = |layout: LayoutStyle| {
+    let edge = || {
         container()
-            .layout(layout.position(Position::Absolute))
-            .bg(FOCUS_RING)
+            .position(Position::Absolute)
+            .background(FOCUS_RING)
     };
     vec![
-        edge(
-            LayoutStyle::block()
-                .inset_top(0.0)
-                .inset_left(0.0)
-                .fill_width()
-                .height(RING),
-        ),
-        edge(
-            LayoutStyle::block()
-                .inset_bottom(0.0)
-                .inset_left(0.0)
-                .fill_width()
-                .height(RING),
-        ),
-        edge(
-            LayoutStyle::block()
-                .inset_top(0.0)
-                .inset_left(0.0)
-                .fill_height()
-                .width(RING),
-        ),
-        edge(
-            LayoutStyle::block()
-                .inset_top(0.0)
-                .inset_right(0.0)
-                .fill_height()
-                .width(RING),
-        ),
+        edge()
+            .inset_top(0.0)
+            .inset_left(0.0)
+            .fill_width()
+            .height(RING),
+        edge()
+            .inset_bottom(0.0)
+            .inset_left(0.0)
+            .fill_width()
+            .height(RING),
+        edge()
+            .inset_top(0.0)
+            .inset_left(0.0)
+            .fill_height()
+            .width(RING),
+        edge()
+            .inset_top(0.0)
+            .inset_right(0.0)
+            .fill_height()
+            .width(RING),
     ]
 }

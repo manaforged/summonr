@@ -62,7 +62,7 @@ fn open(args: &Args, workspace: &Path, ui: &Ui) -> Result<(Loop<Client>, Info, F
     let (root, _, action) = super::super::session::isolate(args, workspace)?;
     std::env::set_current_dir(&root)
         .map_err(|error| Error::Config(format!("Could not enter the project folder: {error}")))?;
-    let (loop_, _, workflow) = assemble(args, &endpoint, &root, action, ui)?;
+    let (loop_, workflow) = assemble(args, &endpoint, &root, action, ui)?;
     let mut info = info(args, &endpoint, &loop_, &root, workflow)?;
     info.splash = false;
     info.inline = false;

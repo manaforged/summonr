@@ -1,6 +1,6 @@
 use sigil::prelude::Space;
 use sigil::prelude::{
-    LayoutStyle, NodeBuilder, Signal, container, request_focus, scroll, segmented, signal, spacer,
+    NodeBuilder, Signal, container, request_focus, scroll, segmented, signal, spacer,
 };
 
 use super::app::App;
@@ -90,10 +90,11 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     } else {
         f32::from(viewport.1.saturating_sub(CHROME_ROWS).max(4)) * canvas::cell().h
     };
-    let page = container()
+    let page = sigil::prelude::column()
         .focusable(true)
         .on_added(|_, id| request_focus(id))
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::Lg))
+        .fill_width()
+        .gap(Space::Lg)
         .children_reactive(move || page(&paint, width - INSET * 2.0));
     let hints = Hints::new()
         .key(Key::UpDown, "range")
@@ -106,7 +107,8 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .fixed(viewport.1)
         .child(
             container()
-                .layout(LayoutStyle::block().fill_width().height(height))
+                .fill_width()
+                .height(height)
                 .child(scroll(page).fill().follow_end(false)),
         )
         .build(app.usage.open, viewport, &app.model.peek().prefs.hotkeys)
@@ -149,8 +151,10 @@ fn controls(usage: Panel, local: bool, metric: Metric) -> NodeBuilder {
     } else {
         "all workspaces"
     };
-    container()
-        .layout(LayoutStyle::flex_row().fill_width().gap(Space::Lg))
+    sigil::prelude::row()
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .gap(Space::Lg)
         .child(colored(scope, palette().dim))
         .child(spacer())
         .child(

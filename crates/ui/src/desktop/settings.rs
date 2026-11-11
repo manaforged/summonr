@@ -1,7 +1,6 @@
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Signal, Space, Widget, container, icon,
-    scroll,
+    AlignItems, JustifyContent, NodeBuilder, Paint, Signal, Space, Widget, icon, scroll,
 };
 use sigil::widgets::{ListRowSlots, list_row};
 
@@ -131,52 +130,50 @@ pub(super) fn open(app: &App, at: Page) {
 pub(super) fn view(app: &App) -> NodeBuilder {
     let current = app.window.settings_page;
     let body = app.clone();
-    container()
-        .layout(LayoutStyle::flex_row().fill().min_size(0.0, 0.0))
-        .bg(CANVAS)
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill()
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(CANVAS)
         .child(nav(app, current))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .grow(1.0)
-                        .fill_height()
-                        .min_size(0.0, 0.0),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .grow(1.0)
+                .fill_height()
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(
-                    container()
-                        .layout(
-                            LayoutStyle::flex_row()
-                                .fill_width()
-                                .height(super::TITLE_BAR)
-                                .shrink(0.0),
-                        )
+                    sigil::prelude::row()
+                        .gap(sigil::prelude::Space::None)
+                        .align_items(sigil::prelude::AlignItems::Stretch)
+                        .fill_width()
+                        .height(super::TITLE_BAR)
+                        .shrink(0.0)
                         .child(super::drag_area()),
                 )
                 .children_reactive(move || {
                     let at = current.get();
-                    let content = container()
-                        .layout(
-                            LayoutStyle::flex_column()
-                                .fill_width()
-                                .max_width(parts::PAGE)
-                                .align_items(AlignItems::Stretch)
-                                .gap(XL)
-                                .padding_x(XL)
-                                .padding_bottom(XL),
-                        )
+                    let content = sigil::prelude::column()
+                        .fill_width()
+                        .max_width(parts::PAGE)
+                        .align_items(AlignItems::Stretch)
+                        .gap(XL)
+                        .padding_x(XL)
+                        .padding_bottom(XL)
                         .child(text(Text::Title, at.name()));
                     let content = sigil::reactive::untrack(|| at.view(&body))
                         .into_iter()
                         .fold(content, NodeBuilder::child);
                     vec![
                         scroll(
-                            container()
-                                .layout(
-                                    LayoutStyle::flex_row()
-                                        .fill_width()
-                                        .justify_content(JustifyContent::Center),
-                                )
+                            sigil::prelude::row()
+                                .gap(sigil::prelude::Space::None)
+                                .align_items(sigil::prelude::AlignItems::Stretch)
+                                .fill_width()
+                                .justify_content(JustifyContent::Center)
                                 .child(content),
                         )
                         .grow(1.0),
@@ -187,17 +184,14 @@ pub(super) fn view(app: &App) -> NodeBuilder {
 
 fn nav(app: &App, current: Signal<Page>) -> NodeBuilder {
     let (back, app) = (app.clone(), app.clone());
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .width(super::sidebar::WIDTH)
-                .fill_height()
-                .shrink(0.0)
-                .padding_x(S)
-                .padding_top(Space::raw(super::TITLE_BAR, "clears the title bar"))
-                .gap(L),
-        )
-        .bg(RECESSED)
+    sigil::prelude::column()
+        .width(super::sidebar::WIDTH)
+        .fill_height()
+        .shrink(0.0)
+        .padding_x(S)
+        .padding_top(Space::raw(super::TITLE_BAR, "clears the title bar"))
+        .gap(L)
+        .background(RECESSED)
         .child(list_row(
             false,
             "Back to app",
@@ -208,8 +202,8 @@ fn nav(app: &App, current: Signal<Page>) -> NodeBuilder {
             },
         ))
         .child(
-            container()
-                .layout(LayoutStyle::flex_column())
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
                 .children_reactive(move || {
                     let at = current.get();
                     Page::ALL

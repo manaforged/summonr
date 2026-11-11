@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Tone, Widget,
-    button, container, dropdown, effect, empty_state, segmented, signal, toggle,
+    AlignItems, ControlSize, NodeBuilder, Paint, Radius, Signal, Tone, Widget, button, container,
+    dropdown, effect, empty_state, segmented, signal, toggle,
 };
 use sigil::reactive::{defer, untrack};
 
@@ -23,32 +23,24 @@ pub(in crate::desktop) fn kept_note() -> NodeBuilder {
 }
 
 pub(in crate::desktop) fn section(title: Option<&str>, rows: Vec<NodeBuilder>) -> NodeBuilder {
-    let mut body = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .align_items(AlignItems::Stretch),
-        )
-        .bg(RAISED)
-        .rounded(Radius::Lg)
-        .border_w(1)
+    let mut body = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .align_items(AlignItems::Stretch)
+        .background(RAISED)
+        .radius(Radius::Lg)
+        .border_width(1)
         .border_color(DIVIDER);
     for (at, row) in rows.into_iter().enumerate() {
         if at > 0 {
-            body = body.child(
-                container()
-                    .layout(LayoutStyle::block().fill_width().height(1.0))
-                    .bg(DIVIDER),
-            );
+            body = body.child(container().fill_width().height(1.0).background(DIVIDER));
         }
         body = body.child(row);
     }
-    let column = container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .gap(S)
-            .align_items(AlignItems::Stretch),
-    );
+    let column = sigil::prelude::column()
+        .fill_width()
+        .gap(S)
+        .align_items(AlignItems::Stretch);
     match title {
         Some(title) => column.child(text(Text::Heading, title)).child(body),
         None => column.child(body),
@@ -61,37 +53,30 @@ pub(in crate::desktop) fn row(
     about: Option<&str>,
     control: NodeBuilder,
 ) -> NodeBuilder {
-    let words = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .shrink(1.0)
-                .min_size(0.0, 0.0)
-                .gap(XS),
-        )
+    let words = sigil::prelude::column()
+        .grow(1.0)
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .gap(XS)
         .child(text(Text::Body, label));
     let words = match about {
         Some(about) => words.child(text(Text::Meta, about).wrap()),
         None => words,
     };
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(L)
-                .padding_x(L)
-                .padding_y(M)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(L)
+        .padding_x(L)
+        .padding_y(M)
+        .align_items(AlignItems::Center)
         .child(words)
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .shrink(0.0)
-                        .max_width(CONTROL)
-                        .align_items(AlignItems::Center),
-                )
+            sigil::prelude::row()
+                .gap(sigil::prelude::Space::None)
+                .shrink(0.0)
+                .max_width(CONTROL)
+                .align_items(AlignItems::Center)
                 .child(control),
         )
 }
@@ -152,13 +137,7 @@ pub(in crate::desktop) fn select(
             let pick = pick.clone();
             defer(move || pick(index));
         });
-    row(
-        label,
-        about,
-        container()
-            .layout(LayoutStyle::block().width(CONTROL))
-            .child(control),
-    )
+    row(label, about, container().width(CONTROL).child(control))
 }
 
 fn watch(active: Signal<usize>, first: usize, pick: impl Fn(usize) + 'static) {
@@ -203,11 +182,7 @@ pub(in crate::desktop) fn slider(
 
 /// A row of controls with the standard gap.
 pub(in crate::desktop) fn actions() -> NodeBuilder {
-    container().layout(
-        LayoutStyle::flex_row()
-            .gap(S)
-            .align_items(AlignItems::Center),
-    )
+    sigil::prelude::row().gap(S).align_items(AlignItems::Center)
 }
 
 /// One list row inside a section: a leading mark, the words, and trailing controls.
@@ -216,29 +191,27 @@ pub(in crate::desktop) fn item(
     words: NodeBuilder,
     trailing: NodeBuilder,
 ) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(M)
-                .padding_x(L)
-                .padding_y(M)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(M)
+        .padding_x(L)
+        .padding_y(M)
+        .align_items(AlignItems::Center)
         .child(lead)
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .grow(1.0)
-                        .shrink(1.0)
-                        .min_size(0.0, 0.0),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .grow(1.0)
+                .shrink(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(words),
         )
         .child(
-            container()
-                .layout(LayoutStyle::flex_row().shrink(0.0))
+            sigil::prelude::row()
+                .gap(sigil::prelude::Space::None)
+                .align_items(sigil::prelude::AlignItems::Stretch)
+                .shrink(0.0)
                 .child(trailing),
         )
 }
@@ -278,13 +251,10 @@ pub(in crate::desktop) fn account(endpoint: &str) -> String {
 /// An empty state with an `Add account` button that opens the provider picker.
 pub(in crate::desktop) fn empty_accounts(app: &App, title: &'static str) -> NodeBuilder {
     let open = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(S)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .gap(S)
+        .align_items(AlignItems::Center)
         .child(empty_state(title, ""))
         .child(
             button("Add account")

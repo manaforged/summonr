@@ -1,5 +1,5 @@
 use sigil::geometry::Rect;
-use sigil::prelude::{Rgba8, Theme};
+use sigil::prelude::{Color, Theme};
 use sigil::scene::{SceneBuilder, StrokeCap, StrokeJoin};
 use sigil::widgets::PathNode;
 
@@ -269,7 +269,7 @@ pub(super) fn draw(scene: &mut SceneBuilder, area: Rect, frame: &Frame, ink: &In
     }
 }
 
-fn face(paint: &mut impl FnMut(PathNode), face: Face, at: Affine, color: Rgba8) {
+fn face(paint: &mut impl FnMut(PathNode), face: Face, at: Affine, color: Color) {
     if color.a == 0 {
         return;
     }
@@ -295,15 +295,15 @@ fn lap(time: f32) -> f32 {
     }
 }
 
-fn alpha(color: Rgba8, by: f32) -> Rgba8 {
-    Rgba8 {
+fn alpha(color: Color, by: f32) -> Color {
+    Color {
         a: (f32::from(color.a) * by.clamp(0.0, 1.0)).round() as u8,
         ..color
     }
 }
 
 /// `color` with its hue turned by `degrees`, keeping its saturation and lightness.
-fn turn(color: Rgba8, degrees: f32) -> Rgba8 {
+fn turn(color: Color, degrees: f32) -> Color {
     if degrees.abs() < 0.01 {
         return color;
     }
@@ -335,7 +335,7 @@ fn turn(color: Rgba8, degrees: f32) -> Rgba8 {
     };
     let lift = light - chroma / 2.0;
     let byte = |each: f32| ((each + lift).clamp(0.0, 1.0) * 255.0).round() as u8;
-    Rgba8 {
+    Color {
         r: byte(r),
         g: byte(g),
         b: byte(b),

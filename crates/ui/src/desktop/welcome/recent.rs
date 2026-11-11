@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use sigil::prelude::{
-    LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Widget, column, container, list_row,
-    signal,
+    ListRowSlots, NodeBuilder, Paint, Signal, Widget, column, container, list_row, signal,
 };
 use sigil::tasks::on_message;
 use tokio::sync::mpsc::unbounded_channel;
@@ -36,23 +35,20 @@ pub(super) fn list(busy: Signal<bool>, error: Signal<Option<String>>, open: Open
             return Vec::new();
         }
         let heading = container()
-            .layout(LayoutStyle::block().padding_x(S))
+            .padding_x(S)
             .child(super::super::style::text(Text::Heading, "Recent"));
         let list = paths
             .into_iter()
-            .fold(column().layout(LayoutStyle::flex_column()), |list, path| {
+            .fold(column().gap(sigil::prelude::Space::None), |list, path| {
                 list.child(folder(path, busy, open.clone()))
             });
         vec![
             column()
-                .layout(LayoutStyle::flex_column().gap(XS).padding_top(GAP))
+                .gap(XS)
+                .padding_top(GAP)
                 .border_top(1)
                 .border_color(DIVIDER)
-                .child(
-                    container()
-                        .layout(LayoutStyle::block().padding_top(GAP))
-                        .child(heading),
-                )
+                .child(container().padding_top(GAP).child(heading))
                 .child(list)
                 .into(),
         ]

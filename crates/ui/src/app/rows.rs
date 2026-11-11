@@ -85,7 +85,7 @@ impl App {
             .iter()
             .map(|row| {
                 let (label, tone) = if row.dirty {
-                    ("dirty", Tone::Warn)
+                    ("dirty", Tone::Warning)
                 } else {
                     ("clean", Tone::Neutral)
                 };
@@ -132,7 +132,7 @@ impl App {
 const fn job_tone(state: JobState) -> Tone {
     match state {
         JobState::Running => Tone::Info,
-        JobState::Killed => Tone::Warn,
+        JobState::Killed => Tone::Warning,
         JobState::Exited(0) => Tone::Success,
         JobState::Exited(_) => Tone::Error,
         JobState::Dead => Tone::Neutral,
@@ -143,7 +143,7 @@ const fn mcp_tone(state: McpState) -> Tone {
     match state {
         McpState::Live => Tone::Success,
         McpState::Cached | McpState::Unlisted | McpState::Connecting => Tone::Info,
-        McpState::Waiting | McpState::Stopped => Tone::Warn,
+        McpState::Waiting | McpState::Stopped => Tone::Warning,
         McpState::Failed => Tone::Error,
     }
 }

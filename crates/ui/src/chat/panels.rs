@@ -1,5 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, notice_band};
+use sigil::prelude::{NodeBuilder, Tone, notice_band};
 
 use crate::ui::{Action, ActionKind, Hints, Key, Prompt};
 
@@ -63,7 +63,7 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
         Band::Form { lines, review } => {
             above(super::form::form_band(app.clone(), width, lines, review))
         }
-        Band::Held => above(notice_band(HELD, Tone::Warn)),
+        Band::Held => above(notice_band(HELD, Tone::Warning)),
         Band::Attached(attached) => above(notice_band(attached_note(app, attached), Tone::Info)),
     }
 }
@@ -71,13 +71,12 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
 pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let active = sigil::reactive::derived(move || band(&update));
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             active
                 .get()
@@ -87,12 +86,10 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
 }
 
 fn above(child: NodeBuilder) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .padding_top(Space::Sm),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .padding_top(Space::Sm)
         .child(child)
 }
 
@@ -109,7 +106,7 @@ pub(crate) fn approval_band(app: App, width: usize, detail: String, persist: boo
         move || app.approval_answer(kind)
     };
     let mut prompt = approval_lines(
-        Prompt::new(Tone::Warn, "Needs approval", hints),
+        Prompt::new(Tone::Warning, "Needs approval", hints),
         &detail,
         width,
     )

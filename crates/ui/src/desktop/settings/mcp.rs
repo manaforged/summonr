@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, ControlSize, FontFamily, JustifyContent, LayoutStyle, NodeBuilder, Paint, Signal,
-    Tone, Widget, button, chip, container, derived, empty_state, field, icon, interval,
-    notice_band, signal, text_field,
+    AlignItems, ControlSize, FontFamily, JustifyContent, NodeBuilder, Paint, Signal, Tone, Widget,
+    button, chip, derived, empty_state, field, icon, interval, notice_band, signal, text_field,
 };
 use sigil::reactive::{defer, on_cleanup};
 
@@ -77,13 +76,10 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     };
     let app = app.clone();
     vec![
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(M)
-                    .align_items(AlignItems::Stretch),
-            )
+        sigil::prelude::column()
+            .fill_width()
+            .gap(M)
+            .align_items(AlignItems::Stretch)
             .children_reactive(move || {
                 let notice = page
                     .error
@@ -128,13 +124,12 @@ fn empty(page: Page) -> NodeBuilder {
 }
 
 fn add_row(page: Page) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_x(L)
-                .padding_y(M),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .padding_x(L)
+        .padding_y(M)
         .child(add_button(page).ghost())
 }
 
@@ -146,8 +141,8 @@ fn add_button(page: Page) -> sigil::widgets::ButtonBuilder {
 }
 
 fn server_row(app: &App, page: Page, server: &Server, armed: bool) -> NodeBuilder {
-    let mut words = container()
-        .layout(LayoutStyle::flex_column().gap(XS))
+    let mut words = sigil::prelude::column()
+        .gap(XS)
         .child(text(Text::Body, server.name.clone()))
         .child(text(Text::Meta, summary(server)));
     if let Some(launch) = &server.launch {
@@ -203,15 +198,12 @@ fn form(app: &App, page: Page) -> NodeBuilder {
     let submit = app.clone();
     let add = app.clone();
     let ready = move || !page.name.get().trim().is_empty() && !page.target.get().trim().is_empty();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .align_items(AlignItems::Stretch)
-                .gap(M)
-                .padding_x(L)
-                .padding_y(M),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .align_items(AlignItems::Stretch)
+        .gap(M)
+        .padding_x(L)
+        .padding_y(M)
         .child(field("Name", text_field(page.name).placeholder("github")))
         .child(field(
             "Command or URL",
@@ -224,12 +216,10 @@ fn form(app: &App, page: Page) -> NodeBuilder {
             text_field(page.extra).placeholder("API_KEY=value, OTHER=value"),
         ))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .align_items(AlignItems::Stretch),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .align_items(AlignItems::Stretch)
                 .children_reactive(move || {
                     page.error
                         .get()
@@ -237,13 +227,11 @@ fn form(app: &App, page: Page) -> NodeBuilder {
                 }),
         )
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .gap(S)
-                        .justify_content(JustifyContent::End),
-                )
+            sigil::prelude::row()
+                .align_items(sigil::prelude::AlignItems::Stretch)
+                .fill_width()
+                .gap(S)
+                .justify_content(JustifyContent::End)
                 .child(button("Cancel").ghost().activate(move || close(page)))
                 .child(
                     button("Add server")
@@ -307,7 +295,7 @@ const fn state_chip(state: McpState) -> (&'static str, Tone) {
         McpState::Connecting => ("Starting", Tone::Info),
         McpState::Cached => ("Ready", Tone::Neutral),
         McpState::Unlisted => ("Not started", Tone::Neutral),
-        McpState::Waiting => ("Not enabled", Tone::Warn),
+        McpState::Waiting => ("Not enabled", Tone::Warning),
         McpState::Stopped => ("Stopped", Tone::Neutral),
         McpState::Failed => ("Failed", Tone::Error),
     }

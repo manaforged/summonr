@@ -1,6 +1,6 @@
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
-use sigil::prelude::{LayoutStyle, NodeBuilder, button, container, text_edit, virtual_list};
+use sigil::prelude::{NodeBuilder, button, container, text_edit, virtual_list};
 
 use super::{App, canvas};
 use crate::ui::{Bindings, Dialog, Hints, Key, Size, input_keys, overlay_list, pick, press};
@@ -125,13 +125,11 @@ fn saved(app: &App) -> NodeBuilder {
     let close = app.clone();
     let names = app.workflow.names.get();
     let current = app.workflow.name.get();
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(canvas::overlay_gap())
-                .padding_x(Space::Sm),
-        )
+    let mut row = sigil::prelude::row()
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .gap(canvas::overlay_gap())
+        .padding_x(Space::Sm)
         .child(
             sigil::prelude::text("saved:")
                 .nowrap()

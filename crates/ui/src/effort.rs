@@ -1,6 +1,6 @@
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, Signal, Token, container, signal,
+    AlignItems, MouseButton, NodeBuilder, Paint, Signal, Token, container, signal,
 };
 
 use super::app::App;
@@ -51,8 +51,10 @@ impl Strip {
 
 pub(super) fn strip(app: App) -> NodeBuilder {
     let update = app.clone();
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .shrink(0.0)
         .children_reactive(move || {
             if !update.effort.open.get() {
                 return Vec::new();
@@ -78,14 +80,11 @@ fn card(
     levels: Vec<Effort>,
     reasons: Option<bool>,
 ) -> NodeBuilder {
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .align_items(AlignItems::Center)
-                .padding_x(Space::Sm)
-                .gap(Space::Sm),
-        )
+    let mut row = sigil::prelude::row()
+        .fill_width()
+        .align_items(AlignItems::Center)
+        .padding_x(Space::Sm)
+        .gap(Space::Sm)
         .child(label("effort", Token::Gray10, false));
     if levels.is_empty() {
         row = row.child(label(
@@ -102,12 +101,10 @@ fn card(
             let app = app.clone();
             let chosen = level == cursor;
             row = row.child(
-                container()
-                    .layout(
-                        LayoutStyle::flex_row()
-                            .shrink(0.0)
-                            .align_items(AlignItems::Center),
-                    )
+                sigil::prelude::row()
+                    .gap(sigil::prelude::Space::None)
+                    .shrink(0.0)
+                    .align_items(AlignItems::Center)
                     .child(label(
                         level.as_str(),
                         if chosen {
@@ -132,19 +129,19 @@ fn card(
             false,
         ));
     }
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .padding_x(Space::Sm)
-                .padding_bottom(canvas::overlay_gap()),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .padding_x(Space::Sm)
+        .padding_bottom(canvas::overlay_gap())
         .child(
-            container()
-                .layout(LayoutStyle::flex_row().fill_width())
-                .border_w(canvas::frame_border())
+            sigil::prelude::row()
+                .gap(sigil::prelude::Space::None)
+                .align_items(sigil::prelude::AlignItems::Stretch)
+                .fill_width()
+                .border_width(canvas::frame_border())
                 .border_color(Token::Gray6)
-                .bg(canvas::palette().tool_bg)
+                .background(canvas::palette().tool_bg)
                 .child(row),
         )
 }

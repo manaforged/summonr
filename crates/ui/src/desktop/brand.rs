@@ -1,19 +1,19 @@
 use sigil::animation::{Easing, clock, reduced_motion};
 use sigil::geometry::{Point, Rect};
 use sigil::prelude::{
-    LayoutStyle, NodeBuilder, Paint, Radius, Signal, Widget, container, derived, effect, signal,
+    NodeBuilder, Paint, Radius, Signal, Widget, container, derived, effect, signal,
 };
 use sigil::reactive::defer;
 use sigil::scene::{DrawRect, SceneBuilder};
-use sigil::style::Rgba8;
+use sigil::style::Color;
 
 use crate::canvas::rgb;
 
 const ENTRANCE: f64 = 0.45;
 const SCALE: f32 = 0.96;
-const IRON: Rgba8 = rgb(28, 29, 26);
-const WIRE: Rgba8 = rgb(86, 86, 80);
-const BONE: Rgba8 = rgb(236, 231, 220);
+const IRON: Color = rgb(28, 29, 26);
+const WIRE: Color = rgb(86, 86, 80);
+const BONE: Color = rgb(236, 231, 220);
 const VIEW: (f32, f32, f32) = (48.0, 3.0, 412.0);
 const GLYPH: [(f32, f32); 12] = [
     (92.0, 124.0),
@@ -38,7 +38,9 @@ const FACE_MIN: f32 = 1.5;
 pub(super) fn mark(size: f32) -> NodeBuilder {
     let settled = signal(reduced_motion());
     container()
-        .layout(LayoutStyle::block().width(size).height(size).shrink(0.0))
+        .width(size)
+        .height(size)
+        .shrink(0.0)
         .children_reactive(move || {
             if settled.get() {
                 return vec![badge(size)];
@@ -58,20 +60,22 @@ fn entrance(settled: Signal<bool>, size: f32) -> NodeBuilder {
         }
     });
     badge(size)
-        .animate_opacity(progress)
-        .animate_scale_x(scale)
-        .animate_scale_y(scale)
+        .drive(sigil::animation::Property::Opacity, progress)
+        .drive(sigil::animation::Property::ScaleX, scale)
+        .drive(sigil::animation::Property::ScaleY, scale)
 }
 
 /// The summonr.dev badge: an iron tile with layered wire behind the bone mark.
 pub(super) fn badge(size: f32) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::block().width(size).height(size).shrink(0.0))
-        .bg(IRON)
-        .rounded(if size < 32.0 { Radius::Sm } else { Radius::Lg })
-        .border_w(1)
+        .width(size)
+        .height(size)
+        .shrink(0.0)
+        .background(IRON)
+        .radius(if size < 32.0 { Radius::Sm } else { Radius::Lg })
+        .border_width(1)
         .border_color(super::style::OUTLINE)
-        .child(sigil::widgets::canvas(draw).layout(LayoutStyle::block().fill()))
+        .child(sigil::widgets::canvas(draw).fill())
 }
 
 fn draw(scene: &mut SceneBuilder, area: Rect) {
@@ -96,7 +100,7 @@ fn outline(
     origin: Point,
     unit: f32,
     shift: (f32, f32),
-    (width, color): (f32, Rgba8),
+    (width, color): (f32, Color),
 ) {
     for (at, from) in GLYPH.iter().enumerate() {
         let to = GLYPH[(at + 1) % GLYPH.len()];

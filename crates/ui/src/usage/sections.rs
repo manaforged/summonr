@@ -1,8 +1,8 @@
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, FlexWrap, LayoutStyle, NodeBuilder, Rgba8, Tone, container, heatmap, panel,
-    progress, signal, sparkline,
+    AlignItems, Color, FlexWrap, NodeBuilder, Tone, container, heatmap, panel, progress, signal,
+    sparkline,
 };
 use sigil::widgets::SparkMark;
 
@@ -20,7 +20,7 @@ const PLACE_NAME_CELLS: usize = 20;
 const NAME_CELLS: usize = 24;
 const NUMBER_CELLS: usize = 48;
 
-fn inks() -> [Rgba8; 6] {
+fn inks() -> [Color; 6] {
     let palette = palette();
     [
         palette.accent,
@@ -32,13 +32,13 @@ fn inks() -> [Rgba8; 6] {
     ]
 }
 
-pub(super) fn ink(index: usize) -> Rgba8 {
+pub(super) fn ink(index: usize) -> Color {
     let inks = inks();
     inks[index.min(inks.len() - 1)]
 }
 
-pub(super) fn colored(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
-    container().layout(LayoutStyle::block().shrink(0.0)).child(
+pub(super) fn colored(value: impl Into<String>, color: Color) -> NodeBuilder {
+    container().shrink(0.0).child(
         sigil::prelude::text(value.into())
             .nowrap()
             .text_color(color),
@@ -56,26 +56,25 @@ pub(super) fn strong(value: impl Into<String>) -> NodeBuilder {
 
 fn row(children: Vec<NodeBuilder>) -> NodeBuilder {
     children.into_iter().fold(
-        container().layout(
-            LayoutStyle::flex_row()
-                .gap(Space::Sm)
-                .align_items(AlignItems::Center),
-        ),
+        sigil::prelude::row()
+            .gap(Space::Sm)
+            .align_items(AlignItems::Center),
         NodeBuilder::child,
     )
 }
 
-fn wrapped(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
+fn wrapped(value: impl Into<String>, color: Color) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
         .child(sigil::prelude::text(value.into()).wrap().text_color(color))
 }
 
 fn column(children: Vec<NodeBuilder>) -> NodeBuilder {
-    children.into_iter().fold(
-        container().layout(LayoutStyle::flex_column().gap(Space::Xxs)),
-        NodeBuilder::child,
-    )
+    children
+        .into_iter()
+        .fold(sigil::prelude::column().gap(Space::Xxs), NodeBuilder::child)
 }
 
 pub(super) fn amount(value: f64, metric: Metric) -> String {
@@ -88,18 +87,18 @@ pub(super) fn amount(value: f64, metric: Metric) -> String {
 
 fn card(title: &str, value: String, visual: Option<NodeBuilder>, note: String) -> NodeBuilder {
     let palette = palette();
-    let body = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::Xs))
+    let body = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::Xs)
         .child(strong(value))
         .child(visual.unwrap_or_else(|| colored(" ", palette.dim)))
         .child(wrapped(note, palette.dim));
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .shrink(1.0)
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .child(
             panel()
                 .title(title)
@@ -130,19 +129,18 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
     } else {
         "no prices for these models"
     };
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(Space::Md)
-                .align_items(AlignItems::Stretch),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(Space::Md)
+        .align_items(AlignItems::Stretch)
         .child(card(
             "tokens",
             compact(total.input + total.output),
             Some(
                 container()
-                    .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
+                    .fill_width()
+                    .min_width(0.0)
+                    .min_height(0.0)
                     .child(trend),
             ),
             format!(
@@ -154,11 +152,7 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
         .child(card(
             "cache hit",
             format!("{:.1}%", report.cache_hit()),
-            Some(
-                container()
-                    .layout(LayoutStyle::block().fill_width())
-                    .child(cache),
-            ),
+            Some(container().fill_width().child(cache)),
             format!("{} tokens reused", compact(total.cached)),
         ))
         .child(card(
@@ -299,27 +293,22 @@ pub(super) fn hours(report: &Report) -> NodeBuilder {
 }
 
 pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .flex_wrap(FlexWrap::Wrap)
-                .fill_width()
-                .gap(Space::Xl)
-                .align_items(AlignItems::Start),
-        )
+    sigil::prelude::row()
+        .flex_wrap(FlexWrap::Wrap)
+        .fill_width()
+        .gap(Space::Xl)
+        .align_items(AlignItems::Start)
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .shrink(0.0)
-                        .gap(Space::Xs)
-                        .padding_right(Space::Sm),
-                )
+            sigil::prelude::column()
+                .shrink(0.0)
+                .gap(Space::Xs)
+                .padding_right(Space::Sm)
                 .child(models(report, metric, width)),
         )
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().shrink(0.0).gap(Space::Lg))
+            sigil::prelude::column()
+                .shrink(0.0)
+                .gap(Space::Lg)
                 .child(places(report, metric))
                 .child(hours(report)),
         )

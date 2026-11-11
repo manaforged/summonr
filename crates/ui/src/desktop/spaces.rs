@@ -46,7 +46,9 @@ pub(super) fn install(app: &App) {
     });
     let watch = app.clone();
     effect(move || {
-        let id = super::split::current(&watch).model.with(|model| model.session.clone());
+        let id = super::split::current(&watch)
+            .model
+            .with(|model| model.session.clone());
         if id.is_empty() {
             return;
         }
@@ -91,7 +93,9 @@ pub(super) fn is_added(folder: &Path) -> bool {
 
 /// Takes `folder` off the repositories; its agents still list while they exist.
 pub(super) fn remove_repository(folder: &Path) {
-    spaces().repos.update(|list| list.retain(|seen| seen != folder));
+    spaces()
+        .repos
+        .update(|list| list.retain(|seen| seen != folder));
 }
 
 /// The workspaces to save, holding only agents that still exist when the list of agents is known.
@@ -133,12 +137,16 @@ pub(super) fn rename(space: &str, name: &str) {
 
 /// Removes workspace `space`; its agents go back to their repositories.
 pub(super) fn remove(space: &str) {
-    spaces().list.update(|list| list.retain(|seen| seen.id != space));
+    spaces()
+        .list
+        .update(|list| list.retain(|seen| seen.id != space));
 }
 
 /// Asks for a folder and adds it to workspace `space`.
 pub(super) fn pick_folder(space: &str) {
-    spaces().picking.set(Some((space.to_owned(), super::welcome::folder())));
+    spaces()
+        .picking
+        .set(Some((space.to_owned(), super::welcome::folder())));
 }
 
 fn add_folder(space: &str, folder: PathBuf) {
@@ -188,7 +196,8 @@ pub(super) fn of(list: &[Space], info: &SessionInfo) -> Option<usize> {
 
 /// The workspace agent `info` was put in by hand.
 pub(super) fn put_in(list: &[Space], info: &SessionInfo) -> Option<usize> {
-    list.iter().position(|space| space.sessions.contains(&info.id))
+    list.iter()
+        .position(|space| space.sessions.contains(&info.id))
 }
 
 /// The workspace holding the deepest of its folders that contains `cwd`.

@@ -1,7 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{
-    ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container, virtual_list,
-};
+use sigil::prelude::{ControlSize, NodeBuilder, Token, Widget, button, container, virtual_list};
 
 use super::{App, StatusView, canvas, children, entry, peers, text};
 use crate::panes::ledger::Mark;
@@ -203,11 +201,16 @@ pub(super) fn list(app: App) -> NodeBuilder {
                     };
                     let pad = column.saturating_sub(sigil::app::cell_width(&title));
                     let title = format!("{title}{}", " ".repeat(pad));
-                    let mut body = container()
-                        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+                    let mut body = sigil::prelude::column()
+                        .gap(sigil::prelude::Space::None)
+                        .fill_width()
+                        .min_width(0.0)
+                        .min_height(0.0)
                         .child(
-                            container()
-                                .layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm))
+                            sigil::prelude::row()
+                                .align_items(sigil::prelude::AlignItems::Stretch)
+                                .fill_width()
+                                .gap(Space::Sm)
                                 .child(marker)
                                 .child(
                                     button(title)
@@ -248,22 +251,16 @@ pub(super) fn list(app: App) -> NodeBuilder {
                                 )),
                         );
                     if !expanded && !row.summary.is_empty() {
-                        body = body.child(
-                            container()
-                                .layout(LayoutStyle::block().padding_left(Space::Xl))
-                                .child(text(
-                                    crate::cells::ellipsize(&row.summary, width.saturating_sub(4)),
-                                    Token::Gray10,
-                                )),
-                        );
+                        body = body.child(container().padding_left(Space::Xl).child(text(
+                            crate::cells::ellipsize(&row.summary, width.saturating_sub(4)),
+                            Token::Gray10,
+                        )));
                     }
                     if expanded {
-                        let mut detail = container()
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .fill_width()
-                                    .padding_left(Space::Xl),
-                            )
+                        let mut detail = sigil::prelude::column()
+                            .gap(sigil::prelude::Space::None)
+                            .fill_width()
+                            .padding_left(Space::Xl)
                             .child(text(row.meta.clone(), Token::Gray10).wrap())
                             .child(text(row.detail.clone(), Token::Gray12).wrap());
                         if row.clear {

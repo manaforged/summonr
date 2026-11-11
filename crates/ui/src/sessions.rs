@@ -293,7 +293,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     container().child(
                         sigil::prelude::text(note)
                             .wrap()
-                            .text_color(sigil::prelude::Token::Warn11),
+                            .text_color(sigil::prelude::Token::Warning11),
                     ),
                 ]
             }

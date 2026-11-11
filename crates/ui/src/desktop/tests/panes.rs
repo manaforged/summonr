@@ -178,7 +178,13 @@ fn the_menu_bar_opens_the_window_sidebar_and_settings_from_a_split_pane() {
                 super::super::menubar::run(app, "Settings…");
             })),
         ],
-        |app| (split::tracked().1, app.window.sidebar.peek(), app.settings_open.peek()),
+        |app| {
+            (
+                split::tracked().1,
+                app.window.sidebar.peek(),
+                app.settings_open.peek(),
+            )
+        },
     );
     assert_eq!(seen.read, (1, false, true));
 }
@@ -217,6 +223,10 @@ fn a_split_pane_offers_the_outside_agents_the_window_found() {
         |_| (),
     );
     let friend = summonr_agent::endpoint::Friend::of("claude").expect("claude preset");
-    let model = friend.models().into_iter().next().expect("a Claude Code model");
+    let model = friend
+        .models()
+        .into_iter()
+        .next()
+        .expect("a Claude Code model");
     assert!(seen.shows(|text| text == model), "{model}: {}", seen.text());
 }

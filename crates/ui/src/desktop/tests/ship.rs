@@ -28,8 +28,13 @@ fn topic(app: &super::super::App) {
     };
     app.update(Msg::Fact(Fact::Sessions(Ok(vec![(info, true)]))));
     app.update(Msg::Fact(Fact::Session(TOPIC.to_owned())));
-    app.update(Msg::Intent(summonr_agent::hub::Intent::User(TITLE.to_owned())));
-    app.update(Msg::Fact(Fact::Diff(changed("HEAD", &[("src/parse.rs", 4, 1)]), None)));
+    app.update(Msg::Intent(summonr_agent::hub::Intent::User(
+        TITLE.to_owned(),
+    )));
+    app.update(Msg::Fact(Fact::Diff(
+        changed("HEAD", &[("src/parse.rs", 4, 1)]),
+        None,
+    )));
 }
 
 fn pull(checks: Vec<Check>) -> Pull {
@@ -52,7 +57,9 @@ fn asks(sent: &[Cmd]) -> Vec<Ask> {
 }
 
 fn reply(result: Result<Option<Pull>, Error>) -> Step {
-    Step::Wait(Box::new(move |app| app.update(Msg::Fact(Fact::Forge(result)))))
+    Step::Wait(Box::new(move |app| {
+        app.update(Msg::Fact(Fact::Forge(result)))
+    }))
 }
 
 #[test]
@@ -70,8 +77,17 @@ fn open_pr_sends_the_topic_title_and_the_reply_shows_the_pr_and_merge() {
     );
     assert_eq!(asks(&seen.sent), [Ask::Open(TITLE.to_owned())]);
     assert!(seen.shows(|text| text == "#7"), "{}", seen.text());
-    assert_eq!(seen.named(Role::Button, "Merge"), [false], "{:?}", seen.controls);
-    assert!(seen.named(Role::Button, "Open PR").is_empty(), "{:?}", seen.controls);
+    assert_eq!(
+        seen.named(Role::Button, "Merge"),
+        [false],
+        "{:?}",
+        seen.controls
+    );
+    assert!(
+        seen.named(Role::Button, "Open PR").is_empty(),
+        "{:?}",
+        seen.controls
+    );
 }
 
 #[test]
@@ -87,9 +103,21 @@ fn signed_out_gh_shows_github_not_signed_in_and_nothing_else() {
         Vec::new(),
         |_| (),
     );
-    assert!(seen.shows(|text| text == "GitHub not signed in"), "{}", seen.text());
-    assert!(seen.named(Role::Button, "Open PR").is_empty(), "{:?}", seen.controls);
-    assert!(seen.named(Role::Button, "Merge").is_empty(), "{:?}", seen.controls);
+    assert!(
+        seen.shows(|text| text == "GitHub not signed in"),
+        "{}",
+        seen.text()
+    );
+    assert!(
+        seen.named(Role::Button, "Open PR").is_empty(),
+        "{:?}",
+        seen.controls
+    );
+    assert!(
+        seen.named(Role::Button, "Merge").is_empty(),
+        "{:?}",
+        seen.controls
+    );
     assert!(asks(&seen.sent).is_empty());
 }
 
@@ -110,9 +138,21 @@ fn a_gh_timeout_shows_in_the_header_and_offers_nothing_else() {
         Vec::new(),
         |_| (),
     );
-    assert!(seen.shows(|text| text == "gh pr list did not answer in 30s"), "{}", seen.text());
-    assert!(seen.named(Role::Button, "Open PR").is_empty(), "{:?}", seen.controls);
-    assert!(seen.named(Role::Button, "Merge").is_empty(), "{:?}", seen.controls);
+    assert!(
+        seen.shows(|text| text == "gh pr list did not answer in 30s"),
+        "{}",
+        seen.text()
+    );
+    assert!(
+        seen.named(Role::Button, "Open PR").is_empty(),
+        "{:?}",
+        seen.controls
+    );
+    assert!(
+        seen.named(Role::Button, "Merge").is_empty(),
+        "{:?}",
+        seen.controls
+    );
 }
 
 #[test]
@@ -138,7 +178,11 @@ fn a_failed_check_goes_to_the_agent_with_its_name_and_link() {
         vec![Step::Click("Checks")],
         |_| (),
     );
-    assert!(seen.shows(|text| text == "Checks failed"), "{}", seen.text());
+    assert!(
+        seen.shows(|text| text == "Checks failed"),
+        "{}",
+        seen.text()
+    );
     let prompts: Vec<String> = seen
         .sent
         .iter()
@@ -148,7 +192,11 @@ fn a_failed_check_goes_to_the_agent_with_its_name_and_link() {
         })
         .collect();
     assert_eq!(prompts.len(), 1, "{prompts:?}");
-    assert!(prompts[0].contains("- test (ubuntu): https://github.com/owner/repo/actions/runs/9"), "{}", prompts[0]);
+    assert!(
+        prompts[0].contains("- test (ubuntu): https://github.com/owner/repo/actions/runs/9"),
+        "{}",
+        prompts[0]
+    );
     assert!(!prompts[0].contains("lint"), "{}", prompts[0]);
 }
 
@@ -171,5 +219,9 @@ fn merge_sends_merge_and_a_merged_reply_archives_the_topic() {
     );
     assert_eq!(asks(&seen.sent), [Ask::Merge]);
     assert_eq!(seen.read, [TOPIC.to_owned()]);
-    assert!(seen.named(Role::Button, "Merge").is_empty(), "{:?}", seen.controls);
+    assert!(
+        seen.named(Role::Button, "Merge").is_empty(),
+        "{:?}",
+        seen.controls
+    );
 }

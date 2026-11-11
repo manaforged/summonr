@@ -8,8 +8,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use sigil::prelude::{
-    LayoutStyle, MouseButton, NodeBuilder, Position, Role, Signal, Theme, Widget, container,
-    interval, signal,
+    MouseButton, NodeBuilder, Position, Role, Signal, Theme, Widget, container, interval, signal,
 };
 use sigil::reactive::{derived, untrack};
 use sigil::widgets::MenuItem;
@@ -106,7 +105,7 @@ pub(super) fn layer(app: &App, pointer: &Pointer) -> NodeBuilder {
     let mind = Mind::watch(app, Rc::clone(pointer), place);
     let app = app.clone();
     let body = container()
-        .layout(LayoutStyle::block().shrink(0.0))
+        .shrink(0.0)
         .hittable(false)
         .children_reactive(move || {
             if shown.get() {
@@ -115,19 +114,18 @@ pub(super) fn layer(app: &App, pointer: &Pointer) -> NodeBuilder {
                 Vec::new()
             }
         });
-    let beside = spacer().animate_width(right);
-    let below = spacer().animate_height(bottom);
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .position(Position::Absolute)
-                .inset_right(0.0)
-                .inset_bottom(0.0),
-        )
+    let beside = spacer().drive(sigil::animation::Property::Width, right);
+    let below = spacer().drive(sigil::animation::Property::Height, bottom);
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .position(Position::Absolute)
+        .inset_right(0.0)
+        .inset_bottom(0.0)
         .hittable(false)
         .child(
-            container()
-                .layout(LayoutStyle::flex_row())
+            sigil::prelude::row()
+                .gap(sigil::prelude::Space::None)
+                .align_items(sigil::prelude::AlignItems::Stretch)
                 .hittable(false)
                 .child(body)
                 .child(beside),
@@ -137,9 +135,7 @@ pub(super) fn layer(app: &App, pointer: &Pointer) -> NodeBuilder {
 
 /// An empty box that only takes up room, so Will sits away from the column's corner.
 fn spacer() -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::block().shrink(0.0))
-        .hittable(false)
+    container().shrink(0.0).hittable(false)
 }
 
 /// Will drawn `size` points square, still and idle, for Settings.
@@ -185,7 +181,8 @@ fn grip(
     let body = container()
         .role(Role::Image)
         .label("Will")
-        .layout(LayoutStyle::block().width(WILL).height(WILL))
+        .width(WILL)
+        .height(WILL)
         .child(art(app, WILL, moving, Source::Live(mind.clone())))
         .pointer_enter(move |_| enter.enter(&watched))
         .pointer_down(move |event| {
@@ -233,7 +230,9 @@ fn grip(
         });
     let menu = app.clone();
     container()
-        .layout(LayoutStyle::block().width(WILL).height(WILL).shrink(0.0))
+        .width(WILL)
+        .height(WILL)
+        .shrink(0.0)
         .child(sigil::widgets::context_menu(body, move || {
             let (open, hide) = (menu.clone(), menu.clone());
             vec![
@@ -272,25 +271,20 @@ fn art(app: &App, size: f32, moving: bool, source: Source) -> NodeBuilder {
         shape::draw(scene, area, &frame, &ink, &theme);
     })
     .redraw_on(if moving { frame } else { look })
-    .layout(LayoutStyle::block().width(drawn).height(drawn));
+    .width(drawn)
+    .height(drawn);
     let paint = container()
         .hittable(false)
-        .layout(
-            LayoutStyle::block()
-                .position(Position::Absolute)
-                .inset_left((size - drawn) / 2.0)
-                .inset_top((size - drawn) / 2.0)
-                .width(drawn)
-                .height(drawn),
-        )
+        .position(Position::Absolute)
+        .inset_left((size - drawn) / 2.0)
+        .inset_top((size - drawn) / 2.0)
+        .width(drawn)
+        .height(drawn)
         .child(paint);
     container()
-        .layout(
-            LayoutStyle::block()
-                .position(Position::Relative)
-                .width(size)
-                .height(size)
-                .shrink(0.0),
-        )
+        .position(Position::Relative)
+        .width(size)
+        .height(size)
+        .shrink(0.0)
         .child(paint)
 }

@@ -1,5 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{LayoutStyle, NodeBuilder, signal, virtual_list};
+use sigil::prelude::{NodeBuilder, signal, virtual_list};
 
 use super::{App, canvas};
 use crate::app::{Login, Note, matching, section};
@@ -184,7 +184,9 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
     let width = span.saturating_sub(LIST_CELLS as usize + 12);
     browser_columns(
         [list],
-        LayoutStyle::flex_column().width(LIST_CELLS * canvas::cell().w),
+        sigil::prelude::column()
+            .gap(Space::None)
+            .width(LIST_CELLS * canvas::cell().w),
         step_pane(app, width, visible),
         Space::Lg,
     )

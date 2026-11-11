@@ -2,7 +2,7 @@ use sigil::prelude::AlignItems;
 use sigil::prelude::DiffView;
 use sigil::prelude::ImageSource;
 use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutStyle;
+
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::ObjectFit;
@@ -70,14 +70,14 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App, index: usize) -> 
         return container();
     }
     match entry {
-        Entry::User(body) => container()
-            .layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .padding_x(Space::Lg)
-                    .min_size(0.0, 0.0),
-            )
-            .bg(sigil::prelude::Token::Gray5)
+        Entry::User(body) => sigil::prelude::row()
+            .gap(sigil::prelude::Space::None)
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .fill_width()
+            .padding_x(Space::Lg)
+            .min_width(0.0)
+            .min_height(0.0)
+            .background(sigil::prelude::Token::Gray5)
             .child(TextStyle::sm(sigil::prelude::Token::Gray12).on(text(body))),
         Entry::Assistant { .. } => assistant(live::text_of(app.model, index), app),
         Entry::Thinking(_) => collapse::collapsible(
@@ -130,16 +130,15 @@ fn assistant(body: sigil::prelude::Signal<String>, app: &App) -> NodeBuilder {
     let copy_app = app.clone();
     let shown = reply::body(body, app);
     wrap(
-        container()
-            .layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .align_items(AlignItems::Start)
-                    .gap(Space::Sm),
-            )
+        sigil::prelude::row()
+            .fill_width()
+            .align_items(AlignItems::Start)
+            .gap(Space::Sm)
             .child(
                 container()
-                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                    .grow(1.0)
+                    .min_width(0.0)
+                    .min_height(0.0)
                     .child(shown),
             )
             .child(
@@ -175,8 +174,9 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
     let id = source.id();
     let kind =
         summonr_agent::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
-    let picture = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    let picture = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .pointer_up(move |event| {
             if event.button != Some(MouseButton::Left) {
                 return;
@@ -200,7 +200,8 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
             image(source)
                 .alt(name.clone())
                 .fit(ObjectFit::Contain)
-                .layout(LayoutStyle::block().width(width).height(height)),
+                .width(width)
+                .height(height),
         )
         .child(tree::label(
             name,
@@ -210,7 +211,9 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
 
 pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
         .child(child)
 }
 
@@ -316,7 +319,7 @@ pub(crate) fn patch_view(
 }
 
 fn prose(body: &str, text_style: TextStyle) -> NodeBuilder {
-    let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(Space::None));
+    let mut column = sigil::prelude::column().fill_width().gap(Space::None);
     for para in body.split('\n') {
         column = column.child(text_style.on(markdown_inline(para)));
     }

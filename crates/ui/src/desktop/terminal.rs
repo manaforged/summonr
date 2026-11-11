@@ -5,8 +5,8 @@ use std::rc::Rc;
 use sigil::app::Session;
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Tone, Widget,
-    button, container, effect, list_row, signal,
+    AlignItems, ControlSize, ListRowSlots, NodeBuilder, Paint, Signal, Tone, Widget, button,
+    container, effect, list_row, signal,
 };
 use sigil::reactive::{Owner, untrack};
 use sigil::widgets::{MenuItem, icon};
@@ -168,14 +168,13 @@ pub(super) fn close(app: &App, id: u64) {
 /// A pane's body: its terminal when it shows one, else its agent.
 pub(super) fn pane(app: App) -> NodeBuilder {
     let showing = app.window.showing;
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .fill_width()
-                .fill_height()
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .fill_width()
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             let id = showing.get();
             let term = id.and_then(|id| {
@@ -197,15 +196,14 @@ pub(super) fn pane(app: App) -> NodeBuilder {
 }
 
 fn main(app: &App, term: &Rc<Term>) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .fill_width()
-                .fill_height()
-                .min_size(0.0, 0.0),
-        )
-        .bg(super::style::CANVAS)
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .fill_width()
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(super::style::CANVAS)
         .child(super::thread::header(app))
         .child(body(app, term))
 }
@@ -214,22 +212,20 @@ fn body(app: &App, term: &Rc<Term>) -> NodeBuilder {
     let (bell, seen) = (term.session.bell, term.seen);
     effect(move || seen.set(bell.get()));
     let (watch, closing, id) = (term.session.exited, app.clone(), term.id);
-    container()
-        .layout(
-            LayoutStyle::flex_column()
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding(S)
+        .child(
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
                 .grow(1.0)
                 .fill_width()
-                .min_size(0.0, 0.0)
-                .padding(S),
-        )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .grow(1.0)
-                        .fill_width()
-                        .min_size(0.0, 0.0),
-                )
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(term.session.view().label(SHELL).autofocus()),
         )
         .children_reactive(move || {
@@ -243,15 +239,12 @@ fn body(app: &App, term: &Rc<Term>) -> NodeBuilder {
 
 fn ended(app: &App, id: u64, code: u32) -> NodeBuilder {
     let app = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(S)
-                .padding_top(S)
-                .shrink(0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(S)
+        .padding_top(S)
+        .shrink(0.0)
+        .align_items(AlignItems::Center)
         .border_top(1)
         .border_color(DIVIDER)
         .child(text(
@@ -269,13 +262,13 @@ fn ended(app: &App, id: u64, code: u32) -> NodeBuilder {
 /// The right panel's terminal: the folder's first one no pane shows, started the first time.
 pub(super) fn view(app: &App, width: f32) -> NodeBuilder {
     let folder = app.workspace();
-    let column = container().layout(
-        LayoutStyle::flex_column()
-            .width(width)
-            .fill_height()
-            .padding(S)
-            .min_size(0.0, 0.0),
-    );
+    let column = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .width(width)
+        .fill_height()
+        .padding(S)
+        .min_width(0.0)
+        .min_height(0.0);
     match side_terminal(app, &folder) {
         Ok(term) => column.child(term.session.view().label(SHELL).autofocus()),
         Err(error) => column.child(text(
@@ -316,32 +309,30 @@ pub(super) fn rows(app: &App, terms: &[Rc<Term>], folder: &Path, depth: u16) -> 
 
 fn row(app: &App, term: &Rc<Term>, depth: u16) -> NodeBuilder {
     let (app, term) = (app.clone(), Rc::clone(term));
-    container()
-        .layout(LayoutStyle::block().fill_width())
-        .children_reactive(move || {
-            let selected = super::split::tracked()
-                .0
-                .iter()
-                .any(|pane| pane.window.showing.get() == Some(term.id));
-            let rang = term.session.bell.get() != term.seen.get();
-            let code = term.session.exited.get();
-            let (open, id, menu) = (app.clone(), term.id, app.clone());
-            let row = list_row(
-                selected,
-                term.label(),
-                ListRowSlots {
-                    depth,
-                    leading: Some(Box::new(icon(Icon::Terminal).px(ICON))),
-                    status: code.map(|code| if code == 0 { EXITED } else { FAILED }.into()),
-                    status_tone: code.filter(|code| *code != 0).map(|_| Tone::Error),
-                    badge: rang.then(|| (BELL.into(), Tone::Info)),
-                    activate: Some(Rc::new(move || reveal(&open, id))),
-                    ..ListRowSlots::default()
-                },
-            );
-            vec![sigil::widgets::context_menu(row, move || {
-                let closing = menu.clone();
-                vec![MenuItem::new("Close terminal").activate(move || close(&closing, id))]
-            })]
-        })
+    container().fill_width().children_reactive(move || {
+        let selected = super::split::tracked()
+            .0
+            .iter()
+            .any(|pane| pane.window.showing.get() == Some(term.id));
+        let rang = term.session.bell.get() != term.seen.get();
+        let code = term.session.exited.get();
+        let (open, id, menu) = (app.clone(), term.id, app.clone());
+        let row = list_row(
+            selected,
+            term.label(),
+            ListRowSlots {
+                depth,
+                leading: Some(Box::new(icon(Icon::Terminal).px(ICON))),
+                status: code.map(|code| if code == 0 { EXITED } else { FAILED }.into()),
+                status_tone: code.filter(|code| *code != 0).map(|_| Tone::Error),
+                badge: rang.then(|| (BELL.into(), Tone::Info)),
+                activate: Some(Rc::new(move || reveal(&open, id))),
+                ..ListRowSlots::default()
+            },
+        );
+        vec![sigil::widgets::context_menu(row, move || {
+            let closing = menu.clone();
+            vec![MenuItem::new("Close terminal").activate(move || close(&closing, id))]
+        })]
+    })
 }

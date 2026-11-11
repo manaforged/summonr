@@ -1,9 +1,7 @@
 use std::time::Instant;
 
 use sigil::prelude::Space;
-use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container,
-};
+use sigil::prelude::{AlignItems, ControlSize, NodeBuilder, Token, Widget, button, container};
 
 use super::{App, Model, Speed, StatusView, canvas, counts, entry, text, todos, working};
 use crate::model::{Doing, Entry};
@@ -271,29 +269,26 @@ fn icon(app: &App, status: &Status) -> sigil::prelude::TextBuilder {
 pub(crate) fn bar(app: App, width: usize) -> NodeBuilder {
     let paint = app.clone();
     let view = sigil::reactive::derived(move || status(&paint).map(|status| fit(status, width)));
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             let Some(status) = view.get() else {
                 return Vec::new();
             };
-            let mut row = container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .height(canvas::cell().h)
-                        .min_size(0.0, 0.0)
-                        .gap(Space::raw(
-                            canvas::cell().w,
-                            "one terminal cell between status parts",
-                        ))
-                        .align_items(AlignItems::Center),
-                )
+            let mut row = sigil::prelude::row()
+                .fill_width()
+                .height(canvas::cell().h)
+                .min_width(0.0)
+                .min_height(0.0)
+                .gap(Space::raw(
+                    canvas::cell().w,
+                    "one terminal cell between status parts",
+                ))
+                .align_items(AlignItems::Center)
                 .child(icon(&app, &status));
             for (index, part) in status.parts.iter().enumerate() {
                 if index > 0 {
@@ -306,7 +301,7 @@ pub(crate) fn bar(app: App, width: usize) -> NodeBuilder {
                             button(part.text.clone())
                                 .ghost()
                                 .size(ControlSize::Compact)
-                                .layout(LayoutStyle::block().height(canvas::cell().h))
+                                .height(canvas::cell().h)
                                 .accessible(format!("{}; open details", part.text))
                                 .activate(move || open.show_status(view)),
                         )
@@ -335,7 +330,7 @@ pub(crate) fn bar(app: App, width: usize) -> NodeBuilder {
             if status.rate {
                 let speed = app.clone();
                 row = row
-                    .child(container().layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)))
+                    .child(container().grow(1.0).min_width(0.0).min_height(0.0))
                     .child(text(
                         move || {
                             speed.ticks.with(|_| ());

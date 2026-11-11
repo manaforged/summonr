@@ -1,7 +1,7 @@
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Rgba8, Signal, Tone, Widget, button,
-    container, signal, text_edit,
+    AlignItems, Color, ControlSize, NodeBuilder, Paint, Signal, Tone, Widget, button, container,
+    signal, text_edit,
 };
 
 use super::{App, canvas};
@@ -23,7 +23,7 @@ pub(crate) struct Editor {
     input: Signal<String>,
     caret: Signal<usize>,
     focus: Signal<u64>,
-    editing: Signal<Option<(&'static str, Rgba8)>>,
+    editing: Signal<Option<(&'static str, Color)>>,
     error: Signal<String>,
 }
 
@@ -81,8 +81,10 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
             let cancel = paint.clone();
             let reset = paint.clone();
             let mut nodes = vec![
-                container()
-                    .layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm))
+                sigil::prelude::row()
+                    .align_items(sigil::prelude::AlignItems::Stretch)
+                    .fill_width()
+                    .gap(Space::Sm)
                     .child(
                         button("Save")
                             .primary()
@@ -113,7 +115,10 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                 }
                 .into_iter()
                 .fold(
-                    container().layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm)),
+                    sigil::prelude::row()
+                        .align_items(sigil::prelude::AlignItems::Stretch)
+                        .fill_width()
+                        .gap(Space::Sm),
                     |row, (label, name)| {
                         let select = paint.clone();
                         row.child(
@@ -143,11 +148,9 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                                 .caret_position(editor.caret)
                                 .focus_when(editor.focus)
                                 .autofocus()
-                                .layout(
-                                    LayoutStyle::flex_column()
-                                        .fill_width()
-                                        .height(canvas::overlay_field()),
-                                )
+                                .gap(sigil::prelude::Space::None)
+                                .fill_width()
+                                .height(canvas::overlay_field())
                                 .change(move |value| change.preview_color(&value))
                                 .submit(move |_| apply.edit_theme()),
                         ),
@@ -185,25 +188,24 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                 ))
             },
             |(name, value, color), active| {
-                let mut row = container().layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .align_items(AlignItems::Center),
-                );
+                let mut row = sigil::prelude::row()
+                    .gap(sigil::prelude::Space::None)
+                    .fill_width()
+                    .align_items(AlignItems::Center);
                 if let Some(color) = color {
                     row = row.child(
                         container()
-                            .layout(
-                                LayoutStyle::block()
-                                    .width(canvas::cell().w * 2.0)
-                                    .height(canvas::overlay_list_row()),
-                            )
-                            .bg(*color),
+                            .width(canvas::cell().w * 2.0)
+                            .height(canvas::overlay_list_row())
+                            .background(*color),
                     );
                 }
                 row.child(
-                    container()
-                        .layout(LayoutStyle::flex_column().grow(1.0).min_size(0.0, 0.0))
+                    sigil::prelude::column()
+                        .gap(sigil::prelude::Space::None)
+                        .grow(1.0)
+                        .min_width(0.0)
+                        .min_height(0.0)
                         .child(pick(active, name.clone(), value.clone())),
                 )
             },

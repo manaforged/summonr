@@ -134,7 +134,11 @@ fn an_agent_in_a_worktree_lists_under_its_branch() {
     );
     let listed = rows(&seen.controls);
     assert!(!listed.contains(&"tokyo"), "{listed:?}");
-    assert_eq!(after(&listed, "shop", 2), vec![BRANCH, "Ship the lights"], "{listed:?}");
+    assert_eq!(
+        after(&listed, "shop", 2),
+        vec![BRANCH, "Ship the lights"],
+        "{listed:?}"
+    );
 }
 
 #[test]
@@ -151,11 +155,18 @@ fn a_terminal_in_a_worktree_lists_under_its_branch() {
     );
     let listed = rows(&seen.controls);
     assert!(!listed.contains(&"tokyo"), "{listed:?}");
-    assert_eq!(after(&listed, "shop", 2), vec![BRANCH, "Terminal"], "{listed:?}");
+    assert_eq!(
+        after(&listed, "shop", 2),
+        vec![BRANCH, "Terminal"],
+        "{listed:?}"
+    );
 }
 
 fn after<'a>(listed: &[&'a str], row: &str, count: usize) -> Vec<&'a str> {
-    let at = listed.iter().position(|seen| *seen == row).map_or(listed.len(), |at| at + 1);
+    let at = listed
+        .iter()
+        .position(|seen| *seen == row)
+        .map_or(listed.len(), |at| at + 1);
     listed.iter().skip(at).take(count).copied().collect()
 }
 
@@ -165,9 +176,23 @@ fn a_leftover_run_worktree_is_not_listed() {
         return;
     }
     let shop = shop_with_a_conductor_workspace();
-    let run = shop.repo.parent().expect("root").join("shop-worktrees/18e5d8d1791d1038");
+    let run = shop
+        .repo
+        .parent()
+        .expect("root")
+        .join("shop-worktrees/18e5d8d1791d1038");
     let target = run.to_str().expect("utf-8 path");
-    git(&shop.repo, &["worktree", "add", "-q", "-b", "summonr/18e5d8d1791d1038", target]);
+    git(
+        &shop.repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "summonr/18e5d8d1791d1038",
+            target,
+        ],
+    );
     let seen = steps(open_in(shop.repo.clone(), Vec::new()), Vec::new(), |_| ());
     let listed = rows(&seen.controls);
     assert!(listed.contains(&BRANCH), "{listed:?}");

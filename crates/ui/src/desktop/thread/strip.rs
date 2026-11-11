@@ -1,4 +1,4 @@
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Widget, container};
+use sigil::prelude::{AlignItems, NodeBuilder, Widget, container};
 
 use super::super::App;
 use super::super::style::{M, S, Text, XS};
@@ -11,17 +11,14 @@ pub(in crate::desktop) fn header(app: &App) -> NodeBuilder {
         watch.window.sidebar.get()
             && sigil::app::viewport_size().get().width >= super::super::sidebar::ROOMY
     });
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(super::super::TITLE_BAR)
-                .shrink(0.0)
-                .padding_left(S)
-                .padding_right(M)
-                .gap(XS)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .height(super::super::TITLE_BAR)
+        .shrink(0.0)
+        .padding_left(S)
+        .padding_right(M)
+        .gap(XS)
+        .align_items(AlignItems::Center)
         .children_reactive(move || header_items(&items, beside.get()))
 }
 
@@ -32,7 +29,8 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
     if corner {
         items.push(
             container()
-                .layout(LayoutStyle::block().width(super::super::CONTROLS - 8.0).shrink(0.0))
+                .width(super::super::CONTROLS - 8.0)
+                .shrink(0.0)
                 .into(),
         );
         items.push(super::super::sidebar_toggle(app));
@@ -89,8 +87,9 @@ fn run(app: &App) -> Option<NodeBuilder> {
                 let (pick, id) = (list.clone(), row.id.clone());
                 let item = sigil::widgets::MenuItem::new(row.label).disabled(row.cloud_only);
                 match row.cloud_only {
-                    true => item.shortcut(super::super::palette::CLOUD_ONLY),
-                    false => item.activate(move || super::super::terminal::run_action(&pick, id.as_deref())),
+                    true => item.hint(super::super::palette::CLOUD_ONLY),
+                    false => item
+                        .activate(move || super::super::terminal::run_action(&pick, id.as_deref())),
                 }
             })
             .collect()
@@ -106,24 +105,25 @@ const CLOSE_TERMINAL: &str = "Close terminal";
 /// The agent's title and repo, shown in the strip while the sidebar is hidden.
 fn name(app: &App) -> NodeBuilder {
     let watch = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .padding_left(XS)
-                .shrink(1.0)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(S)
+        .padding_left(XS)
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .children_reactive(move || {
             if let Some(term) = watch.shown_terminal() {
                 return vec![
                     super::super::style::text(Text::Label, term.label())
                         .ellipsize()
                         .into(),
-                    super::super::style::text(Text::Meta, super::super::sidebar::folder_name(&term.folder))
-                        .nowrap()
-                        .into(),
+                    super::super::style::text(
+                        Text::Meta,
+                        super::super::sidebar::folder_name(&term.folder),
+                    )
+                    .nowrap()
+                    .into(),
                 ];
             }
             let model = watch.model.get();
@@ -143,12 +143,17 @@ fn name(app: &App) -> NodeBuilder {
             });
             title
                 .into_iter()
-                .map(|title| super::super::style::text(Text::Label, title).ellipsize().into())
-                .chain([
-                    super::super::style::text(Text::Meta, super::super::sidebar::project_name(&watch))
-                        .nowrap()
-                        .into(),
-                ])
+                .map(|title| {
+                    super::super::style::text(Text::Label, title)
+                        .ellipsize()
+                        .into()
+                })
+                .chain([super::super::style::text(
+                    Text::Meta,
+                    super::super::sidebar::project_name(&watch),
+                )
+                .nowrap()
+                .into()])
                 .collect::<Vec<NodeBuilder>>()
         })
 }

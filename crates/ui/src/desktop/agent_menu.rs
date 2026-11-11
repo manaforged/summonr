@@ -1,6 +1,6 @@
 use std::cell::Cell;
-use std::rc::Rc;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use sigil::prelude::{NodeBuilder, Signal, Widget, button, container, modal, signal, text_field};
 use sigil::widgets::{MenuItem, ModalBuilder};
@@ -105,7 +105,7 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
         let (mark, unread) = (app.clone(), id.clone());
         items.push(
             MenuItem::new("Mark unread")
-                .shortcut("⌘⇧U")
+                .hint("⌘⇧U")
                 .activate(move || mark_unread(&mark, &unread)),
         );
     }
@@ -115,7 +115,7 @@ pub(super) fn items(app: &App, info: &SessionInfo, status: Option<Status>) -> Ve
         let (stop, target) = (app.clone(), id.clone());
         items.push(
             MenuItem::new("Stop")
-                .shortcut("⌘.")
+                .hint("⌘.")
                 .activate(move || drop(stop.cmd.send(Cmd::Stop(target.clone())))),
         );
     }
@@ -208,11 +208,13 @@ fn space_items(info: &SessionInfo) -> Vec<MenuItem> {
         );
     }
     let id = info.id.clone();
-    items.push(MenuItem::new("New project with this agent").activate(move || {
-        let made = super::spaces::create("New project");
-        super::spaces::put(&id, &made);
-        rename_space(&made, "New project");
-    }));
+    items.push(
+        MenuItem::new("New project with this agent").activate(move || {
+            let made = super::spaces::create("New project");
+            super::spaces::put(&id, &made);
+            rename_space(&made, "New project");
+        }),
+    );
     items
 }
 
@@ -230,13 +232,18 @@ fn space_dialog(open: Signal<bool>, space: String, name: Signal<String>) -> Moda
     let submit = save.clone();
     modal(open)
         .title("Name project")
-        .child(text_field(name).placeholder(PROJECT_NAME).autofocus().submit(move |text| {
-            submit(text);
-            close();
-        }))
+        .child(
+            text_field(name)
+                .placeholder(PROJECT_NAME)
+                .autofocus()
+                .submit(move |text| {
+                    submit(text);
+                    close();
+                }),
+        )
         .actions(
-            button("Cancel").ghost().shortcut("esc").activate(close),
-            button("Save").primary().shortcut("⏎").activate(move || {
+            button("Cancel").ghost().hint("esc").activate(close),
+            button("Save").primary().hint("⏎").activate(move || {
                 save(&name.peek());
                 close();
             }),
@@ -275,8 +282,8 @@ fn rename_dialog(app: &App, open: Signal<bool>, id: &str, name: Signal<String>) 
             close();
         }))
         .actions(
-            button("Cancel").ghost().shortcut("esc").activate(close),
-            button("Rename").primary().shortcut("⏎").activate(save),
+            button("Cancel").ghost().hint("esc").activate(close),
+            button("Rename").primary().hint("⏎").activate(save),
         )
 }
 
@@ -284,7 +291,7 @@ fn delete_dialog(app: &App, open: Signal<bool>, id: String, title: &str) -> Moda
     let close = move || open.set(false);
     let sender = app.clone();
     modal(open).title(format!("Delete “{title}”?")).actions(
-        button("Cancel").ghost().shortcut("esc").activate(close),
+        button("Cancel").ghost().hint("esc").activate(close),
         button("Delete")
             .tone(sigil::prelude::Tone::Error)
             .activate(move || {
@@ -302,7 +309,7 @@ fn quit_dialog(open: Signal<bool>, running: usize) -> ModalBuilder {
         .actions(
             button("Keep running")
                 .ghost()
-                .shortcut("esc")
+                .hint("esc")
                 .activate(move || open.set(false)),
             button("Quit")
                 .tone(sigil::prelude::Tone::Error)

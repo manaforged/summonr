@@ -1,7 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Token, container, effect, signal, tabs,
-};
+use sigil::prelude::{AlignItems, NodeBuilder, Token, effect, signal, tabs};
 
 use crate::app::App;
 use crate::canvas;
@@ -46,14 +44,13 @@ pub(crate) fn strip(app: &App, active: Tab) -> NodeBuilder {
         }
     });
     let labels: Vec<String> = Tab::ALL.iter().map(|tab| tab.label().to_string()).collect();
-    let line = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .min_size(0.0, canvas::overlay_list_row())
-                .padding_x(Space::Sm)
-                .align_items(AlignItems::Center),
-        )
+    let line = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(canvas::overlay_list_row())
+        .padding_x(Space::Sm)
+        .align_items(AlignItems::Center)
         .child(tabs().labels(labels).active(picked).label("Settings tabs"));
     if canvas::is_window() {
         return line;

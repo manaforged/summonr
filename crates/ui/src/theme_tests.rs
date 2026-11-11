@@ -91,7 +91,7 @@ fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_nam
         };
         assert_eq!(
             background(),
-            Ink::Exact(Rgba8 {
+            Ink::Exact(Color {
                 r: 16,
                 g: 32,
                 b: 48,
@@ -103,7 +103,7 @@ fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_nam
         app.refresh();
         assert_eq!(
             background(),
-            Ink::Exact(Rgba8 {
+            Ink::Exact(Color {
                 r: 64,
                 g: 80,
                 b: 96,
@@ -115,7 +115,7 @@ fn applying_custom_colors_repaints_a_mounted_view_without_changing_the_theme_nam
     });
 }
 
-fn luminance(color: Rgba8) -> f64 {
+fn luminance(color: Color) -> f64 {
     let channel = |value: u8| {
         let value = f64::from(value) / 255.0;
         if value <= 0.039_28 {
@@ -127,7 +127,7 @@ fn luminance(color: Rgba8) -> f64 {
     0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
 }
 
-fn contrast(one: Rgba8, two: Rgba8) -> f64 {
+fn contrast(one: Color, two: Color) -> f64 {
     let (one, two) = (luminance(one), luminance(two));
     (one.max(two) + 0.05) / (one.min(two) + 0.05)
 }

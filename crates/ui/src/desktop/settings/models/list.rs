@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, chip, container,
-    empty_state, icon, signal, text_field,
+    AlignItems, NodeBuilder, Signal, Tone, Widget, button, chip, empty_state, icon, signal,
+    text_field,
 };
 use sigil::reactive::untrack;
 
@@ -27,34 +27,25 @@ pub(super) fn view(app: &App) -> NodeBuilder {
     let snapshot = app.model.peek().snapshot.clone();
     let using = signal(ModelId::new(snapshot.endpoint, snapshot.model));
     let paint = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .align_items(AlignItems::Stretch)
-                .gap(S),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .align_items(AlignItems::Stretch)
+        .gap(S)
         .child(search(query))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .align_items(AlignItems::Stretch)
-                        .gap(XL),
-                )
+            sigil::prelude::column()
+                .fill_width()
+                .align_items(AlignItems::Stretch)
+                .gap(XL)
                 .children_reactive(move || {
                     paint.picker.groups.with(|_| ());
                     let accounts = Rc::new(untrack(|| accounts(&using.peek().endpoint)));
                     let app = paint.clone();
                     vec![
-                        container()
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .fill_width()
-                                    .align_items(AlignItems::Stretch)
-                                    .gap(XL),
-                            )
+                        sigil::prelude::column()
+                            .fill_width()
+                            .align_items(AlignItems::Stretch)
+                            .gap(XL)
                             .children_reactive(move || body(&app, &accounts, &query.get(), using)),
                     ]
                 }),
@@ -186,12 +177,10 @@ fn cost(model: &Model) -> Option<String> {
 
 fn more(app: &App) -> NodeBuilder {
     let open = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .align_items(AlignItems::Center)
         .child(
             button("All models…")
                 .ghost()

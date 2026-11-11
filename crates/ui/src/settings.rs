@@ -1,14 +1,14 @@
 pub(super) use super::app::App;
 pub(super) use super::canvas;
 
+use sigil::prelude::NodeBuilder;
 use sigil::prelude::Widget;
-use sigil::prelude::{LayoutStyle, NodeBuilder, container};
 
 fn dialog_body(children: impl Fn() -> Vec<NodeBuilder> + 'static) -> NodeBuilder {
-    let layout = LayoutStyle::flex_column()
+    sigil::prelude::column()
         .fill_width()
-        .gap(canvas::overlay_gap());
-    container().layout(layout).children_reactive(children)
+        .gap(canvas::overlay_gap())
+        .children_reactive(children)
 }
 
 mod auth;

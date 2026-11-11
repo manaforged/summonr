@@ -1,5 +1,5 @@
 use super::tests::splash_screen;
-use sigil::prelude::Rgba8;
+use sigil::prelude::Color;
 use sigil::terminal::Ink;
 
 fn splash_grid() -> sigil::terminal::Grid {
@@ -24,7 +24,7 @@ fn backgrounds(
     grid: &sigil::terminal::Grid,
     cols: std::ops::Range<usize>,
     row: usize,
-) -> Vec<Rgba8> {
+) -> Vec<Color> {
     cols.filter_map(|col| grid.get(col, row))
         .filter(|cell| cell.text() == " ")
         .filter_map(|cell| match cell.bg {

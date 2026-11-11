@@ -1,9 +1,7 @@
 use std::path::Path;
 
 use sigil::prelude::Space;
-use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Token, Tone, button, container, spacer, text,
-};
+use sigil::prelude::{AlignItems, ControlSize, NodeBuilder, Token, Tone, button, spacer, text};
 
 use super::super::app::{App, armed};
 use super::super::canvas;
@@ -29,14 +27,11 @@ pub(super) fn review(app: &App) -> Option<NodeBuilder> {
         Some(seen) => format!("{} → {}", seen.tree.branch, seen.tree.base),
         None => app.git_branch()?,
     };
-    let row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .shrink(0.0)
-                .gap(Space::Xs)
-                .align_items(AlignItems::Center),
-        )
+    let row = sigil::prelude::row()
+        .fill_width()
+        .shrink(0.0)
+        .gap(Space::Xs)
+        .align_items(AlignItems::Center)
         .child(
             text(label)
                 .nowrap()
@@ -65,7 +60,10 @@ pub(super) fn review(app: &App) -> Option<NodeBuilder> {
 }
 
 pub(super) fn buttons(app: &App, path: &Path) -> NodeBuilder {
-    let row = container().layout(LayoutStyle::flex_row().shrink(0.0).gap(Space::Xs));
+    let row = sigil::prelude::row()
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .shrink(0.0)
+        .gap(Space::Xs);
     if !canvas::is_window() {
         return row;
     }
@@ -85,7 +83,7 @@ pub(super) fn buttons(app: &App, path: &Path) -> NodeBuilder {
     .child(
         button(label)
             .ghost()
-            .tone(Tone::Warn)
+            .tone(Tone::Warning)
             .size(ControlSize::Compact)
             .activate(move || discard.tree_discard_armed(discarded.clone())),
     )

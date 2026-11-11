@@ -32,7 +32,7 @@ tokio = { version = "1", features = ["test-util"] }
 
 [features]
 default = []
-gui = ["sigil/native-dialog", "sigil/pty", "sigil/notify"]
+gui = ["sigil/native-dialog", "sigil/pty", "sigil/notify", "sigil/a2ui"]
 menu = ["gui", "sigil/menu"]
 
 [lints]

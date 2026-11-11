@@ -3,8 +3,7 @@ use std::rc::Rc;
 use sigil::prelude::IntoNode;
 use sigil::prelude::Space;
 use sigil::prelude::{
-    LayoutStyle, NodeBuilder, Signal, container, effect, empty_state, fragment, node, signal,
-    virtual_list,
+    NodeBuilder, Signal, container, effect, empty_state, fragment, node, signal, virtual_list,
 };
 use sigil::reactive::untrack;
 use sigil::reactive::{defer, derived};
@@ -20,18 +19,16 @@ use summonr_agent::prefs::Prefs;
 pub(crate) fn layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> NodeBuilder {
     let width = canvas::inner_cols(usize::from(cols));
     let transcript_app = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .fill_height()
-                .min_size(0.0, 0.0)
-                .padding_y(Space::raw(
-                    canvas::edge(app.viewport.peek().1),
-                    "one terminal cell on a roomy screen",
-                ))
-                .gap(Space::None),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding_y(Space::raw(
+            canvas::edge(app.viewport.peek().1),
+            "one terminal cell on a roomy screen",
+        ))
+        .gap(Space::None)
         .child(fit(app.clone()).child(node(move || {
             let hint_app = transcript_app.clone();
             transcript(
@@ -54,7 +51,7 @@ pub(crate) fn layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> Nod
         .child(pin(canvas::gutter(panels::status_bar(app.clone(), width))))
         .child(pin(canvas::gutter(panels::bands(app.clone(), width))))
         .child(pin(composer::widget(app.clone(), width, editor)))
-        .child(container().layout(LayoutStyle::block().fill_width().grow(1.0)))
+        .child(container().fill_width().grow(1.0))
         .child(pin(canvas::gutter(footer::footer_bar(app, width))))
 }
 
@@ -70,32 +67,27 @@ fn fit(app: App) -> NodeBuilder {
             canvas::cell().h * f32::from(viewport.get().1)
         }
     });
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(0.0)
-                .shrink(1.0)
-                .min_size(0.0, 0.0),
-        )
-        .animate_height(height)
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .grow(0.0)
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .drive(sigil::animation::Property::Height, height)
 }
 
 fn pin(child: NodeBuilder) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::block().fill_width().shrink(0.0))
-        .child(child)
+    container().fill_width().shrink(0.0).child(child)
 }
 
 pub(crate) fn inline_layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> NodeBuilder {
     let width = canvas::inner_cols(usize::from(cols));
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .min_size(0.0, 0.0)
-                .gap(Space::None),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .gap(Space::None)
         .child(canvas::gutter(panels::status_bar(app.clone(), width)))
         .child(canvas::gutter(panels::bands(app.clone(), width)))
         .child(composer::widget(app.clone(), width, editor))
@@ -117,8 +109,11 @@ fn row(
             .with(|model| (slot_revisions(model, index, at), model.entries.stamp))
     });
     let open: Signal<Option<bool>> = signal(None);
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             let ((at, _), _) = current.get();
             prefs.with(|_| ());
@@ -178,16 +173,15 @@ fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
             .collect::<Vec<_>>();
         (model.prefs.clone(), rows)
     });
-    let mut column = container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .min_size(0.0, 0.0)
-            .gap(if stacked {
-                Space::None
-            } else {
-                Space::raw(canvas::cell().h, "one terminal cell between entries")
-            }),
-    );
+    let mut column = sigil::prelude::column()
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .gap(if stacked {
+            Space::None
+        } else {
+            Space::raw(canvas::cell().h, "one terminal cell between entries")
+        });
     for (at, item, live) in rows {
         if let Some(item) = item {
             column = column.child(entry::row(item, live, &prefs, app, at));
@@ -208,34 +202,32 @@ pub(crate) const READING: f32 = 704.0;
 
 pub(crate) fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {
     if canvas::is_window() {
-        return container()
-            .layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .min_size(0.0, 0.0)
-                    .padding_x(Space::raw(spacing.0, "the caller's gutter"))
-                    .padding_bottom(Space::raw(spacing.1, "the caller's entry spacing"))
-                    .justify_content(sigil::prelude::JustifyContent::Center),
-            )
+        return sigil::prelude::row()
+            .gap(sigil::prelude::Space::None)
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .fill_width()
+            .min_width(0.0)
+            .min_height(0.0)
+            .padding_x(Space::raw(spacing.0, "the caller's gutter"))
+            .padding_bottom(Space::raw(spacing.1, "the caller's entry spacing"))
+            .justify_content(sigil::prelude::JustifyContent::Center)
             .child(
-                container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .fill_width()
-                            .min_size(0.0, 0.0)
-                            .max_width(READING - 2.0 * spacing.0),
-                    )
+                sigil::prelude::column()
+                    .gap(sigil::prelude::Space::None)
+                    .fill_width()
+                    .min_width(0.0)
+                    .min_height(0.0)
+                    .max_width(READING - 2.0 * spacing.0)
                     .child(node),
             );
     }
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .min_size(0.0, 0.0)
-                .padding_x(Space::raw(spacing.0, "the caller's gutter"))
-                .padding_bottom(Space::raw(spacing.1, "the caller's entry spacing")),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding_x(Space::raw(spacing.0, "the caller's gutter"))
+        .padding_bottom(Space::raw(spacing.1, "the caller's entry spacing"))
         .child(node)
 }
 
@@ -287,13 +279,12 @@ pub(crate) fn transcript(
     fragment().children_reactive(move || {
         if empty_now.get() {
             return vec![
-                container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .fill_width()
-                            .grow(1.0)
-                            .min_size(0.0, 0.0),
-                    )
+                sigil::prelude::column()
+                    .gap(sigil::prelude::Space::None)
+                    .fill_width()
+                    .grow(1.0)
+                    .min_width(0.0)
+                    .min_height(0.0)
                     .child(empty()),
             ];
         }
@@ -302,15 +293,14 @@ pub(crate) fn transcript(
         let live = app.clone();
         let copied = app.clone();
         vec![
-            container()
+            sigil::prelude::column()
                 .selectable_text(true)
-                .on_selection_copy(move |text, result| copied.copy_notice(text, result))
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .grow(1.0)
-                        .min_size(0.0, 0.0),
-                )
+                .selection_copy(move |text, result| copied.copy_notice(text, result))
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(
                     virtual_list(keys, move |index, _: &u64| {
                         row(live.clone(), index, spacing, prefs, table)
@@ -318,7 +308,7 @@ pub(crate) fn transcript(
                     .key_by(|_, key| *key)
                     .measured()
                     .estimate(canvas::cell().h * 2.0)
-                    .viewport_fill()
+                    .fill()
                     .scroll_bind(app.scroll_y)
                     .max_scroll_bind(app.max_scroll)
                     .content_height_bind(app.content_height)

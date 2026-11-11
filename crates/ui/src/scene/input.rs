@@ -14,7 +14,7 @@ pub(crate) fn window_area(app: &App, cols: u16, rows: u16) -> [u16; 4] {
 
 pub(crate) fn glass(area: [u16; 4]) -> Plate {
     let colours = stage();
-    let tint = ink(Rgba8 {
+    let tint = ink(Color {
         a: (colours.glass * 255.0) as u8,
         ..colours.plate
     });
@@ -23,7 +23,7 @@ pub(crate) fn glass(area: [u16; 4]) -> Plate {
     Plate::new(area, blank)
 }
 
-pub(crate) fn overlay(plate: &mut Plate, x: u16, y: u16, text: &str, color: Rgba8) {
+pub(crate) fn overlay(plate: &mut Plate, x: u16, y: u16, text: &str, color: Color) {
     let mut col = x;
     for grapheme in text.graphemes(true) {
         if grapheme != " "

@@ -230,10 +230,12 @@ impl App {
 
 pub(crate) fn shell(app: &App) -> NodeBuilder {
     let mut shell = super::input::leader_shortcuts(
-        container()
+        sigil::prelude::column()
             .role(Role::Main)
             .label("Summonr agent harness")
-            .layout(LayoutStyle::flex_column().fill_width().fill_height()),
+            .gap(sigil::prelude::Space::None)
+            .fill_width()
+            .fill_height(),
         app,
     );
     for (shortcut, when, command) in bindings() {
@@ -277,7 +279,7 @@ pub(crate) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         })
-        .on_scroll(move |event| scroll.target().wheel(event));
+        .scroll(move |event| scroll.target().wheel(event));
     let shell = super::input::tab_shortcuts(shell, app);
     super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
 }

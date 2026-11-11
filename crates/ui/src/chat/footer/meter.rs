@@ -1,6 +1,5 @@
 use sigil::prelude::{
-    AlignItems, Dimension, LayoutStyle, MouseButton, NodeBuilder, Paint, Position, Space, Widget,
-    container, spacer,
+    AlignItems, Length, MouseButton, NodeBuilder, Paint, Position, Space, Widget, container, spacer,
 };
 
 use super::super::{App, canvas, cell_width};
@@ -9,12 +8,9 @@ use super::{BAR_CELLS, Target};
 #[expect(clippy::cast_precision_loss, reason = "a percentage fits in f32")]
 pub(super) fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> NodeBuilder {
     let bar = f32::from(BAR_CELLS) * sigil::Host::CELL;
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .align_items(AlignItems::Center)
-                .gap(Space::Sm),
-        )
+    sigil::prelude::row()
+        .align_items(AlignItems::Center)
+        .gap(Space::Sm)
         .child(
             sigil::prelude::text(caption)
                 .nowrap()
@@ -24,14 +20,9 @@ pub(super) fn meter(caption: &str, percent: u64, tone: sigil::prelude::Tone) -> 
                 )
                 .text_color(sigil::prelude::Token::Gray11),
         )
-        .child(
-            container()
-                .layout(LayoutStyle::block().width(bar).shrink(0.0))
-                .child(
-                    sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0)
-                        .tone(tone),
-                ),
-        )
+        .child(container().width(bar).shrink(0.0).child(
+            sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0).tone(tone),
+        ))
         .child(
             sigil::prelude::text(format!("{percent}%"))
                 .nowrap()
@@ -50,24 +41,20 @@ pub(super) fn meter_button(
     card: Option<Vec<(String, String)>>,
     width: usize,
 ) -> NodeBuilder {
-    let mut button = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .align_items(AlignItems::Center)
-                .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .position(Position::Relative),
-        )
+    let mut button = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(AlignItems::Center)
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .position(Position::Relative)
         .child(child);
     if let Some(rows) = card {
         button = button.child(
             container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_bottom(Dimension::Percent(1.0))
-                        .inset_right(0.0),
-                )
+                .position(Position::Absolute)
+                .inset_bottom(Length::Percent(1.0))
+                .inset_right(0.0)
                 .pointer_down(|event| event.stop_propagation())
                 .child(meter_card(rows, width, target.clone())),
         );
@@ -86,9 +73,10 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
         Target::Cache => " cache ",
     };
     let card_width = width.min(30);
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().width(card_width as f32 * canvas::cell().w))
-        .bg(sigil::prelude::Token::Gray1);
+    let mut card = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .width(card_width as f32 * canvas::cell().w)
+        .background(sigil::prelude::Token::Gray1);
     card = card.child(
         sigil::prelude::text(format!(
             "╭{title}{}╮",
@@ -104,13 +92,10 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
     );
     for (key, value) in rows {
         card = card.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .align_items(AlignItems::Center)
-                        .gap(Space::None),
-                )
+            sigil::prelude::row()
+                .fill_width()
+                .align_items(AlignItems::Center)
+                .gap(Space::None)
                 .child(
                     sigil::prelude::text(format!("│ {key}"))
                         .nowrap()

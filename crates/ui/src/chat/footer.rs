@@ -1,9 +1,8 @@
 use sigil::prelude::AlignItems;
-use sigil::prelude::LayoutStyle;
+
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
-use sigil::prelude::container;
 use sigil::prelude::spacer;
 
 use super::{App, cell_width};
@@ -87,13 +86,12 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
             place.with(|place| !place.is_empty()),
         )
     });
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             shape.with(|_| ());
             sigil::reactive::untrack(|| vec![footer_row(app.clone(), view, place, width)])
@@ -133,12 +131,10 @@ fn footer_row(
     width: usize,
 ) -> NodeBuilder {
     let (notice, spend, elsewhere, context_pct, cache_pct, open) = view.peek();
-    let mut row = container().layout(
-        LayoutStyle::flex_row()
-            .fill_width()
-            .align_items(AlignItems::Center)
-            .gap(Space::Md),
-    );
+    let mut row = sigil::prelude::row()
+        .fill_width()
+        .align_items(AlignItems::Center)
+        .gap(Space::Md);
     if place.with(|place| !place.is_empty()) {
         row = row.child(
             sigil::prelude::text(place)
@@ -152,13 +148,10 @@ fn footer_row(
     }
     if let Some(branch) = &app.git_branch() {
         row = row.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .align_items(AlignItems::Center)
-                        .shrink(0.0)
-                        .gap(Space::Sm),
-                )
+            sigil::prelude::row()
+                .align_items(AlignItems::Center)
+                .shrink(0.0)
+                .gap(Space::Sm)
                 .child(
                     sigil::prelude::text("⎇")
                         .nowrap()
@@ -175,7 +168,7 @@ fn footer_row(
                             12.0,
                             "12 px chrome text that keeps its own line height and weight",
                         )
-                        .text_color(sigil::prelude::Token::Warn11),
+                        .text_color(sigil::prelude::Token::Warning11),
                 ),
         );
     }
@@ -218,7 +211,7 @@ fn footer_row(
                 "12 px chrome text that keeps its own line height and weight",
             )
             .text_color(if waiting {
-                sigil::prelude::Token::Warn11
+                sigil::prelude::Token::Warning11
             } else {
                 sigil::prelude::Token::Gray11
             }),

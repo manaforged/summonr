@@ -1,19 +1,20 @@
 use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Paint, Signal, Space, Tone, Widget, container, effect,
-    scroll, sidebar,
+    AlignItems, NodeBuilder, Paint, Signal, Space, Tone, Widget, effect, scroll, sidebar,
 };
 
 use super::App;
 use super::style::{RECESSED, S, SCROLLBAR, XS};
 use summonr_agent::hub::Cmd;
-use summonr_agent::hub::{Live, Open, Status};
+use summonr_agent::hub::{Live, Status};
 use summonr_agent::session::SessionInfo;
 use summonr_agent::worktree::Tree;
 
+mod jump;
 mod repo;
 pub(super) mod row;
 mod space;
 
+pub(super) use jump::jump;
 use repo::{Group, Seen, repository};
 
 pub(super) const WIDTH: f32 = 248.0;
@@ -50,28 +51,32 @@ pub(super) fn view(app: App) -> NodeBuilder {
     let picked = super::panel::picked(&app);
     let on_panel = sigil::reactive::derived(move || picked.with(Option::is_some));
     let middle = app.clone();
-    container()
-        .layout(LayoutStyle::flex_row().fill_height().shrink(0.0))
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_height()
+        .shrink(0.0)
         .child(super::rail::view(&app))
         .child(
             sidebar(
-                container()
-                    .layout(LayoutStyle::flex_column().fill().gap(XS).min_size(0.0, 0.0))
+                sigil::prelude::column()
+                    .fill()
+                    .gap(XS)
+                    .min_width(0.0)
+                    .min_height(0.0)
                     .child(brand(&app))
                     .child(
-                        container()
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .fill_width()
-                                    .grow(1.0)
-                                    .gap(XS)
-                                    .min_size(0.0, 0.0),
-                            )
+                        sigil::prelude::column()
+                            .fill_width()
+                            .grow(1.0)
+                            .gap(XS)
+                            .min_width(0.0)
+                            .min_height(0.0)
                             .children_reactive(move || {
                                 if on_panel.get() {
                                     vec![
                                         scroll(super::panel::side(&middle, picked))
-                                            .bg(RECESSED)
+                                            .background(RECESSED)
                                             .grow(1.0)
                                             .into(),
                                     ]
@@ -82,7 +87,7 @@ pub(super) fn view(app: App) -> NodeBuilder {
                     )
                     .child(row::footer(&app)),
             )
-            .bg(RECESSED)
+            .background(RECESSED)
             .width(WIDTH),
         )
 }
@@ -102,12 +107,10 @@ fn threads(
     let list = app.clone();
     vec![
         sigil::widgets::context_menu(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .padding_right(SCROLLBAR),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .padding_right(SCROLLBAR)
                 .children_reactive({
                     let app = app.clone();
                     move || row::actions(&app, actions)
@@ -118,23 +121,22 @@ fn threads(
             },
         )
         .into(),
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .padding_right(SCROLLBAR),
-            )
+        sigil::prelude::column()
+            .gap(sigil::prelude::Space::None)
+            .fill_width()
+            .padding_right(SCROLLBAR)
             .children_reactive({
                 let app = app.clone();
                 move || row::pinned(&app, live, shown)
             }),
         space::heading(app),
         scroll(
-            container()
-                .layout(LayoutStyle::flex_column().fill_width())
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
                 .children_reactive(move || chats(&list, open, live, shown)),
         )
-        .bg(RECESSED)
+        .background(RECESSED)
         .grow(1.0)
         .into(),
     ]
@@ -150,20 +152,17 @@ fn refresh_on_switch(app: &App, session: Signal<String>, live: Signal<Vec<Live>>
 }
 
 fn brand(app: &App) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(BAR - 16.0)
-                .padding_left(Space::raw(
-                    super::CONTROLS - 8.0,
-                    "lines the brand up after the window controls",
-                ))
-                .padding_right(S)
-                .gap(S)
-                .shrink(0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .height(BAR - 16.0)
+        .padding_left(Space::raw(
+            super::CONTROLS - 8.0,
+            "lines the brand up after the window controls",
+        ))
+        .padding_right(S)
+        .gap(S)
+        .shrink(0.0)
+        .align_items(AlignItems::Center)
         .child(super::sidebar_toggle(app))
         .child(super::drag_area())
 }
@@ -310,7 +309,7 @@ fn state(live: &[Live], session: &str) -> Option<Status> {
 
 const fn tone(status: Status) -> Tone {
     match status {
-        Status::NeedsYou => Tone::Warn,
+        Status::NeedsYou => Tone::Warning,
         Status::Failed => Tone::Error,
         Status::Working => Tone::Info,
         Status::Review | Status::Idle => Tone::Neutral,
@@ -332,76 +331,4 @@ pub(super) fn title(info: &SessionInfo) -> String {
 
 pub(super) fn project_name(app: &App) -> String {
     folder_name(&app.workspace())
-}
-
-/// Opens the agent `to` names, in sidebar order.
-pub(super) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
-    use crate::view::keys::bindings::Jump;
-    let model = app.model.peek();
-    let session = super::split::current(app).model.peek().session.clone();
-    let order = ordered_ids(app);
-    let at = order.iter().position(|id| *id == session);
-    let target = match to {
-        Jump::Nth(n) => order.get(n - 1),
-        Jump::Step(forward) => {
-            let len = order.len().max(1);
-            let next = match (at, forward) {
-                (Some(at), true) => (at + 1) % len,
-                (Some(at), false) => (at + len - 1) % len,
-                (None, _) => 0,
-            };
-            order.get(next)
-        }
-        Jump::Needing => {
-            let needing = |id: &&String| state(&model.live, id) == Some(Status::NeedsYou);
-            let after = at.map_or(0, |at| at + 1);
-            order[after.min(order.len())..]
-                .iter()
-                .find(needing)
-                .or_else(|| order.iter().find(needing))
-        }
-    };
-    if let Some(id) = target.filter(|id| **id != session) {
-        super::split::show(app, Open::Resume(id.clone()));
-    }
-}
-
-fn ordered_ids(app: &App) -> Vec<String> {
-    let trees = app.worktrees();
-    let list = super::spaces::all();
-    let (put, rest) = space::split(&list, row::listed(app));
-    let mut added = super::spaces::repositories();
-    added.extend(list.iter().flat_map(|space| space.folders.iter().cloned()));
-    let groups = projects(&trees, &app.workspace(), (&added, rest));
-    let (placed, loose) = space::by_space(&list, (put, groups));
-    let mut order = super::shelf::pinned();
-    for (_, theirs, mine) in placed {
-        order.extend(topic_ids(theirs));
-        for (folder, agents) in mine {
-            order.extend(repo_ids(&trees, &folder, agents));
-        }
-    }
-    for (folder, agents) in loose {
-        order.extend(repo_ids(&trees, &folder, agents));
-    }
-    order
-}
-
-fn repo_ids(trees: &[Tree], folder: &std::path::Path, agents: Vec<SessionInfo>) -> Vec<String> {
-    let (loose, branches) = repo::split_branches(trees, folder, agents);
-    topic_ids(loose)
-        .into_iter()
-        .chain(
-            branches
-                .into_iter()
-                .flat_map(|(_, inside)| topic_ids(inside)),
-        )
-        .collect()
-}
-
-fn topic_ids(agents: Vec<SessionInfo>) -> Vec<String> {
-    super::topic::group(agents)
-        .into_iter()
-        .flat_map(|topic| topic.threads.into_iter().map(|info| info.id))
-        .collect()
 }

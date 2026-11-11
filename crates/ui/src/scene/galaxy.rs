@@ -7,15 +7,15 @@ use sigil::style::TextStyle;
 
 use super::*;
 
-const BAND: Rgba8 = rgb(58, 56, 96);
+const BAND: Color = rgb(58, 56, 96);
 
-const STARLIGHT: Rgba8 = rgb(112, 120, 168);
+const STARLIGHT: Color = rgb(112, 120, 168);
 
-const ROSE: Rgba8 = rgb(98, 46, 80);
+const ROSE: Color = rgb(98, 46, 80);
 
-const GOLD: Rgba8 = rgb(150, 120, 86);
+const GOLD: Color = rgb(150, 120, 86);
 
-const ZONES: [[Rgba8; 2]; 3] = [
+const ZONES: [[Color; 2]; 3] = [
     [rgb(40, 64, 100), rgb(104, 140, 178)],
     [BAND, STARLIGHT],
     [rgb(80, 50, 98), rgb(156, 116, 172)],
@@ -61,12 +61,12 @@ const NEBULA: f32 = 0.45;
 
 #[derive(Clone, Copy)]
 pub(super) struct Field {
-    pub(super) top: Rgba8,
-    pub(super) bottom: Rgba8,
+    pub(super) top: Color,
+    pub(super) bottom: Color,
     pub(super) glow: f32,
 }
 
-type Cached = ((u16, u16, u64, Rgba8), Rc<[Field]>);
+type Cached = ((u16, u16, u64, Color), Rc<[Field]>);
 
 thread_local! {
     static FIELD: RefCell<Option<Cached>> = const { RefCell::new(None) };
@@ -168,7 +168,7 @@ fn draw(cols: u16, rows: u16, shape: &Shape) -> Vec<Field> {
             }
         }
     }
-    let night: Vec<Rgba8> = samples.iter().map(haze).collect();
+    let night: Vec<Color> = samples.iter().map(haze).collect();
     let colours = stage();
     let tones = if colours.paper {
         super::wash::paint(&samples, cols, colours.void)
@@ -189,7 +189,7 @@ fn draw(cols: u16, rows: u16, shape: &Shape) -> Vec<Field> {
         .collect()
 }
 
-fn luminance(colour: Rgba8) -> f32 {
+fn luminance(colour: Color) -> f32 {
     (0.3 * f32::from(colour.r) + 0.55 * f32::from(colour.g) + 0.15 * f32::from(colour.b)) / 255.0
 }
 
@@ -273,7 +273,7 @@ fn dust(along: f32, across: f32, width: f32, (u, x, y): (f32, f32, f32), bulge: 
     (rift * 0.85).max(filament).min(1.0)
 }
 
-fn haze(sample: &Sample) -> Rgba8 {
+fn haze(sample: &Sample) -> Color {
     let shade = ((0.72 * sample.shade).clamp(0.0, 1.0) * LEVELS).round() / LEVELS;
     let warm = ((sample.glow * 1.6).clamp(0.0, 1.0) * 2.0).round() / 2.0;
     let ramp = ((shade - 0.375) * 1.6).clamp(0.0, 1.0);
@@ -352,7 +352,7 @@ pub(crate) fn paint_sky(scene: &mut SceneBuilder, area: Rect, (cols, rows): (u16
         let top = area.origin.y + f32::from(y) * cell.h;
         let row = &field[usize::from(y) * usize::from(cols)
             ..usize::from(y) * usize::from(cols) + usize::from(cols)];
-        let mut band = |pick: &dyn Fn(&Field) -> Option<Rgba8>, at: f32, height: f32| {
+        let mut band = |pick: &dyn Fn(&Field) -> Option<Color>, at: f32, height: f32| {
             let mut x = 0;
             while x < row.len() {
                 let Some(colour) = pick(&row[x]) else {

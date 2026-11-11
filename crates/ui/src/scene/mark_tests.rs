@@ -86,14 +86,14 @@ fn lit(clock: Option<u64>) -> Vec<(usize, usize)> {
         .collect()
 }
 
-fn distance(a: Rgba8, b: Rgba8) -> u32 {
+fn distance(a: Color, b: Color) -> u32 {
     [(a.r, b.r), (a.g, b.g), (a.b, b.b)]
         .into_iter()
         .map(|(x, y)| u32::from(x.abs_diff(y)))
         .sum()
 }
 
-fn light(clock: Option<u64>) -> Vec<Option<Rgba8>> {
+fn light(clock: Option<u64>) -> Vec<Option<Color>> {
     draw(Mark::Lines, u64::MAX / 2, clock)
         .iter()
         .flatten()

@@ -1,4 +1,4 @@
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Widget, container};
+use sigil::prelude::{AlignItems, NodeBuilder, Widget, container};
 
 use super::super::style::{ACTIVE_DOT, DONE_DOT, FAILED_DOT, L, S, Text, XS, text};
 use crate::app::App;
@@ -23,12 +23,11 @@ pub(crate) fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
             .collect::<Vec<_>>()
     });
     rows.into_iter().fold(
-        container().layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(S)
-                .min_size(0.0, 0.0),
-        ),
+        sigil::prelude::column()
+            .fill_width()
+            .gap(S)
+            .min_width(0.0)
+            .min_height(0.0),
         |column, row| column.child(line(row)),
     )
 }
@@ -104,41 +103,35 @@ fn running(kid: &Agent) -> Row {
 }
 
 fn line(row: Row) -> NodeBuilder {
-    let head = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(S)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    let head = sigil::prelude::row()
+        .fill_width()
+        .gap(S)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(dot(row.state))
         .child(
-            text(Text::Label, row.title).ellipsize().layout(
-                LayoutStyle::block()
-                    .grow(1.0)
-                    .shrink(1.0)
-                    .min_size(0.0, 0.0),
-            ),
+            text(Text::Label, row.title)
+                .ellipsize()
+                .grow(1.0)
+                .shrink(1.0)
+                .min_width(0.0)
+                .min_height(0.0),
         )
         .child(text(Text::Meta, row.word).nowrap());
-    let column = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(XS)
-                .min_size(0.0, 0.0),
-        )
+    let column = sigil::prelude::column()
+        .fill_width()
+        .gap(XS)
+        .min_width(0.0)
+        .min_height(0.0)
         .child(head);
     match row.result {
         Some(result) => column.child(
             container()
-                .layout(
-                    LayoutStyle::block()
-                        .fill_width()
-                        .padding_left(L)
-                        .min_size(0.0, 0.0),
-                )
+                .fill_width()
+                .padding_left(L)
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(text(Text::Meta, result).ellipsize()),
         ),
         None => column,

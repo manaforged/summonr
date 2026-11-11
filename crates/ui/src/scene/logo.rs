@@ -193,7 +193,7 @@ fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64) {
 const SOLID: char = '█';
 const SHADE: f32 = 0.45;
 
-fn solid(plate: &mut Plate, at: [u16; 2], ink: Rgba8) {
+fn solid(plate: &mut Plate, at: [u16; 2], ink: Color) {
     if let Some(cell) = plate.cell(at) {
         cell.set_text(" ");
         cell.bg = super::ink(ink);
@@ -276,7 +276,7 @@ pub(crate) fn layout(cols: u16, rows: u16, body_width: u16, body_rows: u16) -> [
     ]
 }
 
-fn bloom(col: usize, width: usize, elapsed: u64, settled: Rgba8) -> Rgba8 {
+fn bloom(col: usize, width: usize, elapsed: u64, settled: Color) -> Color {
     let appeared = col as u64 * WORD_WIPE_MS / width.saturating_sub(1).max(1) as u64;
     let age = elapsed.saturating_sub(appeared);
     let fade = Easing::SineOut.apply(age.min(FADE_MS) as f32 / FADE_MS as f32);
@@ -306,8 +306,8 @@ struct Run {
     start: usize,
     width: usize,
     text: String,
-    surface: Rgba8,
-    ink: Rgba8,
+    surface: Color,
+    ink: Color,
     bold: bool,
 }
 
@@ -315,16 +315,14 @@ pub(crate) fn placed(
     [x, y, width]: [u16; 3],
     row: sigil::prelude::Signal<Option<Line>>,
 ) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .position(Position::Absolute)
-                .inset_left(f32::from(x) * metrics().w)
-                .inset_top(f32::from(y) * metrics().h)
-                .width(f32::from(width) * metrics().w)
-                .height(metrics().h)
-                .gap(Space::None),
-        )
+    sigil::prelude::row()
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .position(Position::Absolute)
+        .inset_left(f32::from(x) * metrics().w)
+        .inset_top(f32::from(y) * metrics().h)
+        .width(f32::from(width) * metrics().w)
+        .height(metrics().h)
+        .gap(Space::None)
         .children_keyed(move || {
             row.with(|row| row.as_ref().map_or_else(Vec::new, |Line(row)| runs(&row.2)))
                 .into_iter()
@@ -365,13 +363,12 @@ fn runs(cells: &[Cell]) -> Vec<Run> {
 
 fn node(run: &Run) -> NodeBuilder {
     let weight = if run.bold { 700 } else { 400 };
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .width(run.width as f32 * metrics().w)
-                .height(metrics().h),
-        )
-        .bg(run.surface)
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .width(run.width as f32 * metrics().w)
+        .height(metrics().h)
+        .background(run.surface)
         .child(
             sigil::prelude::text(run.text.clone())
                 .nowrap()

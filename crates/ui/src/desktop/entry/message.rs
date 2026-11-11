@@ -1,7 +1,6 @@
 use sigil::prelude::Widget;
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Radius,
-    Space,
+    AlignItems, JustifyContent, MouseButton, NodeBuilder, Paint, PointerEvent, Radius, Space,
     container, markdown, signal,
 };
 
@@ -27,25 +26,23 @@ pub(super) fn copyable(app: &App, node: NodeBuilder, body: String) -> NodeBuilde
 
 pub(super) fn user(app: &App, body: String) -> NodeBuilder {
     let text = body.clone();
-    let bubble = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .min_size(0.0, 0.0)
-                .justify_content(JustifyContent::End),
-        )
+    let bubble = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .justify_content(JustifyContent::End)
         .child(
             container()
-                .layout(
-                    LayoutStyle::block()
-                        .padding_x(L)
-                        .padding_y(S)
-                        .max_width(BUBBLE)
-                        .min_size(0.0, 0.0),
-                )
-                .bg(TINT)
-                .rounded(Radius::Lg)
-                .child(styled(Text::Body, body).line_height_px(LINE)),
+                .padding_x(L)
+                .padding_y(S)
+                .max_width(BUBBLE)
+                .min_width(0.0)
+                .min_height(0.0)
+                .background(TINT)
+                .radius(Radius::Lg)
+                .child(styled(Text::Body, body).line_height(LINE)),
         );
     copyable(app, bubble, text)
 }
@@ -53,16 +50,14 @@ pub(super) fn user(app: &App, body: String) -> NodeBuilder {
 fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
     let copy = app.clone();
     let copied = body.clone();
-    let head = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_left(M)
-                .padding_right(XS)
-                .padding_top(XS)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::SpaceBetween),
-        )
+    let head = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .padding_left(M)
+        .padding_right(XS)
+        .padding_top(XS)
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::SpaceBetween)
         .child(styled(Text::Meta, lang.clone()))
         .child(
             sigil::prelude::icon_button(sigil::icons::Icon::Copy, move || {
@@ -71,12 +66,15 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
             .size(sigil::prelude::ControlSize::Compact)
             .accessible("Copy code"),
         );
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-        .bg(RECESSED)
-        .border_w(1)
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(RECESSED)
+        .border_width(1)
         .border_color(OUTLINE)
-        .rounded(Radius::Md)
+        .radius(Radius::Md)
         .child(head)
         .child(markdown(signal(format!("{FENCE}{lang}\n{body}\n{FENCE}"))))
 }
@@ -86,12 +84,12 @@ pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
         f32::from(app.model.get().prefs.spacing),
         "the user's paragraph spacing",
     );
-    let mut column = container().font_size(BODY, "body text for replies").layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .gap(gap)
-            .min_size(0.0, 0.0),
-    );
+    let mut column = sigil::prelude::column()
+        .font_size(BODY, "body text for replies")
+        .fill_width()
+        .gap(gap)
+        .min_width(0.0)
+        .min_height(0.0);
     if body.trim().is_empty() {
         return column;
     }
@@ -99,9 +97,11 @@ pub(super) fn assistant(body: &str, app: &App) -> NodeBuilder {
     for block in parts(body) {
         column = column.child(match block {
             Part::Prose(text) => container()
-                .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
-                .line_height_px(LINE)
-                .child(markdown(signal(text)).layout(LayoutStyle::default().gap(gap))),
+                .fill_width()
+                .min_width(0.0)
+                .min_height(0.0)
+                .line_height(LINE)
+                .child(markdown(signal(text)).gap(gap)),
             Part::Code { lang, body, closed } => {
                 if !closed && let Some(card) = crate::desktop::entry::diff_card(app, &body) {
                     card
@@ -132,16 +132,14 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
     } else {
         format!("Thought · {words}")
     };
-    let row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .align_items(AlignItems::Center),
-        )
+    let row = sigil::prelude::row()
+        .gap(S)
+        .align_items(AlignItems::Center)
         .child(styled(Text::Meta, if open { "▾" } else { "▸" }))
         .child(styled(Text::Meta, head));
-    let mut column = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(XS))
+    let mut column = sigil::prelude::column()
+        .fill_width()
+        .gap(XS)
         .pointer_up(move |event: &mut PointerEvent| {
             if event.button == Some(MouseButton::Left) {
                 toggle.set_visibility(|prefs| &mut prefs.reasoning, Some(next));
@@ -150,21 +148,19 @@ pub(super) fn thinking(body: &str, visibility: Visibility, live: bool, app: &App
         })
         .child(row);
     if open {
-        column = column.child(styled(Text::Meta, body.to_string()).line_height_px(LINE));
+        column = column.child(styled(Text::Meta, body.to_string()).line_height(LINE));
     }
     column
 }
 
 /// A failure's one line, with a Retry button when `retry` gives the app to retry in.
 pub(super) fn error(reason: String, retry: Option<&App>) -> NodeBuilder {
-    let row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(S)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    let row = sigil::prelude::row()
+        .fill_width()
+        .gap(S)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(styled(Text::Label, reason).text_color(DANGER));
     match retry {
         Some(app) => {

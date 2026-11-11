@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    Elevation, LayoutStyle, NodeBuilder, Paint, Radius, Rgba8, Space, TextBuilder, TextContent,
-    Token, Widget, container,
+    Color, Elevation, NodeBuilder, Paint, Radius, Space, TextBuilder, TextContent, Token, Widget,
+    container,
 };
 
 use summonr_agent::hub::Status;
@@ -85,7 +85,7 @@ pub(super) const DONE_DOT: Token = Token::Success9;
 /// The status dot of failed or stopped work.
 pub(super) const FAILED_DOT: Token = Token::Error9;
 /// The status dot of an agent that needs the user.
-pub(super) const NEEDS_DOT: Token = Token::Warn9;
+pub(super) const NEEDS_DOT: Token = Token::Warning9;
 /// The status dot of a finished agent the user has not seen.
 pub(super) const UNREAD_DOT: Token = Token::Info9;
 /// The bars of a chart.
@@ -98,13 +98,13 @@ pub(super) const WILL: f32 = 48.0;
 /// Will's paints for one tint on one theme.
 #[derive(Clone, Copy)]
 pub(super) struct Ink {
-    pub(super) edge: Rgba8,
-    pub(super) mid: Rgba8,
-    pub(super) core: Rgba8,
-    pub(super) eye: Rgba8,
-    pub(super) glow: Rgba8,
-    pub(super) warn: Rgba8,
-    pub(super) bad: Rgba8,
+    pub(super) edge: Color,
+    pub(super) mid: Color,
+    pub(super) core: Color,
+    pub(super) eye: Color,
+    pub(super) glow: Color,
+    pub(super) warn: Color,
+    pub(super) bad: Color,
 }
 
 /// Will's paints for `tint` on a light or dark theme.
@@ -137,26 +137,23 @@ pub(super) const fn will_ink(tint: Tint, light: bool) -> Ink {
     }
 }
 
-const fn hex(value: u32) -> Rgba8 {
+const fn hex(value: u32) -> Color {
     let [_, r, g, b] = value.to_be_bytes();
     rgb(r, g, b)
 }
 
 /// An agent's status mark in an `ICON` slot, so it lines up with icons: spinner, a dot, or empty.
 pub(super) fn mark(status: Status) -> NodeBuilder {
-    let slot = container().layout(
-        LayoutStyle::flex_row()
-            .width(ICON)
-            .height(ICON)
-            .shrink(0.0)
-            .align_items(sigil::prelude::AlignItems::Center)
-            .justify_content(sigil::prelude::JustifyContent::Center),
-    );
+    let slot = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .width(ICON)
+        .height(ICON)
+        .shrink(0.0)
+        .align_items(sigil::prelude::AlignItems::Center)
+        .justify_content(sigil::prelude::JustifyContent::Center);
     let tone = match status {
         Status::Working => {
-            return slot.child(
-                sigil::widgets::spinner().layout(LayoutStyle::block().width(MARK).height(MARK)),
-            );
+            return slot.child(sigil::widgets::spinner().width(MARK).height(MARK));
         }
         Status::NeedsYou => NEEDS_DOT,
         Status::Review => UNREAD_DOT,
@@ -169,9 +166,11 @@ pub(super) fn mark(status: Status) -> NodeBuilder {
 /// A `DOT` circle in `tone`.
 pub(super) fn dot(tone: Token) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::block().width(DOT).height(DOT).shrink(0.0))
-        .rounded(Radius::Full)
-        .bg(tone)
+        .width(DOT)
+        .height(DOT)
+        .shrink(0.0)
+        .radius(Radius::Full)
+        .background(tone)
 }
 
 /// The text roles of the desktop window; every string uses one.
@@ -216,14 +215,14 @@ pub(crate) fn gui(palette: crate::theme::Palette) -> sigil::prelude::Theme {
     let backdrop = if palette.base.a == 0 {
         sigil::terminal::caps()
             .and_then(|caps| caps.background)
-            .unwrap_or(sigil::prelude::Rgba8 {
+            .unwrap_or(sigil::prelude::Color {
                 a: 255,
                 ..palette.base
             })
     } else {
         palette.base
     };
-    let backdrop = sigil::prelude::Rgba8 { a: 255, ..backdrop };
+    let backdrop = sigil::prelude::Color { a: 255, ..backdrop };
     let lift = |amount: f32| crate::canvas::blend(backdrop, palette.text, amount);
     theme.gray.steps = [
         backdrop,

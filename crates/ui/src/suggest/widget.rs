@@ -1,12 +1,11 @@
 use super::{App, LIMIT, MAX_WIDTH, canvas, mention, usage};
 use crate::ui::{Hints, Key, group, pick};
-use sigil::prelude::LayoutStyle;
+
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::Widget;
-use sigil::prelude::container;
 
 #[derive(Clone, PartialEq)]
 struct SuggestRow {
@@ -104,20 +103,19 @@ pub(crate) fn height(app: &App, width: usize) -> u16 {
 pub(crate) fn widget(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let popup = sigil::reactive::derived(move || popup(&update, width));
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .shrink(0.0)
         .children_reactive(move || {
             let Some(popup) = popup.get() else {
                 return Vec::new();
             };
             let popup_width = MAX_WIDTH.min(width.saturating_sub(4).max(1));
             let hotkeys = app.model.peek().prefs.hotkeys.clone();
-            let mut body = container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .width(popup_width as f32 * canvas::cell().w)
-                        .gap(Space::None),
-                )
+            let mut body = sigil::prelude::column()
+                .width(popup_width as f32 * canvas::cell().w)
+                .gap(Space::None)
                 .child(group(popup.title));
             for row in popup.rows {
                 let click = app.clone();
@@ -134,15 +132,12 @@ pub(crate) fn widget(app: App, width: usize) -> NodeBuilder {
                 );
             }
             vec![
-                container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .padding_x(Space::Sm)
-                            .gap(Space::None),
-                    )
-                    .border_w(canvas::frame_border())
+                sigil::prelude::column()
+                    .padding_x(Space::Sm)
+                    .gap(Space::None)
+                    .border_width(canvas::frame_border())
                     .border_color(sigil::prelude::Token::Gray6)
-                    .bg(canvas::palette().tool_bg)
+                    .background(canvas::palette().tool_bg)
                     .child(body.child(popup.keys.right(popup.count).bar(&hotkeys))),
             ]
         })

@@ -1,5 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Signal, Token, container};
+use sigil::prelude::{AlignItems, NodeBuilder, Signal, Token};
 
 use super::super::{Agent, App, Call};
 use super::preview;
@@ -42,14 +42,12 @@ fn subagent_line(kid: &Agent, roots: &[String], ticks: Signal<u64>) -> NodeBuild
     } else {
         label("◆", TextStyle::xs(tone))
     };
-    let mut line = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(Space::Sm)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    let mut line = sigil::prelude::row()
+        .fill_width()
+        .gap(Space::Sm)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(mark)
         .child(label("Subagent", TextStyle::xs(Token::Accent11).bold()));
     if !kid.agent.is_empty() {
@@ -58,32 +56,30 @@ fn subagent_line(kid: &Agent, roots: &[String], ticks: Signal<u64>) -> NodeBuild
     line = line.child(
         label(status, TextStyle::xs(Token::Gray10))
             .ellipsize()
-            .layout(LayoutStyle::block().shrink(4.0).min_size(0.0, 0.0)),
+            .shrink(4.0)
+            .min_width(0.0)
+            .min_height(0.0),
     );
     match doing {
         Some(doing) => line.child(
             label(doing, TextStyle::xs(Token::Gray10))
                 .ellipsize()
-                .layout(
-                    LayoutStyle::block()
-                        .shrink(1.0)
-                        .min_size(0.0, 0.0)
-                        .max_width(super::super::ACTIVITY_SHARE),
-                ),
+                .shrink(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
+                .max_width(super::super::ACTIVITY_SHARE),
         ),
         None => line,
     }
 }
 
 pub(super) fn starting_card(ticks: Signal<u64>) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(Space::Sm)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(Space::Sm)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(super::tools::loading_mark(ticks))
         .child(label("Subagent", TextStyle::xs(Token::Accent11).bold()))
         .child(label("starting…", TextStyle::xs(Token::Gray10)))
@@ -124,13 +120,17 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         let tag = summonr_agent::child::tag(&record.id.to_string());
         kept_of(record).map(|kept| (tag, kept))
     });
-    let mut card = container().layout(LayoutStyle::flex_column().fill_width().gap(Space::None));
+    let mut card = sigil::prelude::column().fill_width().gap(Space::None);
     for kid in kids {
         card = card.child(subagent_line(kid, &kid.roots(&app.roots()), app.ticks));
         if let Some((_, kept)) = kept.as_ref().filter(|(tag, _)| *tag == kid.id) {
             card = card.child(branch(
                 true,
-                label(kept_line(kept, &app.roots()), TextStyle::xs(Token::Warn11)).ellipsize(),
+                label(
+                    kept_line(kept, &app.roots()),
+                    TextStyle::xs(Token::Warning11),
+                )
+                .ellipsize(),
             ));
         }
     }
@@ -162,8 +162,9 @@ pub(super) fn receipt_card(
     let mut roots = vec![record.workspace.to_string_lossy().into_owned()];
     roots.extend(app.roots().iter().cloned());
     let note = format!("{} · {word}", record.access.name());
-    let card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    let card = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .child(header(
             &state,
             call_line(

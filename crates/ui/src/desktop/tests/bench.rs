@@ -13,7 +13,12 @@ use summonr_agent::tools::Event;
 
 const DELTAS: usize = 400;
 const WARM: usize = 50;
-const GRID: [Split; 4] = [Split::Open, Split::Below, Split::Focus(Dir::Left), Split::Below];
+const GRID: [Split; 4] = [
+    Split::Open,
+    Split::Below,
+    Split::Focus(Dir::Left),
+    Split::Below,
+];
 
 fn stream(app: &App, n: usize) {
     app.update(Msg::Fact(Fact::Event(Event::Delta {
@@ -168,11 +173,16 @@ fn release(host: &mut Host) {
     let held = Held::default();
     let copied = std::rc::Rc::clone(&held.0);
     sigil::clipboard::install(held);
-    host.route(sigil::events::Event::pointer_up(over_text(MOVES_WARM + MOVES - 1)));
+    host.route(sigil::events::Event::pointer_up(over_text(
+        MOVES_WARM + MOVES - 1,
+    )));
     host.frame(VIEW, 1.0, FrameHooks::default());
     host.route(super::harness::command("c"));
     host.frame(VIEW, 1.0, FrameHooks::default());
-    assert!(copied.borrow().lines().count() > 1, "the drag selected no lines");
+    assert!(
+        copied.borrow().lines().count() > 1,
+        "the drag selected no lines"
+    );
 }
 
 fn navigate(step: Step) -> f64 {
@@ -223,14 +233,18 @@ fn navigate(step: Step) -> f64 {
         let (scene_us, a11y_us) = (std::cell::Cell::new(0.0), std::cell::Cell::new(0.0));
         let mut act = |n: usize| {
             match step {
-                Step::Scroll => host.route(wheel(n)),
+                Step::Scroll => {
+                    host.route(wheel(n));
+                }
                 Step::Settings => app.settings_open.set(n % 2 == 0),
-                Step::Hover(_) => host.route(sigil::events::Event::pointer_move(over_text(n))),
+                Step::Hover(_) => {
+                    host.route(sigil::events::Event::pointer_move(over_text(n)));
+                }
                 Step::Drag(_) | Step::DragBig if n == 0 => {
-                    host.route(sigil::events::Event::pointer_down(over_text(n)))
+                    host.route(sigil::events::Event::pointer_down(over_text(n)));
                 }
                 Step::Drag(_) | Step::DragBig => {
-                    host.route(sigil::events::Event::pointer_move(over_text(n)))
+                    host.route(sigil::events::Event::pointer_move(over_text(n)));
                 }
                 Step::Switch(messages) => {
                     let want = landed.get() + 1;
@@ -352,7 +366,7 @@ fn bench_paint_frames() {
         let target = ImageTarget {
             size: sigil::geometry::PhysicalSize::new(3456, 2234),
             viewport,
-            clear: sigil::style::Color::WHITE,
+            clear: sigil::style::Rgba::WHITE,
         };
         let mut time = |scene: &sigil::scene::CommandScene| {
             for _ in 0..5 {

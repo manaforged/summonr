@@ -1,7 +1,7 @@
 use super::*;
 use crate::view::surface::editor;
 use sigil::prelude::Widget;
-use sigil::prelude::{Dimension, Radius, Space};
+use sigil::prelude::{Length, Radius, Space};
 
 const PLACEHOLDER: &str = "Message";
 const FIRST: &str = "What should this agent do?";
@@ -11,15 +11,13 @@ const ATTACH: &str = "Attach a file";
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     let typing = app.clone();
     let (menu, shown) = (sigil::prelude::signal(false), app.clone());
-    let mut composer = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .padding_top(S)
-                .shrink(0.0)
-                .position(sigil::prelude::Position::Relative)
-                .align_items(AlignItems::Stretch),
-        )
+    let mut composer = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .padding_top(S)
+        .shrink(0.0)
+        .position(sigil::prelude::Position::Relative)
+        .align_items(AlignItems::Stretch)
         .pointer_down(move |_| {
             if typing.pane_focus.peek() {
                 typing.focus_pane(false);
@@ -32,34 +30,32 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
         ))
         .child(crate::effort::strip(app.clone()))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .position(sigil::prelude::Position::Absolute)
-                        .inset_bottom(Dimension::Percent(1.0))
-                        .inset_right(0.0)
-                        .padding_bottom(XS)
-                        .align_items(AlignItems::End),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .position(sigil::prelude::Position::Absolute)
+                .inset_bottom(Length::Percent(1.0))
+                .inset_right(0.0)
+                .padding_bottom(XS)
+                .align_items(AlignItems::End)
                 .children_reactive(move || super::model_menu::panel(&shown, menu)),
         )
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().fill_width().padding(S))
-                .rounded(Radius::Lg)
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .padding(S)
+                .radius(Radius::Lg)
                 .shadow(super::super::style::FLOATING)
-                .bg(super::super::style::RAISED)
-                .border_w(1)
+                .background(super::super::style::RAISED)
+                .border_width(1)
                 .border_color(super::super::style::OUTLINE)
                 .child({
                     let queued = app.clone();
-                    container()
-                        .layout(LayoutStyle::block().fill_width())
-                        .children_reactive(move || {
-                            super::queue::panel(&queued)
-                                .into_iter()
-                                .collect::<Vec<NodeBuilder>>()
-                        })
+                    container().fill_width().children_reactive(move || {
+                        super::queue::panel(&queued)
+                            .into_iter()
+                            .collect::<Vec<NodeBuilder>>()
+                    })
                 })
                 .child(mentions::chips(app.clone(), editing))
                 .child(row(&app, editing, menu)),
@@ -79,8 +75,9 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
 }
 
 fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(S))
+    sigil::prelude::column()
+        .fill_width()
+        .gap(S)
         .child(
             editor(app, editing)
                 .placeholder({
@@ -104,31 +101,28 @@ fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuil
                         - super::super::style::CARET,
                     2.0,
                 )
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .min_width(0.0)
-                        .height(Dimension::Auto)
-                        .min_size(0.0, LINE)
-                        .max_size(Dimension::Auto, 192.0)
-                        .shrink(0.0),
-                )
-                .line_height_px(LINE)
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .min_width(0.0)
+                .height(Length::Auto)
+                .min_width(0.0)
+                .min_height(LINE)
+                .max_width(Length::Auto)
+                .max_height(192.0)
+                .shrink(0.0)
+                .line_height(LINE)
                 .font_size(BODY, "body text, so the draft reads like the transcript")
                 .text_color(Token::OnSurface),
         )
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .gap(XS)
-                        .padding_right(Space::raw(
-                            (super::super::style::CONTROL - super::super::style::MARK) / 2.0,
-                            "centers the send mark in its control",
-                        ))
-                        .align_items(AlignItems::Center),
-                )
+            sigil::prelude::row()
+                .fill_width()
+                .gap(XS)
+                .padding_right(Space::raw(
+                    (super::super::style::CONTROL - super::super::style::MARK) / 2.0,
+                    "centers the send mark in its control",
+                ))
+                .align_items(AlignItems::Center)
                 .child(attach(app.clone()))
                 .child(super::place::chip(app))
                 .child(approval(app.clone()))
@@ -141,12 +135,10 @@ fn row(app: &App, editing: bool, menu: sigil::prelude::Signal<bool>) -> NodeBuil
 /// The chip that shows and toggles whether risky steps wait for the user's OK.
 fn approval(app: App) -> NodeBuilder {
     let shown = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .shrink(0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .shrink(0.0)
+        .align_items(AlignItems::Center)
         .children_reactive(move || {
             let snapshot = shown.model.get().snapshot.clone();
             let (label, locked) = if snapshot.strict {
@@ -197,7 +189,7 @@ fn send(app: App, editing: bool) -> NodeBuilder {
                     .primary()
                     .solid()
                     .accessible("Stop")
-                    .rounded(Radius::Full)
+                    .radius(Radius::Full)
                     .into(),
             ];
         }
@@ -208,7 +200,7 @@ fn send(app: App, editing: bool) -> NodeBuilder {
                 .solid()
                 .accessible("Send")
                 .disabled(move || editing || (draft.get().trim().is_empty() && attached.get() == 0))
-                .rounded(Radius::Full)
+                .radius(Radius::Full)
                 .into(),
         ]
     })

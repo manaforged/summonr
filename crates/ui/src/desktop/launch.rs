@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use sigil::prelude::{LayoutStyle, NodeBuilder, Signal, Widget, container, effect, signal};
+use sigil::prelude::{NodeBuilder, Signal, Widget, effect, signal};
 use sigil::reactive::untrack;
 use sigil::reactive::{Owner, defer};
 use sigil::tasks::on_message;
@@ -76,8 +76,9 @@ fn application(
         })
         .clone();
     let (prepare, running) = (prepare.clone(), running.clone());
-    container()
-        .layout(LayoutStyle::flex_column().fill())
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill()
         .children_reactive(move || {
             let _ready = session.ready.get();
             if let Some(prepared) = session.prepared.borrow_mut().take() {

@@ -1,6 +1,6 @@
 use super::*;
 use sigil::prelude::Widget;
-use sigil::prelude::{Dimension, MouseButton, Position, Radius};
+use sigil::prelude::{Length, MouseButton, Position, Radius};
 
 use super::super::style::CONTROL;
 
@@ -32,14 +32,13 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
             ],
         )
     };
-    let mut facts = container().layout(
-        LayoutStyle::flex_row()
-            .gap(L)
-            .padding_top(S)
-            .padding_left(L)
-            .min_size(0.0, 0.0)
-            .align_items(AlignItems::Center),
-    );
+    let mut facts = sigil::prelude::row()
+        .gap(L)
+        .padding_top(S)
+        .padding_left(L)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center);
     if let Some(spend) = spend {
         facts = facts.child(quiet(summonr_agent::provider::dollars(spend)));
     }
@@ -63,16 +62,13 @@ pub(crate) fn meters(app: App) -> NodeBuilder {
         })
         .nowrap(),
     );
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(CONTROL)
-                .gap(L)
-                .padding_top(S)
-                .padding_right(L)
-                .align_items(AlignItems::Center),
-        )
+    let mut row = sigil::prelude::row()
+        .fill_width()
+        .height(CONTROL)
+        .gap(L)
+        .padding_top(S)
+        .padding_right(L)
+        .align_items(AlignItems::Center)
         .child(facts)
         .child(spacer());
     if let Some(note) = app.notice.get() {
@@ -98,35 +94,27 @@ fn gauge(
 ) -> NodeBuilder {
     let high = target == Target::Context && percent >= HIGH;
     let (name, tone) = match target {
-        Target::Context if high => (CONTEXT_USED, sigil::prelude::Tone::Warn),
+        Target::Context if high => (CONTEXT_USED, sigil::prelude::Tone::Warning),
         Target::Context => (CONTEXT_USED, sigil::prelude::Tone::Primary),
         Target::Cache => (CACHE_HIT, sigil::prelude::Tone::Info),
     };
     let number = quiet(format!("{percent}%"));
     let number = if high {
-        number.text_color(Token::Warn11)
+        number.text_color(Token::Warning11)
     } else {
         number
     };
     let toggle = app.clone();
-    let mut node = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .align_items(AlignItems::Center)
-                .position(Position::Relative)
-                .shrink(0.0),
-        )
+    let mut node = sigil::prelude::row()
+        .gap(S)
+        .align_items(AlignItems::Center)
+        .position(Position::Relative)
+        .shrink(0.0)
         .hittable(true)
         .label(format!("{name} {percent}%"))
-        .child(
-            container()
-                .layout(LayoutStyle::block().width(BAR).shrink(0.0))
-                .child(
-                    sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0)
-                        .tone(tone),
-                ),
-        )
+        .child(container().width(BAR).shrink(0.0).child(
+            sigil::prelude::progress(sigil::prelude::signal(percent as f32), 100.0).tone(tone),
+        ))
         .child(number)
         .pointer_down(move |event| {
             if event.button == Some(MouseButton::Left) {
@@ -141,38 +129,25 @@ fn gauge(
 }
 
 fn facts_card(rows: Vec<(String, String)>, right: bool) -> NodeBuilder {
-    let mut card = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .position(Position::Absolute)
-                .inset_bottom(Dimension::Percent(1.0))
-                .inset_left(if right {
-                    Dimension::Auto
-                } else {
-                    Dimension::Px(0.0)
-                })
-                .inset_right(if right {
-                    Dimension::Px(0.0)
-                } else {
-                    Dimension::Auto
-                })
-                .width(CARD)
-                .padding(M)
-                .gap(XS),
-        )
-        .rounded(Radius::Lg)
-        .bg(super::super::style::RAISED)
-        .border_w(1)
+    let mut card = sigil::prelude::column()
+        .position(Position::Absolute)
+        .inset_bottom(Length::Percent(1.0))
+        .inset_left(if right { Length::Auto } else { Length::Px(0.0) })
+        .inset_right(if right { Length::Px(0.0) } else { Length::Auto })
+        .width(CARD)
+        .padding(M)
+        .gap(XS)
+        .radius(Radius::Lg)
+        .background(super::super::style::RAISED)
+        .border_width(1)
         .border_color(super::super::style::OUTLINE)
         .pointer_down(|event| event.stop_propagation());
     for (key, value) in rows {
         card = card.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .align_items(AlignItems::Center),
-                )
+            sigil::prelude::row()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .align_items(AlignItems::Center)
                 .child(quiet(key))
                 .child(spacer())
                 .child(super::super::style::text(Text::Meta, value)),

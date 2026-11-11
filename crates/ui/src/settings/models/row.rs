@@ -187,7 +187,9 @@ pub(crate) fn tone(state: State) -> Token {
     match state {
         State::Ready | State::NoKey => Token::Success11,
         State::Checking | State::Loading => Token::Gray10,
-        State::RateLimited | State::SignIn | State::NeedsKey | State::NeedsModel => Token::Warn11,
+        State::RateLimited | State::SignIn | State::NeedsKey | State::NeedsModel => {
+            Token::Warning11
+        }
         State::KeyRejected | State::Offline | State::Error => Token::Error11,
     }
 }

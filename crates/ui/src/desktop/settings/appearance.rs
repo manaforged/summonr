@@ -1,6 +1,4 @@
-use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Widget, card, container,
-};
+use sigil::prelude::{AlignItems, NodeBuilder, Paint, Radius, Widget, card, container};
 
 use super::super::App;
 use super::super::style::{M, S, Text, XS, text};
@@ -15,21 +13,17 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
 fn themes(app: &App) -> NodeBuilder {
     let current = app.model.get().prefs.theme.clone();
     let grid = THEMES.iter().fold(
-        container().layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(M)
-                .flex_wrap(sigil::prelude::FlexWrap::Wrap),
-        ),
+        sigil::prelude::row()
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .fill_width()
+            .gap(M)
+            .flex_wrap(sigil::prelude::FlexWrap::Wrap),
         |grid, name| grid.child(swatch(app, name, *name == current)),
     );
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .align_items(AlignItems::Stretch)
-                .gap(S),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .align_items(AlignItems::Stretch)
+        .gap(S)
         .child(text(Text::Heading, "Theme"))
         .child(grid)
 }
@@ -37,37 +31,34 @@ fn themes(app: &App) -> NodeBuilder {
 fn swatch(app: &App, name: &'static str, selected: bool) -> NodeBuilder {
     let palette = Palette::named(name);
     let pick = app.clone();
-    let preview = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .height(56.0)
-                .padding(M)
-                .gap(XS),
-        )
-        .rounded(Radius::Md)
-        .bg(palette.base)
+    let preview = sigil::prelude::column()
+        .fill_width()
+        .height(56.0)
+        .padding(M)
+        .gap(XS)
+        .radius(Radius::Md)
+        .background(palette.base)
         .child(bar(palette.text, 64.0))
         .child(bar(palette.gray, 40.0))
         .child(
-            container()
-                .layout(LayoutStyle::flex_row().gap(XS))
+            sigil::prelude::row()
+                .align_items(sigil::prelude::AlignItems::Stretch)
+                .gap(XS)
                 .child(bar(palette.green, 16.0))
                 .child(bar(palette.cyan, 16.0))
                 .child(bar(palette.yellow, 16.0)),
         );
     let label = label_for(name);
-    let body = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(S)
-                .align_items(AlignItems::Stretch),
-        )
+    let body = sigil::prelude::column()
+        .fill_width()
+        .gap(S)
+        .align_items(AlignItems::Stretch)
         .child(preview)
         .child(text(Text::Label, label));
-    container()
-        .layout(LayoutStyle::flex_column().width(SWATCH).shrink(0.0))
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .width(SWATCH)
+        .shrink(0.0)
         .child(NodeBuilder::from(
             card(body)
                 .selected(selected)
@@ -75,11 +66,12 @@ fn swatch(app: &App, name: &'static str, selected: bool) -> NodeBuilder {
         ))
 }
 
-fn bar(color: sigil::style::Rgba8, width: f32) -> NodeBuilder {
+fn bar(color: sigil::style::Color, width: f32) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::block().width(width).height(6.0))
-        .rounded(Radius::Full)
-        .bg(color)
+        .width(width)
+        .height(6.0)
+        .radius(Radius::Full)
+        .background(color)
 }
 
 const SWATCH: f32 = 156.0;

@@ -90,7 +90,10 @@ pub(crate) fn slot(entries: &[Entry], index: usize) -> Slot {
         .take_while(|entry| joins(entry, kind))
         .count();
     let block = index - before..index + after;
-    if !entries[block.clone()].iter().any(|entry| run(entry) == Some(kind)) {
+    if !entries[block.clone()]
+        .iter()
+        .any(|entry| run(entry) == Some(kind))
+    {
         return Slot::Single;
     }
     if before > 0 {

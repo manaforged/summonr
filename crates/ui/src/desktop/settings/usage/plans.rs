@@ -1,10 +1,10 @@
-use sigil::prelude::{AlignItems, LayoutStyle, NodeBuilder, Paint, Widget, container, interval};
+use sigil::prelude::{AlignItems, NodeBuilder, Paint, Widget, interval};
 use sigil::reactive::on_cleanup;
 use summonr_agent::hub::Cmd;
 use summonr_agent::quota::{Reading, Window};
 
 use super::super::super::App;
-use super::super::super::style::{DANGER, XL, Text, text};
+use super::super::super::style::{DANGER, Text, XL, text};
 use super::super::parts::{row, section};
 
 /// Each plan's usage windows: saved ones on open while fresh, then a new read each cadence tick.
@@ -12,20 +12,17 @@ pub(super) fn view(app: &App) -> NodeBuilder {
     drop(app.cmd.send(Cmd::ReadPlans { due: false }));
     if let Some(every) = summonr_agent::quota::cadence() {
         let again = app.clone();
-        let timer = interval(every, move || drop(again.cmd.send(Cmd::ReadPlans { due: true })));
+        let timer = interval(every, move || {
+            drop(again.cmd.send(Cmd::ReadPlans { due: true }))
+        });
         on_cleanup(move || timer.cancel());
     }
     let plans = app.usage.plans;
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(XL)
-                .align_items(AlignItems::Stretch),
-        )
-        .children_reactive(move || {
-            plans.get().iter().map(plan).collect::<Vec<_>>()
-        })
+    sigil::prelude::column()
+        .fill_width()
+        .gap(XL)
+        .align_items(AlignItems::Stretch)
+        .children_reactive(move || plans.get().iter().map(plan).collect::<Vec<_>>())
 }
 
 fn plan(reading: &Reading) -> NodeBuilder {

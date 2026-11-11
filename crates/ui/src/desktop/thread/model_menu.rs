@@ -51,7 +51,7 @@ pub(super) fn panel(app: &App, open: Signal<bool>) -> Option<NodeBuilder> {
         let item =
             MenuItem::new(level.label()).activate(move || set.effort_command(level.as_str()));
         menu = menu.item(if snapshot.effort == Some(level) {
-            item.shortcut(CURRENT)
+            item.hint(CURRENT)
         } else {
             item
         });
@@ -74,11 +74,11 @@ fn item(app: &App, endpoint: &str, row: ModelId) -> MenuItem {
     let name = title(endpoint, &row.model);
     let Some(friend) = Friend::of(endpoint) else {
         return MenuItem::new(name)
-            .shortcut(account(endpoint))
+            .hint(account(endpoint))
             .activate(move || pick.send_model(None, row.clone()));
     };
     MenuItem::new(name)
-        .shortcut(friend.provider)
+        .hint(friend.provider)
         .activate(move || super::super::friends::launch(&pick, friend, row.model.clone()))
 }
 

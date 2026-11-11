@@ -1,6 +1,6 @@
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
-use sigil::prelude::{LayoutStyle, NodeBuilder, container};
+use sigil::prelude::{NodeBuilder, container};
 
 use super::app::App;
 use super::canvas;
@@ -17,12 +17,9 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .right("goes to the command, not the model");
     Dialog::new(Size::Normal, "Credential required", hints)
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                )
+            sigil::prelude::column()
+                .fill_width()
+                .gap(canvas::overlay_gap())
                 .children_reactive(move || {
                     let (prompt, typed) = secret.get().unwrap_or_default();
                     let prompt = if prompt.is_empty() {
@@ -32,17 +29,15 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     };
                     vec![
                         group(ellipsize(&prompt, canvas::DIALOG_CELLS as usize - 8)),
-                        container()
-                            .layout(LayoutStyle::block().padding_x(Space::Sm))
-                            .child(
-                                sigil::prelude::text(format!("{}▌", "•".repeat(typed.min(48))))
-                                    .nowrap()
-                                    .text_color(sigil::prelude::Token::OnSurface)
-                                    .font_size(
-                                        14.0,
-                                        "14 px text that keeps its own line height and weight",
-                                    ),
-                            ),
+                        container().padding_x(Space::Sm).child(
+                            sigil::prelude::text(format!("{}▌", "•".repeat(typed.min(48))))
+                                .nowrap()
+                                .text_color(sigil::prelude::Token::OnSurface)
+                                .font_size(
+                                    14.0,
+                                    "14 px text that keeps its own line height and weight",
+                                ),
+                        ),
                     ]
                 }),
         )

@@ -1,7 +1,6 @@
 use sigil::prelude::AlignItems;
 use sigil::prelude::Disclosure;
 use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutStyle;
 use sigil::prelude::ListRowSlots;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
@@ -49,7 +48,9 @@ pub(super) fn empty(text: &Empty) -> NodeBuilder {
     let line = if canvas::is_window() {
         sigil::prelude::text(text.window)
             .wrap()
-            .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+            .fill_width()
+            .min_width(0.0)
+            .min_height(14.0)
     } else {
         sigil::prelude::text(text.terminal).nowrap()
     };
@@ -73,18 +74,19 @@ pub(super) fn dim(text: String) -> NodeBuilder {
 }
 
 pub(crate) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
-    let style = LayoutStyle::flex_column()
+    let column = sigil::prelude::column()
         .width(width)
         .padding(Space::Lg)
         .gap(Space::Sm)
         .shrink(0.0)
-        .min_size(0.0, 0.0);
-    let style = if canvas::is_window() {
-        style
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(sigil::prelude::Token::Gray3);
+    let column = if canvas::is_window() {
+        column
     } else {
-        style.fill_height().overflow_y(Overflow::Scroll)
+        column.fill_height().overflow_y(Overflow::Scroll)
     };
-    let column = container().layout(style).bg(sigil::prelude::Token::Gray3);
     match pane {
         Pane::Diff => diff::diff(app, column, cols_in(width)),
         Pane::View => view::view(app, column),
@@ -194,23 +196,18 @@ pub(super) fn count(items: usize) -> String {
 }
 
 pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
-    let row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .align_items(AlignItems::Center)
-                .gap(Space::Sm),
-        )
+    let row = sigil::prelude::row()
+        .fill_width()
+        .align_items(AlignItems::Center)
+        .gap(Space::Sm)
         .child(
             sigil::prelude::text(title)
                 .nowrap()
                 .ellipsize()
-                .layout(
-                    LayoutStyle::block()
-                        .grow(1.0)
-                        .shrink(1.0)
-                        .min_size(0.0, 16.0),
-                )
+                .grow(1.0)
+                .shrink(1.0)
+                .min_width(0.0)
+                .min_height(16.0)
                 .font_size(14.0, "14 px text that keeps its own line height and weight")
                 .font_weight(500)
                 .text_color(if app.pane_focus.get() && !canvas::is_window() {
@@ -222,7 +219,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
         .child(
             sigil::prelude::text(note)
                 .nowrap()
-                .layout(LayoutStyle::block().shrink(0.0))
+                .shrink(0.0)
                 .font_size(
                     12.0,
                     "12 px chrome text that keeps its own line height and weight",
@@ -232,34 +229,25 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
     if canvas::is_window() {
         return row;
     }
-    row.child(
-        container()
-            .layout(LayoutStyle::block().shrink(0.0))
-            .child(close(app.clone())),
-    )
+    row.child(container().shrink(0.0).child(close(app.clone())))
 }
 
 pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
-    let mut detail = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(Space::raw(1.0, "a one pixel row separation")),
-        )
-        .rounded(sigil::prelude::Radius::Md)
-        .bg(sigil::prelude::Token::Gray1);
+    let mut detail = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::raw(1.0, "a one pixel row separation"))
+        .radius(sigil::prelude::Radius::Md)
+        .background(sigil::prelude::Token::Gray1);
     for line in lines {
         detail = detail.child(
             sigil::prelude::text(line)
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .ellipsize()
-                .layout(
-                    LayoutStyle::block()
-                        .fill_width()
-                        .min_size(0.0, 14.0)
-                        .padding_x(Space::Sm),
-                )
+                .fill_width()
+                .min_width(0.0)
+                .min_height(14.0)
+                .padding_x(Space::Sm)
                 .font_size(
                     12.0,
                     "12 px chrome text that keeps its own line height and weight",

@@ -1,9 +1,6 @@
 use sigil::prelude::Space;
 use sigil::prelude::TextBuilder;
-use sigil::prelude::{
-    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token,
-    container,
-};
+use sigil::prelude::{AlignItems, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token};
 
 use super::super::{App, Call, Entry};
 use super::tree::{branch, label, tree};
@@ -87,20 +84,20 @@ pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> 
             TextStyle::xs(Token::Gray11).mono(),
         )
     };
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .grow(1.0)
-                .gap(Space::Sm)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    let mut row = sigil::prelude::row()
+        .grow(1.0)
+        .gap(Space::Sm)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(label(verb, head));
     if !arg.is_empty() {
         row = row.child(
             label(arg, body)
                 .ellipsize()
-                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+                .shrink(1.0)
+                .min_width(0.0)
+                .min_height(0.0),
         );
     }
     match detail {
@@ -111,14 +108,12 @@ pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> 
 
 pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
     let (mark, tone) = glyph(state);
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(Space::Sm)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(Space::Sm)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(label(mark, tone))
         .child(words)
 }
@@ -167,8 +162,8 @@ pub(crate) fn call_output(
     };
     let rows = if full { usize::MAX } else { COMPACT_ROWS };
     let view = patch_view(app, patch, layout, super::Fit::chat(app))
-        .bg(Token::Field)
-        .border_w(0)
+        .background(Token::Field)
+        .border_width(0)
         .max_rows(rows);
     let view = if Builtin::of(name).is_some_and(Builtin::edits) {
         view
@@ -213,8 +208,9 @@ pub(super) fn tool_card(
         .collect::<Vec<_>>()
         .join("\n");
     let detail = detail(name, call, &output);
-    let card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    let card = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .pointer_up(flip(app, index, at))
         .child(header(&call.state, call_line(verb, arg, detail, true)));
     match (!hidden)
@@ -271,8 +267,9 @@ fn group_row(
     let line =
         branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, at));
     let expanded = call.expanded || tools == ToolOutput::Full;
-    let column = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    let column = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .child(line);
     match expanded
         .then(|| call_output(name, call, &output, true, layout, app))
@@ -292,8 +289,9 @@ pub(super) fn group_card(
     index: usize,
 ) -> NodeBuilder {
     let (title, counts) = group_title(name, calls);
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    let mut card = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .child(header(
             &group_state(calls),
             call_line(

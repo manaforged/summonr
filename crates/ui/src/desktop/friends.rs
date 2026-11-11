@@ -1,5 +1,5 @@
 use sigil::geometry::{Point, Rect};
-use sigil::prelude::{LayoutStyle, NodeBuilder, Role, Widget};
+use sigil::prelude::{NodeBuilder, Role, Widget};
 use sigil::scene::{DrawRect, SceneBuilder};
 use summonr_agent::endpoint::{Friend, friends};
 use summonr_agent::recent::ModelId;
@@ -97,10 +97,7 @@ pub(super) fn glyph(friend: Friend) -> NodeBuilder {
     let icon = mark(Status::Idle)
         .role(Role::Image)
         .label(friend.name)
-        .child(
-            sigil::widgets::canvas(move |scene, area| draw(friend, scene, area))
-                .layout(LayoutStyle::block().fill()),
-        );
+        .child(sigil::widgets::canvas(move |scene, area| draw(friend, scene, area)).fill());
     sigil::widgets::tooltip(friend.name).child(icon).into()
 }
 

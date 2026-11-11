@@ -1,9 +1,7 @@
 use std::rc::Rc;
 
 use sigil::icons::Icon;
-use sigil::prelude::{
-    LayoutStyle, ListRowSlots, NodeBuilder, Signal, Tone, Widget, container, list_row,
-};
+use sigil::prelude::{ListRowSlots, NodeBuilder, Signal, Tone, Widget, list_row};
 use sigil::widgets::{MenuItem, icon};
 
 use super::super::App;
@@ -81,7 +79,8 @@ pub(super) fn pinned(
     }
     let (live, shown) = (live.get(), shown.get());
     let heading = text(Text::Heading, PINNED)
-        .layout(LayoutStyle::block().padding_top(M).padding_left(S))
+        .padding_top(M)
+        .padding_left(S)
         .into();
     std::iter::once(heading)
         .chain(rows.into_iter().map(|mut info| {
@@ -114,7 +113,7 @@ pub(super) fn agent_row(
             leading: Some(Box::new(leading(friend, status))),
             status: meta.map(Into::into),
             status_tone: word.map(|(_, tone)| tone),
-            badge: needs.then(|| (NEEDS_YOU.into(), Tone::Warn)),
+            badge: needs.then(|| (NEEDS_YOU.into(), Tone::Warning)),
             activate: Some(Rc::new(move || {
                 super::super::split::show(&open, Open::Resume(id.clone()))
             })),
@@ -156,12 +155,10 @@ pub(in crate::desktop) fn ago(when: std::time::SystemTime) -> String {
 
 pub(super) fn footer(app: &App) -> NodeBuilder {
     let settings = app.settings_open;
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .padding_right(SCROLLBAR),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .padding_right(SCROLLBAR)
         .child(list_row(
             false,
             "Settings",

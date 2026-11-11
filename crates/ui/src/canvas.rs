@@ -2,15 +2,14 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sigil::events::ScrollDelta;
-use sigil::prelude::LayoutStyle;
+use sigil::prelude::Color;
+
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::Rgba8;
 use sigil::prelude::Space;
 use sigil::prelude::Tone;
 use sigil::prelude::Widget;
-use sigil::prelude::container;
 
-pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
+pub(super) fn blend(from: Color, to: Color, amount: f32) -> Color {
     let channel = |a: u8, b: u8| {
         (i16::from(a) + ((i16::from(b) - i16::from(a)) as f32 * amount).round() as i16)
             .clamp(0, 255) as u8
@@ -31,14 +30,13 @@ pub(super) fn edge(rows: u16) -> f32 {
 }
 
 pub(super) fn gutter(child: NodeBuilder) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .padding_x(Space::Lg),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding_x(Space::Lg)
         .child(child)
 }
 
@@ -163,14 +161,14 @@ pub(super) fn overlay_shown(count: usize, viewport: (u16, u16)) -> usize {
     count.clamp(1, room)
 }
 
-pub(super) const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
-    Rgba8 { r, g, b, a: 255 }
+pub(super) const fn rgb(r: u8, g: u8, b: u8) -> Color {
+    Color { r, g, b, a: 255 }
 }
 
 pub(super) use super::theme::palette;
 pub(super) use sigil::terminal::{Cell, Ink};
 
-pub(super) const fn ink(colour: Rgba8) -> Ink {
+pub(super) const fn ink(colour: Color) -> Ink {
     if colour.a == 0 {
         Ink::Bare
     } else {
@@ -178,7 +176,7 @@ pub(super) const fn ink(colour: Rgba8) -> Ink {
     }
 }
 
-pub(super) fn shown(colour: Ink, fallback: Rgba8) -> Rgba8 {
+pub(super) fn shown(colour: Ink, fallback: Color) -> Color {
     if let Ink::Exact(colour) = colour {
         return colour;
     }
@@ -190,7 +188,7 @@ pub(super) fn shown(colour: Ink, fallback: Rgba8) -> Rgba8 {
         (Tone::Primary, palette.accent),
         (Tone::Info, palette.cyan),
         (Tone::Success, palette.green),
-        (Tone::Warn, palette.yellow),
+        (Tone::Warning, palette.yellow),
         (Tone::Error, palette.red),
     ]
     .into_iter()

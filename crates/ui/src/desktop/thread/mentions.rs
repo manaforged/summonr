@@ -35,13 +35,10 @@ fn without(draft: &str, span: std::ops::Range<usize>) -> String {
 
 pub(super) fn chips(app: App, editing: bool) -> NodeBuilder {
     let draft = app.draft;
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(XS)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(XS)
+        .align_items(AlignItems::Center)
         .children_reactive(move || {
             if editing {
                 return Vec::new();

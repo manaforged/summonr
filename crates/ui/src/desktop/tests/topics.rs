@@ -10,7 +10,12 @@ const LEAD: &str = "01a1000000000000000000000000aaaa";
 const WORKER: &str = "01a1000000000000000000000000bbbb";
 const OTHER: &str = "01a1000000000000000000000000cccc";
 
-fn thread(id: &str, preview: &str, agent: Option<&str>, topic: Option<&str>) -> (SessionInfo, bool) {
+fn thread(
+    id: &str,
+    preview: &str,
+    agent: Option<&str>,
+    topic: Option<&str>,
+) -> (SessionInfo, bool) {
     let info = SessionInfo {
         id: id.to_owned(),
         path: std::path::PathBuf::new(),
@@ -53,10 +58,30 @@ fn threads_in_one_topic_share_a_sidebar_row_and_show_as_tabs() {
     assert!(rows.contains(&"Add CSV export"), "{rows:?}");
     assert!(rows.contains(&"Fix the parser bug"), "{rows:?}");
     assert!(!rows.contains(&"Export button"), "{rows:?}");
-    assert_eq!(seen.named(Role::Image, "Claude Code").len(), 1, "{:?}", seen.controls);
-    assert_eq!(seen.named(Role::Image, "Summonr").len(), 2, "{:?}", seen.controls);
-    assert_eq!(seen.named(Role::Tab, "Add CSV export").len(), 1, "{:?}", seen.controls);
-    assert_eq!(seen.named(Role::Tab, "Export button").len(), 1, "{:?}", seen.controls);
+    assert_eq!(
+        seen.named(Role::Image, "Claude Code").len(),
+        1,
+        "{:?}",
+        seen.controls
+    );
+    assert_eq!(
+        seen.named(Role::Image, "Summonr").len(),
+        2,
+        "{:?}",
+        seen.controls
+    );
+    assert_eq!(
+        seen.named(Role::Tab, "Add CSV export").len(),
+        1,
+        "{:?}",
+        seen.controls
+    );
+    assert_eq!(
+        seen.named(Role::Tab, "Export button").len(),
+        1,
+        "{:?}",
+        seen.controls
+    );
     assert!(seen.named(Role::Tab, "Fix the parser bug").is_empty());
 }
 
@@ -78,7 +103,10 @@ fn a_tab_opens_its_thread_and_new_thread_joins_the_topic() {
             _ => None,
         })
         .collect();
-    assert!(opened.contains(&&Open::Resume(WORKER.to_owned())), "{opened:?}");
+    assert!(
+        opened.contains(&&Open::Resume(WORKER.to_owned())),
+        "{opened:?}"
+    );
     assert!(
         opened.contains(&&Open::Thread {
             topic: LEAD.to_owned(),

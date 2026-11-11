@@ -3,8 +3,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 
 use sigil::prelude::{
-    AlignItems, LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Space, Token,
-    container,
+    AlignItems, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Space, Token, container,
 };
 
 use super::super::App;
@@ -126,20 +125,18 @@ fn summary(
         parts.push(format!("{lead} {}", summonr_core::text::duration(secs)));
     }
     parts.push(plain(sum));
-    let mut head = container()
+    let mut head = sigil::prelude::row()
         .role(sigil::prelude::Role::Button)
         .label(parts.join(" · "))
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(if window { Space::Xs } else { Space::Sm })
-                .padding_y(Space::raw(
-                    6.0,
-                    "a folded summary row sits tighter than a step",
-                ))
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+        .fill_width()
+        .gap(if window { Space::Xs } else { Space::Sm })
+        .padding_y(Space::raw(
+            6.0,
+            "a folded summary row sits tighter than a step",
+        ))
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .pointer_up(move |event: &mut PointerEvent| {
             if event.button == Some(MouseButton::Left) {
                 open.set(Some(!unfolded));
@@ -156,12 +153,10 @@ fn summary(
     head = head.child(
         label(parts.join(" · "), TextStyle::sm(Token::Gray11))
             .ellipsize()
-            .layout(
-                LayoutStyle::block()
-                    .grow(grow)
-                    .shrink(1.0)
-                    .min_size(0.0, 0.0),
-            ),
+            .grow(grow)
+            .shrink(1.0)
+            .min_width(0.0)
+            .min_height(0.0),
     );
     if window {
         let mark = if unfolded {
@@ -228,18 +223,16 @@ fn step_row(step: &Step<'_>, app: &App, layout: summonr_agent::prefs::DiffLayout
         ToolState::Failed => glyph(&step.call.state).1,
         ToolState::Running | ToolState::Ok => TextStyle::sm(Token::Gray10),
     };
-    let mut line = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(Space::raw(
-                    10.0,
-                    "the step icon sits closer than a scale step",
-                ))
-                .padding_y(Space::raw(5.0, "step rows pack tighter than a scale step"))
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    let mut line = sigil::prelude::row()
+        .fill_width()
+        .gap(Space::raw(
+            10.0,
+            "the step icon sits closer than a scale step",
+        ))
+        .padding_y(Space::raw(5.0, "step rows pack tighter than a scale step"))
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .pointer_up(flip(app, step.index, step.at));
     let window = crate::canvas::is_window();
     if !window {
@@ -249,13 +242,13 @@ fn step_row(step: &Step<'_>, app: &App, layout: summonr_agent::prefs::DiffLayout
     for item in step.chips(&app.roots()) {
         line = line.child(chip(item));
     }
-    line = line.child(container().layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)));
+    line = line.child(container().grow(1.0).min_width(0.0).min_height(0.0));
     let meta = step_meta(step);
     if window && matches!(step.call.state, ToolState::Running) {
         let watch = app.clone();
         line = line.child(container().children_reactive(move || {
             let (text, style) = if watch.approval.get().is_some() {
-                (WAITING.to_string(), TextStyle::xs(Token::Warn11))
+                (WAITING.to_string(), TextStyle::xs(Token::Warning11))
             } else {
                 meta.clone()
                     .unwrap_or_else(|| (String::new(), TextStyle::xs(Token::Gray10)))
@@ -265,8 +258,9 @@ fn step_row(step: &Step<'_>, app: &App, layout: summonr_agent::prefs::DiffLayout
     } else if let Some((text, text_style)) = meta {
         line = line.child(label(text, text_style));
     }
-    let column = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    let column = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .child(line);
     if !step.call.expanded {
         return column;
@@ -298,21 +292,23 @@ pub(crate) fn card(
         let sum = totals(&steps, &app.roots());
         let every = model.prefs.tools == summonr_agent::prefs::ToolOutput::Full;
         let unfolded = unfolded.unwrap_or(sum.running || worked.is_some() || every);
-        let mut card = container()
-            .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+        let mut card = sigil::prelude::column()
+            .gap(sigil::prelude::Space::None)
+            .fill_width()
+            .min_width(0.0)
+            .min_height(0.0)
             .child(summary(&sum, worked, unfolded, open));
         if unfolded {
-            let mut list = container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .padding_left(Space::raw(
-                            14.0,
-                            "indents the steps under the summary glyph",
-                        ))
-                        .padding_y(Space::raw(6.0, "matches the folded summary row"))
-                        .min_size(0.0, 0.0),
-                )
+            let mut list = sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .padding_left(Space::raw(
+                    14.0,
+                    "indents the steps under the summary glyph",
+                ))
+                .padding_y(Space::raw(6.0, "matches the folded summary row"))
+                .min_width(0.0)
+                .min_height(0.0)
                 .border_left(1)
                 .border_color(Token::BorderSubtle);
             let last = model.entries.len().saturating_sub(1);
@@ -321,7 +317,12 @@ pub(crate) fn card(
                     && model.prefs.reasoning != Visibility::Off
                 {
                     let now = live && index == last;
-                    list = list.child(super::message::thinking(text, model.prefs.reasoning, now, app));
+                    list = list.child(super::message::thinking(
+                        text,
+                        model.prefs.reasoning,
+                        now,
+                        app,
+                    ));
                 }
                 for step in steps.iter().filter(|step| step.index == index) {
                     list = list.child(step_row(step, app, model.prefs.diff_layout));

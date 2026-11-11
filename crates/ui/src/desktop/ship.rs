@@ -1,7 +1,6 @@
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, container,
-    derived, effect,
+    AlignItems, ControlSize, NodeBuilder, Signal, Tone, Widget, button, derived, effect,
 };
 use sigil::reactive::untrack;
 use summonr_agent::forge::{Ask, Bucket, Check, Error, Pull, Review, State};
@@ -19,7 +18,7 @@ const UNTITLED: &str = "Changes";
 /// What the checks chip says, in the order it wins.
 const VERDICTS: [(Verdict, &str, Tone); 4] = [
     (Verdict::Failed, "Checks failed", Tone::Error),
-    (Verdict::Changes, "Changes requested", Tone::Warn),
+    (Verdict::Changes, "Changes requested", Tone::Warning),
     (Verdict::Running, "Checks running", Tone::Neutral),
     (Verdict::Passed, "Checks passed", Tone::Success),
 ];
@@ -40,13 +39,10 @@ pub(super) fn view(app: &App) -> NodeBuilder {
     let asking = app.forge.asking;
     let held = derived(move || asking.get() || model.with(|model| model.busy_since.is_some()));
     let shown = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(XS)
-                .shrink(0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(XS)
+        .shrink(0.0)
+        .align_items(AlignItems::Center)
         .children_reactive(move || items(&shown, changed.get(), held))
 }
 
@@ -127,7 +123,11 @@ fn checks_chip(app: &App, pull: &Pull, verdict: Verdict) -> NodeBuilder {
 }
 
 fn verdict(pull: &Pull) -> Option<Verdict> {
-    let has = |wanted: &[Bucket]| pull.checks.iter().any(|check| wanted.contains(&check.bucket));
+    let has = |wanted: &[Bucket]| {
+        pull.checks
+            .iter()
+            .any(|check| wanted.contains(&check.bucket))
+    };
     if has(&[Bucket::Fail, Bucket::Cancel]) {
         Some(Verdict::Failed)
     } else if pull.review == Review::ChangesRequested {
@@ -167,7 +167,8 @@ fn prompt(pull: &Pull) -> Option<String> {
 
 fn watch(app: &App) {
     let model = app.model;
-    let moment = derived(move || model.with(|model| (model.session.clone(), model.busy_since.is_none())));
+    let moment =
+        derived(move || model.with(|model| (model.session.clone(), model.busy_since.is_none())));
     let ask = app.clone();
     effect(move || {
         let (session, idle) = moment.get();

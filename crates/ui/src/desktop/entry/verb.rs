@@ -1,5 +1,5 @@
 use sigil::prelude::Widget;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Radius, Space, Token, container};
+use sigil::prelude::{NodeBuilder, Paint, Radius, Space, Token};
 
 use crate::ToolState;
 use crate::chat::entry::tools::workspace_relative;
@@ -109,18 +109,18 @@ impl Step<'_> {
 }
 
 pub(super) fn chip(body: String) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .padding_x(Space::Sm)
-                .padding_y(Space::raw(1.0, "a chip keeps the line height of its text"))
-                .shrink(1.0)
-                .min_size(0.0, 0.0),
-        )
-        .bg(Token::SurfaceInset)
-        .border_w(1)
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .padding_x(Space::Sm)
+        .padding_y(Space::raw(1.0, "a chip keeps the line height of its text"))
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(Token::SurfaceInset)
+        .border_width(1)
         .border_color(Token::BorderSubtle)
-        .rounded(Radius::Sm)
+        .radius(Radius::Sm)
         .child(label(body, TextStyle::xs(Token::Gray11).mono()).ellipsize())
 }
 

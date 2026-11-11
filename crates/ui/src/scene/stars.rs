@@ -20,7 +20,7 @@ const SPREAD: f32 = 0.2;
 
 const GLYPH: [Option<&str>; 4] = [None, None, Some("·"), Some("•")];
 
-pub(super) const TINTS: [Rgba8; 10] = [
+pub(super) const TINTS: [Color; 10] = [
     rgb(170, 200, 255),
     rgb(200, 216, 255),
     rgb(228, 232, 248),
@@ -43,14 +43,14 @@ pub(super) struct Shine {
     pub(super) x: u16,
     pub(super) y: u16,
     pub(super) text: &'static str,
-    pub(super) fg: Rgba8,
-    pub(super) bg: Rgba8,
+    pub(super) fg: Color,
+    pub(super) bg: Color,
 }
 
 struct Lit {
     bits: u8,
     size: usize,
-    tint: Rgba8,
+    tint: Color,
     light: f32,
     twinkle: Option<[f32; 2]>,
 }
@@ -109,10 +109,10 @@ struct Star {
     x: u16,
     y: u16,
     lit: Lit,
-    bg: Rgba8,
+    bg: Color,
 }
 
-type Cached = ((u16, u16, u64, Rgba8), Rc<[Star]>);
+type Cached = ((u16, u16, u64, Color), Rc<[Star]>);
 
 thread_local! {
     static SKY: RefCell<Option<Cached>> = const { RefCell::new(None) };

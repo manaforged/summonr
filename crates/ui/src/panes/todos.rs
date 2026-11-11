@@ -1,5 +1,5 @@
+use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
-use sigil::prelude::{LayoutStyle, NodeBuilder};
 
 use super::App;
 use super::body::{Empty, empty, header};
@@ -29,7 +29,9 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
         column = column.child(
             sigil::prelude::text(row.shown())
                 .wrap()
-                .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+                .fill_width()
+                .min_width(0.0)
+                .min_height(14.0)
                 .font_size(
                     12.0,
                     "12 px chrome text that keeps its own line height and weight",

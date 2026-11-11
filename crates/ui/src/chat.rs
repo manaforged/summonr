@@ -18,4 +18,4 @@ pub(crate) use footer::Target;
 pub(super) use sigil::app::cell_width;
 pub(super) use surface::{inline_layer, layer};
 
-const ACTIVITY_SHARE: sigil::prelude::Dimension = sigil::prelude::Dimension::Percent(0.4);
+const ACTIVITY_SHARE: sigil::prelude::Length = sigil::prelude::Length::Percent(0.4);

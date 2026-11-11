@@ -1,6 +1,6 @@
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text,
+    AlignItems, NodeBuilder, Paint, Radius, Signal, Token, container, markdown, text,
 };
 use sigil::reactive::derived;
 use sigil::widgets::DiffBuilder;
@@ -70,13 +70,11 @@ pub(super) fn body(source: Signal<String>, app: &App) -> NodeBuilder {
     let stream = std::cell::RefCell::new(Stream::default());
     let list = derived(move || source.with(|text| stream.borrow_mut().parts(text)));
     let app = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(Space::Sm)
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .gap(Space::Sm)
+        .min_width(0.0)
+        .min_height(0.0)
         .children_keyed(move || {
             list.with(|parts| {
                 parts
@@ -116,7 +114,7 @@ pub(crate) fn paint(shown: Shown, app: &App, layout: DiffLayout) -> NodeBuilder 
 }
 
 fn patch_node(app: &App, layout: DiffLayout, path: Option<String>, patch: String) -> DiffBuilder {
-    let view = patch_view(app, patch, layout, super::Fit::chat(app)).bg(Token::Field);
+    let view = patch_view(app, patch, layout, super::Fit::chat(app)).background(Token::Field);
     match path {
         Some(path) => view.path(path),
         None => view,
@@ -124,17 +122,15 @@ fn patch_node(app: &App, layout: DiffLayout, path: Option<String>, patch: String
 }
 
 fn stat_node(rows: &[Stat], summary: Option<&str>) -> NodeBuilder {
-    let mut column = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(Space::None)
-                .min_size(0.0, 0.0),
-        )
-        .bg(Token::Field)
-        .border_w(1)
+    let mut column = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(Token::Field)
+        .border_width(1)
         .border_color(Token::Border)
-        .rounded(Radius::Md);
+        .radius(Radius::Md);
     for row in rows {
         column = column.child(stat_head(row));
     }
@@ -143,28 +139,24 @@ fn stat_node(rows: &[Stat], summary: Option<&str>) -> NodeBuilder {
             TextStyle::xs(Token::Gray11)
                 .on(text(summary.to_string()))
                 .nowrap()
-                .layout(
-                    LayoutStyle::block()
-                        .fill_width()
-                        .padding_x(Space::Sm)
-                        .padding_bottom(Space::raw(6.0, "between the small and medium steps"))
-                        .min_size(0.0, 0.0),
-                ),
+                .fill_width()
+                .padding_x(Space::Sm)
+                .padding_bottom(Space::raw(6.0, "between the small and medium steps"))
+                .min_width(0.0)
+                .min_height(0.0),
         );
     }
     column
 }
 
 fn stat_head(row: &Stat) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_x(Space::Sm)
-                .min_size(0.0, 22.0)
-                .align_items(AlignItems::Center)
-                .gap(Space::Sm),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .padding_x(Space::Sm)
+        .min_width(0.0)
+        .min_height(22.0)
+        .align_items(AlignItems::Center)
+        .gap(Space::Sm)
         .child(
             TextStyle::xs(Token::Gray12)
                 .mono()
@@ -172,7 +164,9 @@ fn stat_head(row: &Stat) -> NodeBuilder {
                 .on(text(row.path.clone()))
                 .nowrap()
                 .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0),
         )
         .child(
             TextStyle::xs(Token::Success11)

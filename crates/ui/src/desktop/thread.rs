@@ -1,8 +1,8 @@
 use sigil::prelude::Paint;
 use sigil::prelude::Widget;
 use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder,
-    Shortcut, Space, Token, Tone, button, container, icon_button, node, notice_band, spacer,
+    AlignItems, ControlSize, JustifyContent, LogicalKey, ModifiersState, NodeBuilder, Shortcut,
+    Space, Token, Tone, button, container, icon_button, node, notice_band, spacer,
 };
 
 use super::{App, chat};
@@ -40,25 +40,26 @@ fn column(child: NodeBuilder) -> NodeBuilder {
 }
 
 fn reading(child: NodeBuilder, grow: bool) -> NodeBuilder {
-    let outer = LayoutStyle::flex_row()
+    let outer = sigil::prelude::row()
+        .gap(Space::None)
+        .align_items(AlignItems::Stretch)
         .fill_width()
         .padding_x(XL)
         .justify_content(JustifyContent::Center);
-    let inner = LayoutStyle::flex_column()
+    let inner = sigil::prelude::column()
+        .gap(Space::None)
         .fill_width()
         .max_width(COLUMN)
         .align_items(AlignItems::Stretch);
     let (outer, inner) = if grow {
         (
-            outer.grow(1.0).fill_height().min_size(0.0, 0.0),
-            inner.fill_height().min_size(0.0, 0.0),
+            outer.grow(1.0).fill_height().min_width(0.0).min_height(0.0),
+            inner.fill_height().min_width(0.0).min_height(0.0),
         )
     } else {
         (outer.shrink(0.0), inner)
     };
-    container()
-        .layout(outer)
-        .child(container().layout(inner).child(child))
+    outer.child(inner.child(child))
 }
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
@@ -71,28 +72,26 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
             watch.overlay().is_none() && watch.model.get().entries.only_notes().is_some()
         })
     };
-    let col = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .grow(1.0)
-                .fill_width()
-                .fill_height()
-                .min_size(0.0, 0.0)
-                .padding_bottom(M)
-                .position(sigil::prelude::Position::Relative)
-                .align_items(AlignItems::Stretch),
-        )
-        .bg(super::style::CANVAS)
+    let col = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .grow(1.0)
+        .fill_width()
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding_bottom(M)
+        .position(sigil::prelude::Position::Relative)
+        .align_items(AlignItems::Stretch)
+        .background(super::style::CANVAS)
         .child(super::sky::behind(&app, empty))
         .child(header(&app))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .grow(1.0)
-                        .min_size(0.0, 0.0),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
                 .children_reactive(move || {
                     if empty.get() {
                         let app = transcript_app.clone();
@@ -100,15 +99,14 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     }
                     let app = transcript_app.clone();
                     vec![sigil::reactive::untrack(|| {
-                        container()
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .fill_width()
-                                    .fill_height()
-                                    .grow(1.0)
-                                    .min_size(0.0, 0.0)
-                                    .padding_top(L),
-                            )
+                        sigil::prelude::column()
+                            .gap(sigil::prelude::Space::None)
+                            .fill_width()
+                            .fill_height()
+                            .grow(1.0)
+                            .min_width(0.0)
+                            .min_height(0.0)
+                            .padding_top(L)
                             .child(node(move || {
                                 chat::surface::transcript(app.clone(), (GUTTER, GUTTER), empty_home)
                             }))
@@ -116,8 +114,10 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 }),
         )
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .shrink(0.0)
                 .children_reactive({
                     let strip = app.clone();
                     move || {
@@ -130,24 +130,21 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     }
                 }),
         )
+        .child(container().fill_width().shrink(0.0).children_reactive({
+            let notice = input.clone();
+            let active = sigil::reactive::derived(move || chat::panels::band(&notice));
+            let notice = input.clone();
+            move || {
+                active
+                    .get()
+                    .map(|band| vec![column(notice_bar(notice.clone(), band))])
+                    .unwrap_or_default()
+            }
+        }))
         .child(
             container()
-                .layout(LayoutStyle::block().fill_width().shrink(0.0))
-                .children_reactive({
-                    let notice = input.clone();
-                    let active = sigil::reactive::derived(move || chat::panels::band(&notice));
-                    let notice = input.clone();
-                    move || {
-                        active
-                            .get()
-                            .map(|band| vec![column(notice_bar(notice.clone(), band))])
-                            .unwrap_or_default()
-                    }
-                }),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().fill_width().shrink(0.0))
+                .fill_width()
+                .shrink(0.0)
                 .children_reactive(move || {
                     if empty.get() {
                         return Vec::new();
@@ -158,56 +155,49 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                     ))]
                 }),
         )
-        .child(
-            container()
-                .layout(LayoutStyle::block().fill_width().shrink(0.0))
-                .children_reactive({
-                    let bar = app.clone();
-                    move || {
-                        drop(bar.status.get());
-                        vec![column(status::meters(bar.clone()))]
-                    }
-                }),
-        )
+        .child(container().fill_width().shrink(0.0).children_reactive({
+            let bar = app.clone();
+            move || {
+                drop(bar.status.get());
+                vec![column(status::meters(bar.clone()))]
+            }
+        }))
         .child(super::will::layer(&app, &pointer));
     super::will::track(col, &pointer)
 }
 
 fn empty_home() -> NodeBuilder {
-    container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .fill_height()
-            .grow(1.0)
-            .min_size(0.0, 0.0),
-    )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .fill_height()
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
 }
 
 fn hero(app: &App) -> NodeBuilder {
     let draft = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(1.0)
-                .min_size(0.0, 0.0)
-                .padding_x(XL)
-                .padding_bottom(Space::Xxxl)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding_x(XL)
+        .padding_bottom(Space::Xxxl)
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .max_width(COLUMN)
-                        .gap(L)
-                        .align_items(AlignItems::Stretch),
-                )
+            sigil::prelude::column()
+                .fill_width()
+                .max_width(COLUMN)
+                .gap(L)
+                .align_items(AlignItems::Stretch)
                 .child(
-                    container()
-                        .layout(LayoutStyle::flex_column().fill_width())
+                    sigil::prelude::column()
+                        .gap(sigil::prelude::Space::None)
+                        .fill_width()
                         .children_reactive(move || {
                             vec![composer::composer(draft.clone(), draft.view_edit.get())]
                         }),
@@ -220,12 +210,10 @@ fn hero(app: &App) -> NodeBuilder {
 }
 
 fn starters(app: &App) -> NodeBuilder {
-    let row = container().layout(
-        LayoutStyle::flex_row()
-            .gap(S)
-            .align_items(AlignItems::Center)
-            .flex_wrap(sigil::prelude::FlexWrap::Wrap),
-    );
+    let row = sigil::prelude::row()
+        .gap(S)
+        .align_items(AlignItems::Center)
+        .flex_wrap(sigil::prelude::FlexWrap::Wrap);
     if app.model.get().snapshot.unconfigured {
         return setup(app, row);
     }
@@ -275,18 +263,17 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
 /// The note that another window holds the chat, with Take over and Not now.
 fn held(app: App) -> NodeBuilder {
     let (take, dismiss) = (app.clone(), app);
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(S)
-                .padding_left(L)
-                .padding_bottom(S)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(S)
+        .padding_left(L)
+        .padding_bottom(S)
+        .align_items(AlignItems::Center)
         .child(
             container()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(super::style::text(Text::Meta, chat::panels::HELD)),
         )
         .child(

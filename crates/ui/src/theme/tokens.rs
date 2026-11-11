@@ -1,4 +1,4 @@
-use sigil::prelude::{Rgba8, Theme};
+use sigil::prelude::{Color, Theme};
 use sigil::style::ThemeValue;
 
 use super::Palette;
@@ -20,7 +20,7 @@ pub(crate) fn style(palette: Palette) -> Theme {
         palette.dim,
         palette.text,
     ];
-    let on_solid = Rgba8 {
+    let on_solid = Color {
         a: 255,
         ..palette.base
     };
@@ -45,7 +45,7 @@ pub(crate) fn style(palette: Palette) -> Theme {
         ("on-surface-muted", palette.dim),
         (
             "overlay",
-            Rgba8 {
+            Color {
                 a: 255,
                 ..palette.base
             },
@@ -57,7 +57,7 @@ pub(crate) fn style(palette: Palette) -> Theme {
         ("table-header", palette.tool_bg),
         (
             "scrim",
-            Rgba8 {
+            Color {
                 a: 160,
                 ..palette.black
             },
@@ -77,7 +77,7 @@ pub(crate) fn style(palette: Palette) -> Theme {
     theme
 }
 
-pub(crate) fn steps(base: Rgba8, color: Rgba8, text: Rgba8) -> [Rgba8; 12] {
+pub(crate) fn steps(base: Color, color: Color, text: Color) -> [Color; 12] {
     [
         base,
         blend(base, color, 0.04),

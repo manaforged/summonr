@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, Dimension, LayoutStyle, ListRowSlots, NodeBuilder, Position, Signal, Widget, container,
-    list_row, signal,
+    AlignItems, Length, ListRowSlots, NodeBuilder, Position, Signal, Widget, container, list_row,
+    signal,
 };
 use sigil::widgets::{MenuItem, icon};
 use summonr_agent::prefs::Space;
@@ -23,20 +23,19 @@ pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
     let picked = signal(None);
     super::super::welcome::follow(app, picked);
     let open = signal(false);
-    let button = sigil::prelude::icon_button(Icon::Plus, move || open.update(|shown| *shown = !*shown))
-        .accessible(ADD_PROJECT);
+    let button =
+        sigil::prelude::icon_button(Icon::Plus, move || open.update(|shown| *shown = !*shown))
+            .accessible(ADD_PROJECT);
     let anchored = container()
-        .layout(LayoutStyle::block().position(Position::Relative).shrink(0.0))
+        .position(Position::Relative)
+        .shrink(0.0)
         .child(super::super::tip(ADD_PROJECT, None, button.into()))
         .child(
             container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_top(Dimension::Percent(1.0))
-                        .inset_right(0.0)
-                        .width(super::super::style::MENU),
-                )
+                .position(Position::Absolute)
+                .inset_top(Length::Percent(1.0))
+                .inset_right(0.0)
+                .width(super::super::style::MENU)
                 .children_reactive(move || {
                     if !open.get() {
                         return Vec::new();
@@ -44,8 +43,9 @@ pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
                     let menu = sigil::widgets::menu(open)
                         .label(ADD_PROJECT)
                         .item(
-                            MenuItem::new(super::super::thread::ADD_REPOSITORY)
-                                .activate(move || picked.set(Some(super::super::welcome::folder()))),
+                            MenuItem::new(super::super::thread::ADD_REPOSITORY).activate(
+                                move || picked.set(Some(super::super::welcome::folder())),
+                            ),
                         )
                         .item(MenuItem::new(NEW_PROJECT).activate(|| {
                             sigil::reactive::defer(|| {
@@ -60,23 +60,29 @@ pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
 }
 
 fn title_row(title: &str, button: NodeBuilder) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_top(M)
-                .padding_left(S)
-                .padding_right(SCROLLBAR)
-                .align_items(AlignItems::Center),
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .padding_top(M)
+        .padding_left(S)
+        .padding_right(SCROLLBAR)
+        .align_items(AlignItems::Center)
+        .child(
+            text(Text::Heading, title)
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0),
         )
-        .child(text(Text::Heading, title).layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)))
         .child(button)
 }
 
 pub(in crate::desktop) type SpaceGroup = (Space, Vec<SessionInfo>, Vec<Group>);
 
 /// Splits `chats` into the agents put in a workspace by hand and the rest; tracked.
-pub(in crate::desktop) fn split(list: &[Space], chats: Vec<SessionInfo>) -> (Vec<SessionInfo>, Vec<SessionInfo>) {
+pub(in crate::desktop) fn split(
+    list: &[Space],
+    chats: Vec<SessionInfo>,
+) -> (Vec<SessionInfo>, Vec<SessionInfo>) {
     chats
         .into_iter()
         .partition(|info| spaces::put_in(list, info).is_some())
@@ -131,7 +137,12 @@ pub(in crate::desktop) fn sections(
     (nodes, loose)
 }
 
-fn section(app: &App, space: &Space, (open, count): (bool, usize), shut: Signal<Vec<String>>) -> NodeBuilder {
+fn section(
+    app: &App,
+    space: &Space,
+    (open, count): (bool, usize),
+    shut: Signal<Vec<String>>,
+) -> NodeBuilder {
     let status = match count {
         0 => "empty".to_owned(),
         1 => "1 agent".to_owned(),
@@ -145,29 +156,43 @@ fn section(app: &App, space: &Space, (open, count): (bool, usize), shut: Signal<
             leading: Some(Box::new(icon(Icon::Layers).px(ICON))),
             status: Some(status.into()),
             activate: Some(Rc::new(move || {
-                shut.update(|closed| match closed.iter().position(|seen| *seen == flip) {
-                    Some(found) => drop(closed.remove(found)),
-                    None => closed.push(flip.clone()),
-                });
+                shut.update(
+                    |closed| match closed.iter().position(|seen| *seen == flip) {
+                        Some(found) => drop(closed.remove(found)),
+                        None => closed.push(flip.clone()),
+                    },
+                );
             })),
             ..ListRowSlots::default()
         },
     )
     .expanded(signal(open));
     let (menu, held) = (app.clone(), space.clone());
-    container()
-        .layout(LayoutStyle::flex_row().fill_width().padding_top(S))
-        .child(sigil::widgets::context_menu(row, move || items(&menu, &held)))
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .padding_top(S)
+        .child(sigil::widgets::context_menu(row, move || {
+            items(&menu, &held)
+        }))
 }
 
 fn items(app: &App, space: &Space) -> Vec<MenuItem> {
     let open = app.clone();
-    let (start, pick, rename, gone) = (space.id.clone(), space.id.clone(), space.id.clone(), space.id.clone());
+    let (start, pick, rename, gone) = (
+        space.id.clone(),
+        space.id.clone(),
+        space.id.clone(),
+        space.id.clone(),
+    );
     let name = space.name.clone();
     vec![
         MenuItem::new("New agent here").activate(move || spaces::new_agent(&open, &start)),
-        MenuItem::new(super::super::thread::ADD_REPOSITORY).activate(move || spaces::pick_folder(&pick)),
-        MenuItem::new("Rename…").activate(move || super::super::agent_menu::rename_space(&rename, &name)),
+        MenuItem::new(super::super::thread::ADD_REPOSITORY)
+            .activate(move || spaces::pick_folder(&pick)),
+        MenuItem::new("Rename…")
+            .activate(move || super::super::agent_menu::rename_space(&rename, &name)),
         MenuItem::new("Delete project").activate(move || spaces::remove(&gone)),
     ]
 }

@@ -1,4 +1,4 @@
-use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Tone, container, text_field};
+use sigil::prelude::{NodeBuilder, Paint, Tone, container, text_field};
 
 use super::super::{App, canvas};
 use crate::app::{Login, Note};
@@ -43,11 +43,9 @@ pub(super) fn form(app: &App, width: usize) -> Vec<NodeBuilder> {
     };
     vec![
         form.into_iter().fold(
-            container().layout(
-                LayoutStyle::flex_column()
-                    .width(width as f32 * canvas::cell().w)
-                    .gap(canvas::overlay_gap()),
-            ),
+            sigil::prelude::column()
+                .width(width as f32 * canvas::cell().w)
+                .gap(canvas::overlay_gap()),
             |node, child| node.child(child),
         ),
     ]

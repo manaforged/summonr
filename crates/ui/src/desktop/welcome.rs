@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use sigil::app::dialog::{FileDialog, Picked};
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position, Radius, Signal, Space, Tone,
-    Widget, button, column, container, derived, effect, notice_band, signal,
+    AlignItems, JustifyContent, NodeBuilder, Paint, Position, Radius, Signal, Space, Tone, Widget,
+    button, column, container, derived, effect, notice_band, signal,
 };
 
 use super::style::{CANVAS, L, M, OUTLINE, RAISED, S, Text, XL};
@@ -47,8 +47,9 @@ pub(crate) fn view(
         Palette::named(summonr_agent::prefs::AUTO_THEME)
     });
     let seed = crate::scene::sky_seed();
-    container()
-        .layout(LayoutStyle::flex_column().fill())
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill()
         .children_reactive(move || {
             let page = page(card(picked, busy, error, open.clone()), appearance, seed);
             vec![page.theme(crate::desktop::style::gui(appearance.get()))]
@@ -56,23 +57,19 @@ pub(crate) fn view(
 }
 
 fn page(card: NodeBuilder, appearance: Signal<Palette>, seed: u64) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill()
-                .position(Position::Relative),
-        )
-        .bg(CANVAS)
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill()
+        .position(Position::Relative)
+        .background(CANVAS)
         .child(super::sky::layer(appearance, seed))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill()
-                        .padding(XL)
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill()
+                .padding(XL)
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::Center)
                 .child(card),
         )
 }
@@ -84,35 +81,31 @@ fn card(
     open: Open,
 ) -> NodeBuilder {
     column()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .max_width(WIDTH)
-                .padding(XL)
-                .gap(L),
-        )
-        .rounded(Radius::Lg)
-        .bg(RAISED)
+        .fill_width()
+        .max_width(WIDTH)
+        .padding(XL)
+        .gap(L)
+        .radius(Radius::Lg)
+        .background(RAISED)
         .shadow(super::style::OVERLAY)
-        .border_w(1)
+        .border_width(1)
         .border_color(OUTLINE)
         .child(
             column()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(S)
-                        .align_items(AlignItems::Center),
-                )
+                .fill_width()
+                .gap(S)
+                .align_items(AlignItems::Center)
                 .child(super::brand::mark(BADGE))
                 .child(
                     container()
-                        .layout(LayoutStyle::block().padding_top(S))
+                        .padding_top(S)
                         .child(super::style::text(Text::Title, TITLE)),
                 )
                 .child(
-                    container()
-                        .layout(LayoutStyle::flex_row().padding_top(M))
+                    sigil::prelude::row()
+                        .gap(sigil::prelude::Space::None)
+                        .align_items(sigil::prelude::AlignItems::Stretch)
+                        .padding_top(M)
                         .child(
                             button(move || if busy.get() { OPENING } else { CHOOSE }.to_string())
                                 .primary()

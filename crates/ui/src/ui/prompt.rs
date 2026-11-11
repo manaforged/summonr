@@ -1,9 +1,7 @@
 use std::rc::Rc;
 
 use sigil::prelude::Space;
-use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Paint, Tone, button, container, notice_band,
-};
+use sigil::prelude::{AlignItems, NodeBuilder, Paint, Tone, button, notice_band};
 
 use summonr_agent::prefs::Hotkeys;
 
@@ -89,8 +87,9 @@ impl Prompt {
     #[must_use]
     pub(crate) fn build(self, width: usize, keys: &Hotkeys) -> NodeBuilder {
         let fit = |text: &str| crate::cells::ellipsize(text, width.saturating_sub(4));
-        let mut band = container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(Space::Sm))
+        let mut band = sigil::prelude::column()
+            .fill_width()
+            .gap(Space::Sm)
             .child(notice_band(fit(&self.head), self.tone));
         let taken: Vec<Key> = self.actions.iter().map(|action| action.key).collect();
         let hints = self.hints.without(&taken).text(keys);
@@ -109,11 +108,9 @@ impl Prompt {
             return band;
         }
         let actions = self.actions.into_iter().fold(
-            container().layout(
-                LayoutStyle::flex_row()
-                    .gap(Space::Md)
-                    .align_items(AlignItems::Center),
-            ),
+            sigil::prelude::row()
+                .gap(Space::Md)
+                .align_items(AlignItems::Center),
             |row, action| row.child(action.node(keys)),
         );
         band.child(actions)

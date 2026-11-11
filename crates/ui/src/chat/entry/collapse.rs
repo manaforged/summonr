@@ -1,6 +1,6 @@
 use sigil::prelude::Space;
 use sigil::prelude::{
-    LayoutStyle, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline,
+    MouseButton, NodeBuilder, Paint, PointerEvent, Signal, container, markdown_inline,
 };
 use sigil::{Cx, NodeId, prelude::IntoNode};
 
@@ -42,8 +42,9 @@ pub(super) fn collapsible(
         Visibility::Off if !reasoning => container(),
         Visibility::Off => caption(format!("▸ {kind} · hidden")).pointer_down(press),
         Visibility::Collapsed => folded(body, kind, reasoning).pointer_down(press),
-        Visibility::Expanded => container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+        Visibility::Expanded => sigil::prelude::column()
+            .fill_width()
+            .gap(Space::None)
             .child(
                 caption(if live {
                     "✻ thinking…".to_string()
@@ -91,8 +92,9 @@ impl IntoNode for Line {
 }
 
 fn prose(body: Signal<String>, text_style: TextStyle) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::None))
+    sigil::prelude::column()
+        .fill_width()
+        .gap(Space::None)
         .children_keyed(move || {
             body.with(|body| {
                 body.split('\n')

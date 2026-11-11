@@ -8,7 +8,7 @@ const DAY_LABEL: f32 = 0.35;
 
 const DAY_DENSITY: [f32; 2] = [0.05, 3.2];
 
-const INKS: [Rgba8; 10] = [
+const INKS: [Color; 10] = [
     rgb(34, 66, 128),
     rgb(44, 62, 136),
     rgb(52, 50, 130),
@@ -25,18 +25,18 @@ const INKS: [Rgba8; 10] = [
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct Stage {
     pub(crate) paper: bool,
-    pub(crate) void: Rgba8,
-    pub(crate) scrim: Rgba8,
-    pub(crate) plate: Rgba8,
+    pub(crate) void: Color,
+    pub(crate) scrim: Color,
+    pub(crate) plate: Color,
     pub(crate) glass: f32,
     pub(crate) pane: f32,
-    pub(super) label: Rgba8,
-    pub(super) value: Rgba8,
-    pub(super) star_dim: Rgba8,
-    pub(super) star_bright: Rgba8,
-    pub(super) warm: Rgba8,
-    pub(super) flare: Rgba8,
-    pub(super) tints: [Rgba8; 10],
+    pub(super) label: Color,
+    pub(super) value: Color,
+    pub(super) star_dim: Color,
+    pub(super) star_bright: Color,
+    pub(super) warm: Color,
+    pub(super) flare: Color,
+    pub(super) tints: [Color; 10],
     pub(super) density: [f32; 2],
 }
 

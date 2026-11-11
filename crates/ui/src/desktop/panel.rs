@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, ListRowSlots, NodeBuilder, Overflow, Paint, Signal, Tone,
-    Widget, button, container, derived, effect, interval, list_row,
+    AlignItems, ControlSize, ListRowSlots, NodeBuilder, Overflow, Paint, Signal, Tone, Widget,
+    button, container, derived, effect, interval, list_row,
 };
 use sigil::reactive::{on_cleanup, untrack};
 use summonr_agent::hub::{Cmd, Open};
@@ -12,7 +12,7 @@ use super::style::{DANGER, L, M, S, SCROLLBAR, Text, XS, text};
 use super::{App, Pane};
 
 const CHART_HEIGHT: f32 = 240.0;
-const TONES: [Tone; 4] = [Tone::Primary, Tone::Success, Tone::Warn, Tone::Error];
+const TONES: [Tone; 4] = [Tone::Primary, Tone::Success, Tone::Warning, Tone::Error];
 
 /// Keeps the tabs and started-agent prompt handoff in step with the workspace's panel files.
 pub(super) fn install(app: &App) {
@@ -39,8 +39,10 @@ pub(super) fn install(app: &App) {
 /// One tab per right-hand panel, after the built-in tabs.
 pub(super) fn tabs(app: &App, pane: Pane) -> NodeBuilder {
     let app = app.clone();
-    container()
-        .layout(LayoutStyle::flex_row().gap(XS).shrink(0.0))
+    sigil::prelude::row()
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .gap(XS)
+        .shrink(0.0)
         .children_reactive(move || {
             let shown = app.panels.shown.get();
             app.panels
@@ -89,13 +91,12 @@ pub(super) fn view(app: &App) -> NodeBuilder {
             .find(|panel| panel.name == shown)
     });
     let runner = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .fill_height()
-                .min_size(0.0, 0.0),
-        )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             let Some(panel) = open.get() else {
                 return vec![text(Text::Meta, "This panel is gone").into()];
@@ -121,8 +122,9 @@ pub(super) fn picked(app: &App) -> Signal<Option<Panel>> {
 /// The picked side panel as the sidebar's body; it runs its command while it shows.
 pub(super) fn side(app: &App, picked: Signal<Option<Panel>>) -> NodeBuilder {
     let app = app.clone();
-    container()
-        .layout(LayoutStyle::flex_column().fill_width())
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
         .children_reactive(move || {
             picked
                 .get()
@@ -150,16 +152,14 @@ fn keep_running(app: &App, panel: &Panel) {
 
 fn body(app: &App, panels: crate::app::panels::Panels) -> NodeBuilder {
     let app = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(1.0)
-                .min_size(0.0, 0.0)
-                .padding(L)
-                .gap(M)
-                .overflow_y(Overflow::Scroll),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding(L)
+        .gap(M)
+        .overflow_y(Overflow::Scroll)
         .children_reactive(move || {
             let name = untrack(|| panels.shown.get()).unwrap_or_default();
             render(&app, &name, panels.content.get())
@@ -169,21 +169,21 @@ fn body(app: &App, panels: crate::app::panels::Panels) -> NodeBuilder {
 fn section(app: &App, panel: Panel) -> NodeBuilder {
     keep_running(app, &panel);
     let (app, results, name) = (app.clone(), app.panels.results, panel.name);
-    container()
-        .layout(LayoutStyle::flex_column().fill_width())
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
         .child(heading(&panel.title))
         .children_reactive(move || render(&app, &name, results.with(|all| all.get(&name).cloned())))
 }
 
 fn heading(title: &str) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_top(M)
-                .padding_left(S)
-                .padding_right(SCROLLBAR),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .padding_top(M)
+        .padding_left(S)
+        .padding_right(SCROLLBAR)
         .child(text(Text::Heading, title))
         .into()
 }
@@ -280,13 +280,12 @@ fn chart(kind: Plot, labels: Vec<String>, series: Vec<Series>) -> NodeBuilder {
         Plot::Area => plot.area(),
         Plot::Pie => plot.pie(),
     };
-    plot.layout(LayoutStyle::block().fill_width().height(CHART_HEIGHT))
-        .into()
+    plot.fill_width().height(CHART_HEIGHT).into()
 }
 
 fn stats(items: Vec<Stat>) -> NodeBuilder {
     items.into_iter().fold(
-        container().layout(LayoutStyle::flex_column().fill_width().gap(S)),
+        sigil::prelude::column().fill_width().gap(S),
         |column, item| {
             let tile = sigil::widgets::stat(item.label, item.value);
             let tile = match tone(item.tone) {
@@ -301,24 +300,26 @@ fn stats(items: Vec<Stat>) -> NodeBuilder {
 fn table(columns: Vec<String>, rows: Vec<Vec<String>>) -> NodeBuilder {
     let row = |cells: Vec<String>, role: Text| {
         cells.into_iter().fold(
-            container().layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .gap(M)
-                    .align_items(AlignItems::Center),
-            ),
+            sigil::prelude::row()
+                .fill_width()
+                .gap(M)
+                .align_items(AlignItems::Center),
             |row, cell| {
                 row.child(
                     container()
-                        .layout(LayoutStyle::block().grow(1.0).width(0.0).min_size(0.0, 0.0))
+                        .grow(1.0)
+                        .width(0.0)
+                        .min_width(0.0)
+                        .min_height(0.0)
                         .child(text(role, cell).ellipsize()),
                 )
             },
         )
     };
     rows.into_iter().fold(
-        container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(S))
+        sigil::prelude::column()
+            .fill_width()
+            .gap(S)
             .child(row(columns, Text::Meta)),
         |table, cells| table.child(row(cells, Text::Body)),
     )
@@ -328,7 +329,7 @@ const fn tone(mood: Mood) -> Option<Tone> {
     match mood {
         Mood::Neutral => None,
         Mood::Success => Some(Tone::Success),
-        Mood::Warning => Some(Tone::Warn),
+        Mood::Warning => Some(Tone::Warning),
         Mood::Danger => Some(Tone::Error),
     }
 }

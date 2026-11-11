@@ -1,6 +1,6 @@
 use sigil::prelude::Position;
 use sigil::prelude::Widget;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, container};
+use sigil::prelude::{NodeBuilder, Paint, container};
 
 use crate::view::keys::shell;
 use summonr_agent::hub::Cmd;
@@ -22,12 +22,12 @@ mod menubar;
 pub(super) mod palette;
 mod panel;
 pub(super) mod quit;
+mod rail;
 mod restore;
 mod settings;
 mod shelf;
 mod ship;
 mod side;
-mod rail;
 mod sidebar;
 mod sky;
 mod spaces;
@@ -52,8 +52,10 @@ fn sidebar_toggle(app: &App) -> NodeBuilder {
     })
     .accessible(SIDEBAR);
     let watch = app.clone();
-    let count = container()
-        .layout(LayoutStyle::flex_row().shrink(0.0))
+    let count = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .shrink(0.0)
         .children_reactive(move || {
             let needing = watch
                 .model
@@ -69,12 +71,10 @@ fn sidebar_toggle(app: &App) -> NodeBuilder {
                 style::text(style::Text::Meta, needing.to_string()).text_color(style::NEEDS_DOT),
             )]
         });
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .shrink(0.0)
-                .align_items(sigil::prelude::AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .shrink(0.0)
+        .align_items(sigil::prelude::AlignItems::Center)
         .child(tip(SIDEBAR, Some("⌘B"), toggle.into()))
         .child(count)
         .into()
@@ -100,13 +100,11 @@ pub(crate) fn jump(app: &App, to: crate::view::keys::bindings::Jump) {
 /// Empty bar space that moves the window when dragged.
 fn drag_area() -> NodeBuilder {
     container()
-        .layout(
-            LayoutStyle::block()
-                .width(0.0)
-                .grow(1.0)
-                .fill_height()
-                .min_size(0.0, 0.0),
-        )
+        .width(0.0)
+        .grow(1.0)
+        .fill_height()
+        .min_width(0.0)
+        .min_height(0.0)
         .pointer_down(|_| {
             sigil::events::request_window_command(sigil::app::WindowCommand::Drag);
         })
@@ -145,26 +143,24 @@ fn window(app: App) -> NodeBuilder {
     let overlays = app.clone();
     let menu = app.clone();
     let dialogs = app.clone();
-    container()
-        .layout(LayoutStyle::flex_column().fill())
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill()
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill()
-                        .grow(1.0)
-                        .min_size(0.0, 0.0)
-                        .position(Position::Relative),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill()
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
+                .position(Position::Relative)
                 .child(content(app.clone()))
                 .children_reactive(move || {
                     app.settings_open.get().then(|| {
-                        container()
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .position(Position::Absolute)
-                                    .fill(),
-                            )
+                        sigil::prelude::column()
+                            .gap(sigil::prelude::Space::None)
+                            .position(Position::Absolute)
+                            .fill()
                             .child(sigil::reactive::untrack(|| settings::view(&app)))
                     })
                 }),
@@ -184,12 +180,10 @@ fn window(app: App) -> NodeBuilder {
             shown
                 .and_then(|(overlay, owner)| overlay.layer(owner))
                 .map(|layer| {
-                    container()
-                        .layout(
-                            LayoutStyle::flex_column()
-                                .position(Position::Absolute)
-                                .fill(),
-                        )
+                    sigil::prelude::column()
+                        .gap(sigil::prelude::Space::None)
+                        .position(Position::Absolute)
+                        .fill()
                         .child(layer)
                 })
         })
@@ -197,20 +191,24 @@ fn window(app: App) -> NodeBuilder {
 
 /// An empty slot for one popup; the popup draws above the window.
 fn slot() -> NodeBuilder {
-    container().layout(
-        LayoutStyle::block()
-            .position(Position::Absolute)
-            .width(0.0)
-            .height(0.0),
-    )
+    container()
+        .position(Position::Absolute)
+        .width(0.0)
+        .height(0.0)
 }
 
 fn content(app: App) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::flex_row().fill().min_size(0.0, 0.0))
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill()
+        .min_width(0.0)
+        .min_height(0.0)
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_height()
+                .shrink(0.0)
                 .children_reactive({
                     let app = app.clone();
                     move || -> Vec<NodeBuilder> {
@@ -226,8 +224,10 @@ fn content(app: App) -> NodeBuilder {
         )
         .child(sigil::reactive::untrack(split::view))
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_height()
+                .shrink(0.0)
                 .children_reactive(move || {
                     let focused = split::current(&app);
                     let layout = focused.layout.get();

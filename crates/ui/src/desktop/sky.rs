@@ -1,13 +1,13 @@
-use sigil::prelude::{LayoutStyle, NodeBuilder, Position, Signal, Widget, container, signal};
+use sigil::prelude::{NodeBuilder, Position, Signal, Widget, container, signal};
 use sigil::scene::Wash;
-use sigil::style::Rgba8;
+use sigil::style::Color;
 
 use super::App;
 use crate::canvas::rgb;
 use crate::scene::DAY;
 use crate::theme::Palette;
 
-const NIGHT: [Rgba8; 4] = [
+const NIGHT: [Color; 4] = [
     rgb(36, 92, 178),
     rgb(78, 62, 176),
     rgb(136, 52, 160),
@@ -30,24 +30,24 @@ fn paint(appearance: Signal<Palette>, seed: Signal<u64>, shown: Signal<bool>) ->
         let paper = u64::from(u32::from_be_bytes([base.r, base.g, base.b, base.a]));
         (paper << 1 | u64::from(shown.get())) ^ seed.get().rotate_left(33)
     });
-    container().layout(fill()).child(
+    fill().child(
         sigil::widgets::canvas(move |scene, area| {
             if !shown.peek() {
                 return;
             }
-            let paper = Rgba8 {
+            let paper = Color {
                 a: 255,
                 ..appearance.peek().base
             };
             scene.draw_wash(area, wash(paper, seed.peek()));
         })
         .redraw_on(version)
-        .layout(LayoutStyle::block().fill()),
+        .fill(),
     )
 }
 
-fn fill() -> LayoutStyle {
-    LayoutStyle::block()
+fn fill() -> NodeBuilder {
+    container()
         .position(Position::Absolute)
         .inset_top(0.0)
         .inset_left(0.0)
@@ -55,7 +55,7 @@ fn fill() -> LayoutStyle {
         .inset_bottom(0.0)
 }
 
-fn wash(paper: Rgba8, seed: u64) -> Wash {
+fn wash(paper: Color, seed: u64) -> Wash {
     let light = u32::from(paper.r) + u32::from(paper.g) + u32::from(paper.b) > 3 * 128;
     let (pigments, specks) = if light { (DAY, 0.35) } else { (NIGHT, 0.7) };
     let (pools, edges, density) = if light {

@@ -76,7 +76,7 @@ fn the_theme_row_previews_edits_and_saves_custom_colors() {
         assert!(saved.contains("#102030ff"), "{saved}");
         assert_eq!(
             app.appearance.peek().base,
-            sigil::prelude::Rgba8 {
+            sigil::prelude::Color {
                 a: 0,
                 ..super::super::theme::hex("#102030").expect("color")
             }
@@ -168,7 +168,7 @@ fn theme_keyboard_edits_survive_resize_without_touching_the_draft() {
             .expect("type color");
         assert_eq!(
             app.appearance.peek().base,
-            sigil::prelude::Rgba8 {
+            sigil::prelude::Color {
                 a: 0,
                 ..super::super::theme::hex("#102030").expect("color")
             }
@@ -247,7 +247,7 @@ fn theme_keyboard_edits_survive_resize_without_touching_the_draft() {
         assert_eq!(std::fs::read(&file).expect("unchanged theme"), saved);
         assert_eq!(
             app.appearance.peek().base,
-            sigil::prelude::Rgba8 {
+            sigil::prelude::Color {
                 a: 0,
                 ..super::super::theme::hex("#102030").expect("restored color")
             }

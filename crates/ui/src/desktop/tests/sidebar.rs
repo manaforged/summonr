@@ -362,6 +362,10 @@ fn a_chat_open_in_another_pane_offers_no_archive_or_delete() {
     );
     assert!(seen.shows(|text| text == "Rename…"), "{}", seen.text());
     for label in ["Archive", "Delete…"] {
-        assert!(!seen.shows(|text| text == label), "{label}: {}", seen.text());
+        assert!(
+            !seen.shows(|text| text == label),
+            "{label}: {}",
+            seen.text()
+        );
     }
 }

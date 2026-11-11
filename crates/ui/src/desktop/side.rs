@@ -1,7 +1,5 @@
 use sigil::icons::Icon;
-use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Paint, Widget, button, container,
-};
+use sigil::prelude::{AlignItems, ControlSize, NodeBuilder, Paint, Widget, button};
 
 use super::style::{DIVIDER, S, XS};
 use super::{App, Pane};
@@ -16,8 +14,10 @@ pub(super) const TABS: [(Pane, &str); 3] = [
 /// The strip's right side: the diff stat that opens Changes, then the Terminal toggle.
 pub(super) fn toggles(app: &App) -> Vec<NodeBuilder> {
     let (watch, terminal) = (app.clone(), app.clone());
-    let stat = container()
-        .layout(LayoutStyle::flex_row().shrink(0.0))
+    let stat = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .shrink(0.0)
         .children_reactive(move || {
             let model = watch.model.get();
             if model.diff.files.is_empty() || model.entries.only_notes().is_some() {
@@ -56,18 +56,20 @@ pub(super) fn column(app: &App, pane: Pane, cols: u16) -> NodeBuilder {
         | Pane::Peers
         | Pane::View => crate::panes::body(app, pane, cols),
     };
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_height()
-                .width(width)
-                .min_size(0.0, 0.0),
-        )
-        .bg(super::style::RECESSED)
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_height()
+        .width(width)
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(super::style::RECESSED)
         .child(tabs(app, pane))
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().grow(1.0).min_size(0.0, 0.0))
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .grow(1.0)
+                .min_width(0.0)
+                .min_height(0.0)
                 .child(body),
         )
 }
@@ -76,15 +78,13 @@ fn tabs(app: &App, pane: Pane) -> NodeBuilder {
     let close = app.clone();
     TABS.iter()
         .fold(
-            container().layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .height(super::sidebar::BAR)
-                    .shrink(0.0)
-                    .padding_x(S)
-                    .gap(XS)
-                    .align_items(AlignItems::Center),
-            ),
+            sigil::prelude::row()
+                .fill_width()
+                .height(super::sidebar::BAR)
+                .shrink(0.0)
+                .padding_x(S)
+                .gap(XS)
+                .align_items(AlignItems::Center),
             |row, (tab, label)| row.child(tab_button(app, *tab, label, *tab == pane)),
         )
         .child(super::panel::tabs(app, pane))

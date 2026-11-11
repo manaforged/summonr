@@ -1,7 +1,7 @@
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, ControlSize, JustifyContent, LayoutStyle, NodeBuilder, Signal, Tone, Widget,
-    button, chip, container, empty_state, field, icon, notice_band, signal, text_field,
+    AlignItems, ControlSize, JustifyContent, NodeBuilder, Signal, Tone, Widget, button, chip,
+    empty_state, field, icon, notice_band, signal, text_field,
 };
 use sigil::reactive::defer;
 
@@ -54,13 +54,10 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
         saved: signal(0),
     };
     vec![
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(M)
-                    .align_items(AlignItems::Stretch),
-            )
+        sigil::prelude::column()
+            .fill_width()
+            .gap(M)
+            .align_items(AlignItems::Stretch)
             .children_reactive(move || {
                 page.saved.with(|_| ());
                 let notice = page
@@ -105,8 +102,8 @@ fn listed(page: Page, name: &str, default: bool) -> NodeBuilder {
         |error| first_line(&error.to_string()),
         |workflow| workflow.summary(),
     );
-    let words = container()
-        .layout(LayoutStyle::flex_column().gap(XS))
+    let words = sigil::prelude::column()
+        .gap(XS)
         .child(text(Text::Body, name.to_owned()))
         .child(text(Text::Meta, summary));
     let editing = page.editing.peek().as_deref() == Some(name);
@@ -178,13 +175,12 @@ fn confirm(page: Page, name: &str) -> NodeBuilder {
 }
 
 fn add_row(page: Page) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .padding_x(L)
-                .padding_y(M),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .padding_x(L)
+        .padding_y(M)
         .child(new_button(page).ghost())
 }
 
@@ -199,15 +195,12 @@ fn form(page: Page, names: &[String]) -> NodeBuilder {
     let taken = names.to_vec();
     let submit = taken.clone();
     let ready = move || !page.name.get().trim().is_empty();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .align_items(AlignItems::Stretch)
-                .gap(M)
-                .padding_x(L)
-                .padding_y(M),
-        )
+    sigil::prelude::column()
+        .fill_width()
+        .align_items(AlignItems::Stretch)
+        .gap(M)
+        .padding_x(L)
+        .padding_y(M)
         .child(field(
             "Name",
             text_field(page.name)
@@ -215,12 +208,10 @@ fn form(page: Page, names: &[String]) -> NodeBuilder {
                 .submit(move |_| save_new(page, &submit)),
         ))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .align_items(AlignItems::Stretch),
-                )
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .align_items(AlignItems::Stretch)
                 .children_reactive(move || {
                     page.error
                         .get()
@@ -228,13 +219,11 @@ fn form(page: Page, names: &[String]) -> NodeBuilder {
                 }),
         )
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .gap(S)
-                        .justify_content(JustifyContent::End),
-                )
+            sigil::prelude::row()
+                .align_items(sigil::prelude::AlignItems::Stretch)
+                .fill_width()
+                .gap(S)
+                .justify_content(JustifyContent::End)
                 .child(button("Cancel").ghost().activate(move || close(page)))
                 .child(
                     button(NEW)

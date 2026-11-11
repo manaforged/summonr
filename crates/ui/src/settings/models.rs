@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use sigil::prelude::Space;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Tone, container, text_field};
+use sigil::prelude::{NodeBuilder, Tone, container, text_field};
 
 use super::{App, canvas};
 use crate::ui::{
@@ -79,11 +79,12 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
             ),
         )
         .child(
-            container()
-                .layout(LayoutStyle::flex_column().padding_bottom(Space::raw(
+            sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .padding_bottom(Space::raw(
                     canvas::overlay_list_row(),
                     "one list row below the list",
-                )))
+                ))
                 .children_reactive(move || vec![facets::chips(&chips)]),
         )
         .child(container().children_reactive(move || body(&paint)))
@@ -143,27 +144,27 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         None => empty(paint),
     };
     let height = (visible + 1) as f32 * canvas::overlay_list_row();
-    let frame = LayoutStyle::flex_column().height(height).shrink(0.0);
+    let frame = || {
+        sigil::prelude::column()
+            .gap(Space::None)
+            .height(height)
+            .shrink(0.0)
+    };
     if !wide {
         let narrow = span.saturating_sub(10);
         let rows = if paint.auth.open.get() {
             super::auth::step_pane(paint, narrow, visible)
                 .into_iter()
-                .fold(container().layout(frame.fill_width()), |node, child| {
-                    node.child(child)
-                })
+                .fold(frame().fill_width(), |node, child| node.child(child))
         } else {
-            container()
-                .layout(frame.fill_width())
-                .child(grid.header())
-                .child(list)
+            frame().fill_width().child(grid.header()).child(list)
         };
         return vec![rows, strip(paint, &view, selection.as_ref(), narrow)];
     }
     let width = span.saturating_sub(grid.cells() as usize + 6);
     browser_columns(
         [grid.header(), list],
-        frame.width(grid.cells() * canvas::cell().w),
+        frame().width(grid.cells() * canvas::cell().w),
         side(paint, selection.as_ref(), fixing, (width, visible)),
         Space::raw(
             canvas::cell().w * 3.0,

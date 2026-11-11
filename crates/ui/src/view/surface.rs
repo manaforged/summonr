@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::input_keys;
-use sigil::prelude::Dimension;
+use sigil::prelude::Length;
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::Widget;
@@ -16,14 +16,12 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         layout.split(cols)
     };
     let surface = chat_surface(app.clone(), chat_cols);
-    let row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .fill_height()
-                .gap(Space::None),
-        )
-        .bg(canvas::palette().base)
+    let row = sigil::prelude::row()
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .fill_height()
+        .gap(Space::None)
+        .background(canvas::palette().base)
         .child(surface);
     match layout.secondary {
         Some(pane) if side_cols > 0 => row.child(side(app, pane, side_cols)),
@@ -33,12 +31,10 @@ pub(super) fn layer(app: App) -> NodeBuilder {
 
 fn side(app: App, pane: Pane, cols: u16) -> NodeBuilder {
     container()
-        .layout(
-            LayoutStyle::block()
-                .fill_height()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
+        .fill_height()
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || vec![panes::body(&app, pane, cols)])
 }
 
@@ -63,12 +59,12 @@ pub(crate) fn editor(app: &App, editing: bool) -> TextEditBuilder {
 
 pub(super) fn terminal_editor(app: App) -> impl FnOnce() -> NodeBuilder {
     let submit = app.clone();
-    let editor = editor(&app, false)
-        .content_padding(0.0, 0.0)
-        .chrome(false)
-        .layout(editor_layout(app.viewport.peek().1))
-        .placeholder("")
-        .submit(move |_| submit.submit());
+    let editor = editor_layout(
+        editor(&app, false).content_padding(0.0, 0.0).chrome(false),
+        app.viewport.peek().1,
+    )
+    .placeholder("")
+    .submit(move |_| submit.submit());
     move || {
         if untrack(|| app.overlay().is_none() && app.note_target.peek().is_none()) {
             editor.autofocus().into()
@@ -87,25 +83,25 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
     } else {
         chat::layer(app, cols, editor)
     };
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .fill_height()
-                .grow(1.0)
-                .min_size(0.0, 0.0),
-        )
-        .bg(canvas::palette().base)
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .fill_height()
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(canvas::palette().base)
         .child(surface)
 }
 
-fn editor_layout(rows: u16) -> LayoutStyle {
+fn editor_layout<W: Widget>(node: W, rows: u16) -> W {
     let cell = canvas::cell().h;
     let visible = (rows / 2).saturating_sub(2).max(1);
-    LayoutStyle::flex_column()
-        .fill_width()
-        .height(Dimension::Auto)
-        .min_size(0.0, cell)
-        .max_size(Dimension::Auto, f32::from(visible) * cell)
+    node.fill_width()
+        .height(Length::Auto)
+        .min_width(0.0)
+        .min_height(cell)
+        .max_width(Length::Auto)
+        .max_height(f32::from(visible) * cell)
         .shrink(0.0)
 }

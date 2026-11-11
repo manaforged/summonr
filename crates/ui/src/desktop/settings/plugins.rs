@@ -2,8 +2,8 @@ use std::path::Path;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, ControlSize, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, container,
-    effect, empty_state, icon, notice_band, segmented, signal, toggle,
+    AlignItems, ControlSize, NodeBuilder, Signal, Tone, Widget, button, container, effect,
+    empty_state, icon, notice_band, segmented, signal, toggle,
 };
 use sigil::reactive::{defer, untrack};
 
@@ -40,13 +40,10 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     let workspace = app.workspace();
     vec![
         kept_note(),
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(M)
-                    .align_items(AlignItems::Stretch),
-            )
+        sigil::prelude::column()
+            .fill_width()
+            .gap(M)
+            .align_items(AlignItems::Stretch)
             .children_reactive(move || {
                 let _ = page.version.get();
                 let notice = page
@@ -58,12 +55,10 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
                     .chain([plugins(page, &installed())])
                     .collect::<Vec<_>>()
             }),
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .align_items(AlignItems::Stretch),
-            )
+        sigil::prelude::column()
+            .gap(sigil::prelude::Space::None)
+            .fill_width()
+            .align_items(AlignItems::Stretch)
             .children_reactive(move || {
                 let _ = page.version.get();
                 std::iter::once(sets(page))
@@ -101,13 +96,12 @@ fn plugins(page: Page, found: &[Installed]) -> NodeBuilder {
         .map(|plugin| plugin_row(page, plugin, armed.as_deref() == Some(plugin.name.as_str())))
         .collect();
     rows.push(
-        container()
-            .layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .padding_x(L)
-                    .padding_y(M),
-            )
+        sigil::prelude::row()
+            .gap(sigil::prelude::Space::None)
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .fill_width()
+            .padding_x(L)
+            .padding_y(M)
             .child(install_button(page).ghost()),
     );
     section(Some("Plugins"), rows)
@@ -119,8 +113,8 @@ fn plugin_row(page: Page, plugin: &Installed, armed: bool) -> NodeBuilder {
     } else {
         plugin.adds.as_str()
     };
-    let words = container()
-        .layout(LayoutStyle::flex_column().gap(XS))
+    let words = sigil::prelude::column()
+        .gap(XS)
         .child(text(Text::Body, plugin.name.clone()))
         .child(text(Text::Meta, about.to_owned()).wrap());
     let trailing = if armed {
@@ -274,8 +268,8 @@ fn skills(workspace: &Path, page: Page) -> Vec<NodeBuilder> {
 }
 
 fn skill(workspace: &Path, name: &str, about: &str, page: Page) -> NodeBuilder {
-    let words = container()
-        .layout(LayoutStyle::flex_column().gap(XS))
+    let words = sigil::prelude::column()
+        .gap(XS)
         .child(text(Text::Body, name.to_owned()))
         .child(text(
             Text::Meta,

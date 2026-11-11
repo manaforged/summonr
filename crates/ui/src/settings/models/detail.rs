@@ -37,7 +37,7 @@ pub(super) fn pane(app: &App, selection: &ModelId, fixing: bool, width: usize) -
         match mark {
             Mark::Current => Token::Success11,
             Mark::Default => Token::Accent11,
-            Mark::Favorite => Token::Warn11,
+            Mark::Favorite => Token::Warning11,
             Mark::None => Token::Gray10,
         },
     );

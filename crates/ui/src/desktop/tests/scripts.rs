@@ -342,20 +342,39 @@ fn the_run_button_starts_the_default_action_and_its_menu_starts_another() {
             .collect()
     };
     let seen = steps(at(), vec![Step::Click("Run in terminal")], |app| {
-        (screen_until(runtime, app, "api-up"), names(app), app.window.showing.peek().is_some())
+        (
+            screen_until(runtime, app, "api-up"),
+            names(app),
+            app.window.showing.peek().is_some(),
+        )
     });
     let painted = seen.text();
     let (screen, listed, showing) = seen.read;
     assert_eq!(listed, ["Run api"], "{painted}");
-    assert!(showing, "the pane does not show the Run terminal: {painted}");
-    assert!(screen.iter().any(|line| line.trim() == "api-up"), "{screen:?}");
+    assert!(
+        showing,
+        "the pane does not show the Run terminal: {painted}"
+    );
+    assert!(
+        screen.iter().any(|line| line.trim() == "api-up"),
+        "{screen:?}"
+    );
     let opened = steps(at(), vec![Step::RightClick("Run in terminal")], |_| ());
     assert!(opened.shows(|text| text == "Run docs"), "{}", opened.text());
-    assert!(opened.shows(|text| text == super::super::palette::CLOUD_ONLY), "{}", opened.text());
+    assert!(
+        opened.shows(|text| text == super::super::palette::CLOUD_ONLY),
+        "{}",
+        opened.text()
+    );
     let menu = vec![Step::RightClick("Run in terminal"), Step::Click("Run web")];
-    let seen = steps(at(), menu, |app| (screen_until(runtime, app, "web-up"), names(app)));
+    let seen = steps(at(), menu, |app| {
+        (screen_until(runtime, app, "web-up"), names(app))
+    });
     let painted = seen.text();
     let (screen, listed) = seen.read;
     assert_eq!(listed, ["Run web"], "{painted}");
-    assert!(screen.iter().any(|line| line.trim() == "web-up"), "{screen:?}");
+    assert!(
+        screen.iter().any(|line| line.trim() == "web-up"),
+        "{screen:?}"
+    );
 }

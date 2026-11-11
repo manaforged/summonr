@@ -102,13 +102,11 @@ impl Hints {
 
     #[must_use]
     pub(crate) fn bar(&self, keys: &Hotkeys) -> NodeBuilder {
-        hint_bar(self.text(keys), self.right.clone()).layout(
-            row(Space::Lg)
-                .align_items(AlignItems::Center)
-                .gap(Space::raw(
-                    canvas::cell().w * 2.0,
-                    "two terminal cells between hints",
-                )),
-        )
+        row(hint_bar(self.text(keys), self.right.clone()), Space::Lg)
+            .align_items(AlignItems::Center)
+            .gap(Space::raw(
+                canvas::cell().w * 2.0,
+                "two terminal cells between hints",
+            ))
     }
 }

@@ -1,9 +1,9 @@
-use sigil::prelude::Dimension;
+use sigil::prelude::Length;
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, Tone, button, chip, container,
-    list_row, node, spacer, text_edit,
+    AlignItems, ListRowSlots, MouseButton, NodeBuilder, Tone, button, chip, list_row, node, spacer,
+    text_edit,
 };
 
 use std::collections::BTreeSet;
@@ -40,7 +40,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         return column.child(
             sigil::prelude::text(error)
                 .wrap()
-                .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+                .fill_width()
+                .min_width(0.0)
+                .min_height(14.0)
                 .font_size(
                     12.0,
                     "12 px chrome text that keeps its own line height and weight",
@@ -76,7 +78,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
                 return column.child(
                     sigil::prelude::text(error.clone())
                         .wrap()
-                        .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+                        .fill_width()
+                        .min_width(0.0)
+                        .min_height(14.0)
                         .font_size(
                             12.0,
                             "12 px chrome text that keeps its own line height and weight",
@@ -119,7 +123,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         column = column.child(
             sigil::prelude::text(notes)
                 .wrap()
-                .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+                .fill_width()
+                .min_width(0.0)
+                .min_height(14.0)
                 .font_size(
                     12.0,
                     "12 px chrome text that keeps its own line height and weight",
@@ -152,12 +158,10 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
 }
 
 fn actions() -> NodeBuilder {
-    container().layout(
-        LayoutStyle::flex_row()
-            .fill_width()
-            .gap(Space::raw(6.0, "between the small and medium steps"))
-            .align_items(AlignItems::Center),
-    )
+    sigil::prelude::row()
+        .fill_width()
+        .gap(Space::raw(6.0, "between the small and medium steps"))
+        .align_items(AlignItems::Center)
 }
 
 fn hunk_actions(app: &App, path: &str, hunk: &str) -> NodeBuilder {
@@ -192,7 +196,7 @@ fn file_actions(app: &App, changed: &PaneRow) -> NodeBuilder {
         row = row.child(chip(format!("{accepted} accepted"), Tone::Success));
     }
     if reverted > 0 {
-        row = row.child(chip(format!("{reverted} reverted"), Tone::Warn));
+        row = row.child(chip(format!("{reverted} reverted"), Tone::Warning));
     }
     let label = if armed(&app.revert_armed, &target) {
         CONFIRM_REVERT
@@ -231,12 +235,10 @@ fn undo_rows(
                     sigil::prelude::text(label)
                         .nowrap()
                         .ellipsize()
-                        .layout(
-                            LayoutStyle::block()
-                                .grow(1.0)
-                                .shrink(1.0)
-                                .min_size(0.0, 14.0),
-                        )
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .min_width(0.0)
+                        .min_height(14.0)
                         .font_size(
                             12.0,
                             "12 px chrome text that keeps its own line height and weight",
@@ -298,7 +300,7 @@ fn hunk_view(
     let note = app.hunk_note(path, &hunk.id);
     let (verdict, tone) = match note.as_ref().and_then(|note| note.verdict) {
         Some(summonr_agent::hunks::Verdict::Accepted) => ("accepted", Tone::Success),
-        Some(summonr_agent::hunks::Verdict::Rejected) => ("reverted", Tone::Warn),
+        Some(summonr_agent::hunks::Verdict::Rejected) => ("reverted", Tone::Warning),
         None => ("pending", Tone::Neutral),
     };
     let editing = app
@@ -306,18 +308,16 @@ fn hunk_view(
         .get()
         .is_some_and(|(target, id)| target == path && id == hunk.id);
     let (menu, items) = (app.clone(), app.clone());
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(Space::Xs))
+    let mut card = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::Xs)
         .child(context_menu(
             list_row(focused, hunk.header.clone(), ListRowSlots::default())
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .height(24.0)
-                        .padding_x(Space::Sm)
-                        .gap(Space::raw(6.0, "between the small and medium steps"))
-                        .align_items(AlignItems::Center),
-                )
+                .fill_width()
+                .height(24.0)
+                .padding_x(Space::Sm)
+                .gap(Space::raw(6.0, "between the small and medium steps"))
+                .align_items(AlignItems::Center)
                 .child(chip(verdict, tone))
                 .child(spacer())
                 .pointer_down(move |event| {
@@ -340,19 +340,18 @@ fn hunk_view(
                 .caret_position(edit.note_caret)
                 .submit(move |text| commit.note_commit(text))
                 .autofocus()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .height(Dimension::Auto)
-                        .min_size(0.0, 20.0),
-                )
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .height(Length::Auto)
+                .min_width(0.0)
+                .min_height(20.0)
                 .font_family(sigil::prelude::FontFamily::Mono)
                 .font_size(
                     12.0,
                     "12 px chrome text that keeps its own line height and weight",
                 )
-                .bg(sigil::prelude::Token::Gray1)
-                .rounded(sigil::prelude::Radius::Md)
+                .background(sigil::prelude::Token::Gray1)
+                .radius(sigil::prelude::Radius::Md)
         }));
         card = card.child(
             sigil::prelude::text(format!(
@@ -363,7 +362,9 @@ fn hunk_view(
                     .text(&app.model.get().prefs.hotkeys)
             ))
             .wrap()
-            .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
+            .fill_width()
+            .min_width(0.0)
+            .min_height(14.0)
             .font_size(
                 12.0,
                 "12 px chrome text that keeps its own line height and weight",
@@ -379,12 +380,10 @@ fn hunk_view(
                     "12 px chrome text that keeps its own line height and weight",
                 )
                 .text_color(sigil::prelude::Token::Info11)
-                .layout(
-                    LayoutStyle::block()
-                        .fill_width()
-                        .min_size(0.0, 14.0)
-                        .padding_x(Space::Sm),
-                ),
+                .fill_width()
+                .min_width(0.0)
+                .min_height(14.0)
+                .padding_x(Space::Sm),
         );
     }
     card.child(crate::chat::entry::patch_view(

@@ -1,7 +1,7 @@
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, Dimension, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position, Radius,
-    Widget, button, container, icon_button, signal,
+    AlignItems, JustifyContent, Length, NodeBuilder, Paint, Position, Radius, Widget, button,
+    container, icon_button, signal,
 };
 use sigil::widgets::MenuItem;
 
@@ -45,20 +45,23 @@ pub(super) fn card(app: &App, band: &Band) -> Option<NodeBuilder> {
         Band::Attached(_) | Band::Held => return None,
     };
     let picks = app.picks();
-    let mut column = container()
-        .layout(LayoutStyle::flex_column().fill_width().padding(L).gap(M))
-        .rounded(Radius::Lg)
+    let mut column = sigil::prelude::column()
+        .fill_width()
+        .padding(L)
+        .gap(M)
+        .radius(Radius::Lg)
         .shadow(FLOATING)
-        .bg(RAISED)
-        .border_w(1)
+        .background(RAISED)
+        .border_width(1)
         .border_color(OUTLINE)
         .child(text(Text::Title, title));
     if !detail.is_empty() {
         column = column.child(
             container()
-                .layout(LayoutStyle::block().fill_width().padding(M))
-                .rounded(Radius::Md)
-                .bg(TINT)
+                .fill_width()
+                .padding(M)
+                .radius(Radius::Md)
+                .background(TINT)
                 .child(
                     text(Text::Label, detail)
                         .font_family(sigil::prelude::FontFamily::Mono)
@@ -72,11 +75,7 @@ pub(super) fn card(app: &App, band: &Band) -> Option<NodeBuilder> {
     if !picks.is_empty() {
         column = column.child(choices(app, &picks));
     }
-    Some(
-        container()
-            .layout(LayoutStyle::block().fill_width().padding_bottom(S))
-            .child(column),
-    )
+    Some(container().fill_width().padding_bottom(S).child(column))
 }
 
 const ESC: &str = "esc";
@@ -88,18 +87,16 @@ fn choices(app: &App, picks: &[(String, Pick)]) -> NodeBuilder {
     let decision = picks
         .iter()
         .all(|(_, pick)| !matches!(pick, Pick::Option(_)));
-    let row = container().layout(
-        LayoutStyle::flex_row()
-            .fill_width()
-            .gap(S)
-            .flex_wrap(sigil::prelude::FlexWrap::Wrap)
-            .justify_content(if decision {
-                JustifyContent::End
-            } else {
-                JustifyContent::Start
-            })
-            .align_items(AlignItems::Center),
-    );
+    let row = sigil::prelude::row()
+        .fill_width()
+        .gap(S)
+        .flex_wrap(sigil::prelude::FlexWrap::Wrap)
+        .justify_content(if decision {
+            JustifyContent::End
+        } else {
+            JustifyContent::Start
+        })
+        .align_items(AlignItems::Center);
     let wider: Vec<&(String, Pick)> = picks.iter().filter(|(_, pick)| is_wider(*pick)).collect();
     let mut ordered: Vec<(usize, &(String, Pick))> = picks
         .iter()
@@ -116,9 +113,9 @@ fn choices(app: &App, picks: &[(String, Pick)]) -> NodeBuilder {
             let pick = *pick;
             let base = button(label.clone()).activate(move || answer.pick(pick));
             row.child(match pick {
-                Pick::Grant(GrantAnswer::Deny) => base.neutral().ghost().shortcut(ESC),
+                Pick::Grant(GrantAnswer::Deny) => base.neutral().ghost().hint(ESC),
                 Pick::Reply(crate::app::Reply::Cancel) => base.neutral().ghost(),
-                Pick::Grant(GrantAnswer::Allow) if index == 0 => base.primary().shortcut(RETURN),
+                Pick::Grant(GrantAnswer::Allow) if index == 0 => base.primary().hint(RETURN),
                 _ if index == 0 => base.primary(),
                 Pick::Grant(_) | Pick::Option(_) | Pick::Reply(_) => base.neutral().soft(),
             })
@@ -146,21 +143,15 @@ fn wider_menu(app: &App, wider: &[&(String, Pick)]) -> NodeBuilder {
     );
     let arrow = icon_button(Icon::ChevronDown, move || open.set(!open.peek())).accessible(MORE);
     container()
-        .layout(
-            LayoutStyle::block()
-                .position(Position::Relative)
-                .shrink(0.0),
-        )
+        .position(Position::Relative)
+        .shrink(0.0)
         .child(arrow)
         .child(
             container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_bottom(Dimension::Percent(1.0))
-                        .inset_right(0.0)
-                        .width(super::super::style::MENU),
-                )
+                .position(Position::Absolute)
+                .inset_bottom(Length::Percent(1.0))
+                .inset_right(0.0)
+                .width(super::super::style::MENU)
                 .children_reactive(move || {
                     if !open.get() {
                         return Vec::new();

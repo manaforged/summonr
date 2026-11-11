@@ -8,11 +8,10 @@ pub(super) use super::app::App;
 use super::canvas::{Cell, blend, cell as metrics, ink, rgb, shown};
 use super::model::Model;
 use super::theme::palette;
-use sigil::prelude::LayoutStyle;
+use sigil::prelude::Color;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
 use sigil::prelude::Position;
-use sigil::prelude::Rgba8;
 use sigil::prelude::Space;
 use sigil::prelude::Widget;
 use sigil::prelude::container;
@@ -76,25 +75,22 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
         beats
     });
     let card = card(app);
-    container()
-        .bg(stage().void)
-        .layout(fill(LayoutStyle::flex_column()))
-        .child(
+    fill(sigil::prelude::column())
+        .background(stage().void)
+        .child(fill(
             sigil::widgets::canvas(move |scene, area| {
                 galaxy::paint_sky(scene, area, painter.viewport.peek(), painter.sky.peek());
             })
-            .redraw_on(size)
-            .layout(fill(LayoutStyle::block())),
-        )
-        .child(
+            .redraw_on(size),
+        ))
+        .child(fill(
             sigil::widgets::canvas(move |scene, area| {
                 sigil::reactive::untrack(|| {
                     sky.with(|spots| space::paint_spots(scene, area, spots));
                 });
             })
-            .redraw_on(twinkle)
-            .layout(fill(LayoutStyle::block())),
-        )
+            .redraw_on(twinkle),
+        ))
         .child(card_rows(card))
 }
 
@@ -223,31 +219,26 @@ impl Painted {
 
 fn card_rows(card: sigil::prelude::Signal<Rc<[Line]>>) -> NodeBuilder {
     let count = sigil::reactive::derived(move || card.with(|lines| lines.len()));
-    container()
-        .layout(fill(LayoutStyle::block()))
-        .children_reactive(move || {
-            (0..count.get())
-                .map(|index| {
-                    let row = sigil::reactive::derived(move || {
-                        card.with(|lines| lines.get(index).cloned())
-                    });
-                    let frame = sigil::reactive::derived(move || {
-                        row.with(|row| {
-                            row.as_ref()
-                                .map(|Line(row)| [row.0, row.1, row.2.len() as u16])
-                        })
-                    });
-                    container()
-                        .layout(fill(LayoutStyle::block()))
-                        .children_reactive(move || frame.get().map(|frame| placed(frame, row)))
-                })
-                .collect::<Vec<_>>()
-        })
+    fill(container()).children_reactive(move || {
+        (0..count.get())
+            .map(|index| {
+                let row =
+                    sigil::reactive::derived(move || card.with(|lines| lines.get(index).cloned()));
+                let frame = sigil::reactive::derived(move || {
+                    row.with(|row| {
+                        row.as_ref()
+                            .map(|Line(row)| [row.0, row.1, row.2.len() as u16])
+                    })
+                });
+                fill(container())
+                    .children_reactive(move || frame.get().map(|frame| placed(frame, row)))
+            })
+            .collect::<Vec<_>>()
+    })
 }
 
-fn fill(style: LayoutStyle) -> LayoutStyle {
-    style
-        .position(Position::Absolute)
+fn fill<W: Widget>(node: W) -> W {
+    node.position(Position::Absolute)
         .inset(0.0)
         .fill_width()
         .fill_height()

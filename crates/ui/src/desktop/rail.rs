@@ -1,5 +1,5 @@
 use sigil::icons::Icon;
-use sigil::prelude::{LayoutStyle, NodeBuilder, Paint, Widget, container, derived, icon_button};
+use sigil::prelude::{NodeBuilder, Paint, Widget, container, derived, icon_button};
 use summonr_agent::panel::{Panel, Place};
 
 use super::App;
@@ -23,8 +23,10 @@ pub(super) fn view(app: &App) -> NodeBuilder {
             .collect::<Vec<Panel>>()
     });
     let app = app.clone();
-    container()
-        .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_height()
+        .shrink(0.0)
         .children_reactive(move || -> Vec<NodeBuilder> {
             let side = side.get();
             if side.is_empty() {
@@ -49,20 +51,15 @@ pub(super) fn view(app: &App) -> NodeBuilder {
                 std::iter::once(threads)
                     .chain(rest)
                     .fold(
-                        container()
-                            .child(container().layout(
-                                LayoutStyle::block().height(super::sidebar::BAR).shrink(0.0),
-                            ))
-                            .layout(
-                                LayoutStyle::flex_column()
-                                    .fill_height()
-                                    .width(WIDTH)
-                                    .gap(XS)
-                                    .align_items(sigil::prelude::AlignItems::Center),
-                            ),
+                        sigil::prelude::column()
+                            .child(container().height(super::sidebar::BAR).shrink(0.0))
+                            .fill_height()
+                            .width(WIDTH)
+                            .gap(XS)
+                            .align_items(sigil::prelude::AlignItems::Center),
                         |rail, button| rail.child(button),
                     )
-                    .bg(RECESSED)
+                    .background(RECESSED)
                     .border_right(1)
                     .border_color(DIVIDER)
                     .into(),

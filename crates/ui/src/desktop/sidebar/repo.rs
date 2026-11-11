@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use sigil::icons::Icon;
-use sigil::prelude::{LayoutStyle, ListRowSlots, NodeBuilder, Signal, Widget, container, list_row};
+use sigil::prelude::{ListRowSlots, NodeBuilder, Signal, Widget, list_row};
 use sigil::widgets::icon;
 use summonr_agent::hub::{Live, Status};
 use summonr_agent::session::SessionInfo;
@@ -26,7 +26,12 @@ pub(super) struct Seen {
 pub(super) type Group = (PathBuf, Vec<SessionInfo>);
 
 /// A repository row at `depth`, then its terminals, its agents and its worktree branches.
-pub(super) fn repository(app: &App, (folder, agents): Group, seen: &Seen, depth: u16) -> Vec<NodeBuilder> {
+pub(super) fn repository(
+    app: &App,
+    (folder, agents): Group,
+    seen: &Seen,
+    depth: u16,
+) -> Vec<NodeBuilder> {
     let open = !seen.closed.contains(&folder);
     let states: Vec<Status> = agents
         .iter()
@@ -38,11 +43,21 @@ pub(super) fn repository(app: &App, (folder, agents): Group, seen: &Seen, depth:
     }
     let (loose, branches) = split_branches(&seen.trees, &folder, agents);
     let inner = depth + 1;
-    nodes.extend(super::super::terminal::rows(app, &seen.terms, &folder, depth));
+    nodes.extend(super::super::terminal::rows(
+        app,
+        &seen.terms,
+        &folder,
+        depth,
+    ));
     nodes.extend(topics(app, loose, (&seen.shown, &seen.live), depth));
     for (tree, inside) in branches {
         nodes.push(super::super::topic::worktree_row(app, tree, depth));
-        nodes.extend(super::super::terminal::rows(app, &seen.terms, &tree.path, inner));
+        nodes.extend(super::super::terminal::rows(
+            app,
+            &seen.terms,
+            &tree.path,
+            inner,
+        ));
         nodes.extend(topics(app, inside, (&seen.shown, &seen.live), inner));
     }
     nodes
@@ -61,7 +76,11 @@ pub(super) fn split_branches<'a>(
     let by_branch = branches
         .into_iter()
         .map(|tree| {
-            let inside = nested.iter().filter(|info| ran_in(info, tree)).cloned().collect();
+            let inside = nested
+                .iter()
+                .filter(|info| ran_in(info, tree))
+                .cloned()
+                .collect();
             (tree, inside)
         })
         .collect();
@@ -125,10 +144,12 @@ fn section(
     )
     .expanded(sigil::prelude::signal(open));
     let (menu, folder) = (app.clone(), folder.to_path_buf());
-    container()
-        .layout(LayoutStyle::flex_row().fill_width().padding_top(S))
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .fill_width()
+        .padding_top(S)
         .child(sigil::widgets::context_menu(row, move || {
             super::super::agent_menu::folder_items(&menu, &folder)
         }))
 }
-

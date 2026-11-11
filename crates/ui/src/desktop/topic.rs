@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Space, Tone, Widget, container, derived,
-    effect, list_row, signal, tabs,
+    AlignItems, ListRowSlots, NodeBuilder, Space, Tone, Widget, container, derived, effect,
+    list_row, signal, tabs,
 };
 use sigil::reactive::untrack;
 use summonr_agent::endpoint::Friend;
@@ -67,7 +67,10 @@ impl Topic {
         for info in self.threads.iter().rev() {
             let agent = info.agent.as_deref().and_then(Friend::of);
             let name = agent.map(|agent| agent.name);
-            if !seen.iter().any(|known| known.map(|known| known.name) == name) {
+            if !seen
+                .iter()
+                .any(|known| known.map(|known| known.name) == name)
+            {
                 seen.push(agent);
             }
         }
@@ -94,7 +97,12 @@ const fn rank(status: Status) -> u8 {
 }
 
 /// The sidebar row of a topic: its agents' marks, its first thread's title, and its state.
-pub(super) fn row(app: &App, topic: &Topic, (selected, depth): (bool, u16), live: &[Live]) -> Option<NodeBuilder> {
+pub(super) fn row(
+    app: &App,
+    topic: &Topic,
+    (selected, depth): (bool, u16),
+    live: &[Live],
+) -> Option<NodeBuilder> {
     let mut root = topic.root()?.clone();
     super::sidebar::live_title(&mut root, live);
     let state = topic.state(live);
@@ -114,9 +122,12 @@ pub(super) fn row(app: &App, topic: &Topic, (selected, depth): (bool, u16), live
         ListRowSlots {
             depth,
             leading: Some(Box::new(stack(&topic.agents()))),
-            status: word.map(|(word, _)| word.to_owned()).or(meta).map(Into::into),
+            status: word
+                .map(|(word, _)| word.to_owned())
+                .or(meta)
+                .map(Into::into),
             status_tone: word.map(|(_, tone)| tone),
-            badge: needs.then(|| (NEEDS_YOU.into(), Tone::Warn)),
+            badge: needs.then(|| (NEEDS_YOU.into(), Tone::Warning)),
             activate: Some(Rc::new(move || {
                 super::split::show(&open, Open::Resume(newest.clone()))
             })),
@@ -158,12 +169,12 @@ pub(super) fn worktree_row(app: &App, tree: &Tree, depth: u16) -> NodeBuilder {
 
 /// Up to three outside agents' marks, overlapping, then `+N`; an empty slot for Summonr alone.
 fn stack(agents: &[Option<Friend>]) -> NodeBuilder {
-    let mut row = container().layout(
-        LayoutStyle::flex_row()
-            .min_size(ICON, ICON)
-            .shrink(0.0)
-            .align_items(AlignItems::Center),
-    );
+    let mut row = sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .min_width(ICON)
+        .min_height(ICON)
+        .shrink(0.0)
+        .align_items(AlignItems::Center);
     for (at, agent) in agents.iter().take(STACK).enumerate() {
         let glyph = agent.map_or_else(own, super::friends::glyph);
         let shift = if at == 0 {
@@ -171,11 +182,7 @@ fn stack(agents: &[Option<Friend>]) -> NodeBuilder {
         } else {
             Space::raw(-OVERLAP, "the glyphs overlap")
         };
-        row = row.child(
-            container()
-                .layout(LayoutStyle::block().margin_left(shift).shrink(0.0))
-                .child(glyph),
-        );
+        row = row.child(container().margin_left(shift).shrink(0.0).child(glyph));
     }
     if agents.len() > STACK {
         row = row.child(text(Text::Meta, format!("+{}", agents.len() - STACK)).nowrap());
@@ -184,7 +191,9 @@ fn stack(agents: &[Option<Friend>]) -> NodeBuilder {
 }
 
 fn own() -> NodeBuilder {
-    let icon = super::brand::badge(ICON).role(sigil::prelude::Role::Image).label(SUMMONR);
+    let icon = super::brand::badge(ICON)
+        .role(sigil::prelude::Role::Image)
+        .label(SUMMONR);
     sigil::widgets::tooltip(SUMMONR).child(icon).into()
 }
 
@@ -198,14 +207,20 @@ pub(super) fn strip(app: &App) -> NodeBuilder {
             return (session, Vec::new());
         };
         let topic = topic.to_owned();
-        let mut members: Vec<SessionInfo> = chats.into_iter().filter(|info| key(info) == topic).collect();
+        let mut members: Vec<SessionInfo> = chats
+            .into_iter()
+            .filter(|info| key(info) == topic)
+            .collect();
         members.sort_by(|a, b| a.id.cmp(&b.id));
         (session, members)
     });
     let picked = signal(0usize);
     effect(move || {
         let (session, members) = threads.get();
-        let at = members.iter().position(|info| info.id == session).unwrap_or(0);
+        let at = members
+            .iter()
+            .position(|info| info.id == session)
+            .unwrap_or(0);
         if untrack(|| picked.get()) != at {
             picked.set(at);
         }
@@ -223,15 +238,17 @@ pub(super) fn strip(app: &App) -> NodeBuilder {
         if members.len() < 2 {
             return Vec::new();
         }
-        members.iter().map(super::sidebar::title).collect::<Vec<_>>()
+        members
+            .iter()
+            .map(super::sidebar::title)
+            .collect::<Vec<_>>()
     });
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .shrink(1.0)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .align_items(AlignItems::Center)
         .child(tabs().labels(labels).active(picked).label(THREADS))
         .child(new_thread(app))
         .child(super::ship::view(app))
@@ -245,7 +262,10 @@ fn new_thread(app: &App) -> NodeBuilder {
         let Some(info) = chats.iter().find(|info| info.id == session) else {
             return super::split::show(&open, Open::Folder(open.workspace()));
         };
-        let folder = info.cwd.clone().map_or_else(|| open.workspace(), Into::into);
+        let folder = info
+            .cwd
+            .clone()
+            .map_or_else(|| open.workspace(), Into::into);
         super::split::show(
             &open,
             Open::Thread {

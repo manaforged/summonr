@@ -1,6 +1,6 @@
 use std::path::Path;
 
-pub fn compile() {
+pub(crate) fn compile() {
     let out = Path::new(&std::env::var_os("OUT_DIR").expect("cargo sets OUT_DIR")).join("tables");
     println!("cargo:rerun-if-changed=src");
     walk(Path::new("src"), Path::new("src"), &out);

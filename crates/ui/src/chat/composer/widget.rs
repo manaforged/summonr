@@ -1,7 +1,7 @@
 use super::{App, Model, composer_hint, suggest};
 use sigil::prelude::AlignItems;
 use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutStyle;
+
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::Overflow;
 use sigil::prelude::Paint;
@@ -9,7 +9,7 @@ use sigil::prelude::Position;
 use sigil::prelude::Space;
 use sigil::prelude::Tone;
 use sigil::prelude::container;
-use sigil::prelude::divider_horizontal;
+use sigil::prelude::divider;
 use sigil::prelude::node;
 use sigil::prelude::notice_band;
 
@@ -23,12 +23,12 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
 ) -> NodeBuilder {
     let editing = app.view_edit.peek();
     let focus = app.editor_focus;
-    let mut editor_area = container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .min_size(0.0, 0.0)
-            .position(Position::Relative),
-    );
+    let mut editor_area = sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .position(Position::Relative);
     if editing {
         let model = app.model.get();
         let path = model.view.as_ref().map_or("", |view| view.path.as_str());
@@ -37,14 +37,12 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
             .child(editor);
     } else {
         editor_area = editor_area.child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .min_size(0.0, 0.0)
-                        .align_items(AlignItems::Start)
-                        .gap(Space::Sm),
-                )
+            sigil::prelude::row()
+                .fill_width()
+                .min_width(0.0)
+                .min_height(0.0)
+                .align_items(AlignItems::Start)
+                .gap(Space::Sm)
                 .child(
                     sigil::prelude::text("❯")
                         .nowrap()
@@ -55,41 +53,36 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
                         .text_color(sigil::prelude::Token::Gray12),
                 )
                 .child(
-                    container()
-                        .layout(
-                            LayoutStyle::flex_column()
-                                .grow(1.0)
-                                .min_size(0.0, 0.0)
-                                .overflow_y(Overflow::Hidden),
-                        )
+                    sigil::prelude::column()
+                        .gap(sigil::prelude::Space::None)
+                        .grow(1.0)
+                        .min_width(0.0)
+                        .min_height(0.0)
+                        .overflow_y(Overflow::Hidden)
                         .child(editor),
                 ),
         );
     }
     let inner_width = width.saturating_sub(8);
-    container()
+    sigil::prelude::column()
         .pointer_down(move |_| focus.update(|n| *n += 1))
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .padding_top(Space::Sm)
-                .padding_x(Space::Sm)
-                .gap(Space::None),
-        )
+        .fill_width()
+        .shrink(0.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .padding_top(Space::Sm)
+        .padding_x(Space::Sm)
+        .gap(Space::None)
         .child(suggest::widget(app.clone(), width))
         .child(crate::effort::strip(app.clone()))
         .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .min_size(0.0, 0.0)
-                        .padding_x(Space::Sm)
-                        .gap(Space::None),
-                )
-                .bg(sigil::prelude::Token::Surface)
+            sigil::prelude::column()
+                .fill_width()
+                .min_width(0.0)
+                .min_height(0.0)
+                .padding_x(Space::Sm)
+                .gap(Space::None)
+                .background(sigil::prelude::Token::Surface)
                 .child(header_row(app.clone()))
                 .child(pending_rows(&app, inner_width))
                 .child(editor_area)
@@ -100,8 +93,11 @@ pub(in crate::chat) fn widget<E: IntoNode + 'static>(
 fn pending_rows(app: &App, width: usize) -> NodeBuilder {
     let update = app.clone();
     let pending = sigil::reactive::derived(move || update.model.get().pending.clone());
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
         .children_reactive(move || {
             let rows = pending.get();
             let room = summonr_agent::limits::limits().queue_rows;
@@ -140,13 +136,22 @@ fn rule() -> NodeBuilder {
     if crate::canvas::is_window() {
         return gap();
     }
-    container()
-        .layout(LayoutStyle::flex_row().grow(1.0).min_size(0.0, 0.0))
-        .child(divider_horizontal())
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .child(divider(sigil::prelude::Orientation::Horizontal))
 }
 
 fn gap() -> NodeBuilder {
-    container().layout(LayoutStyle::flex_row().grow(1.0).min_size(0.0, 0.0))
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
 }
 
 type ModeText = (String, u8);
@@ -198,14 +203,11 @@ fn header_row(app: App) -> NodeBuilder {
         };
         (mode_text(&model), selection)
     });
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .shrink(0.0)
-                .align_items(AlignItems::Center)
-                .gap(Space::Sm),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .shrink(0.0)
+        .align_items(AlignItems::Center)
+        .gap(Space::Sm)
         .children_reactive(move || {
             let (mode, model) = labels.get();
             vec![mode_label(mode), rule(), model_label(model)]
@@ -241,14 +243,11 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
             .to_string()
         }
     });
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .shrink(0.0)
-                .align_items(AlignItems::Center)
-                .gap(Space::None),
-        )
+    sigil::prelude::row()
+        .fill_width()
+        .shrink(0.0)
+        .align_items(AlignItems::Center)
+        .gap(Space::None)
         .children_reactive(move || {
             let text = hint.get();
             let text = if text.is_empty() {
@@ -275,7 +274,7 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
 fn mode_label(mode: ModeText) -> NodeBuilder {
     let (text, class) = mode;
     let tone = [
-        sigil::prelude::Token::Warn11,
+        sigil::prelude::Token::Warning11,
         sigil::prelude::Token::Error11,
         sigil::prelude::Token::Success11,
     ][usize::from(class).min(2)];
@@ -287,13 +286,17 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
         )
         .text_color(tone);
     container()
-        .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .child(title.ellipsize())
 }
 
 fn model_label(model: String) -> NodeBuilder {
     container()
-        .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0))
+        .shrink(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
         .child(
             sigil::prelude::text(model)
                 .nowrap()

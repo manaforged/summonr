@@ -3,8 +3,7 @@ use std::rc::Rc;
 
 use sigil::prelude::Space;
 use sigil::prelude::{
-    IntoNode, LayoutStyle, NodeBuilder, Paint, Signal, container, effect, modal, signal,
-    virtual_list,
+    IntoNode, NodeBuilder, Paint, Signal, container, effect, modal, signal, virtual_list,
 };
 use sigil::reactive::{defer, untrack};
 
@@ -56,8 +55,8 @@ mod tests {
     }
 }
 
-fn body_layout() -> LayoutStyle {
-    LayoutStyle::flex_column()
+fn body_layout() -> NodeBuilder {
+    sigil::prelude::column()
         .fill_width()
         .padding_x(Space::Sm)
         .padding_y(canvas::overlay_pad())
@@ -115,7 +114,7 @@ impl Dialog {
             title: title.into(),
             header: None,
             rows: None,
-            body: container().layout(body_layout()),
+            body: body_layout(),
             hints: Rc::new(move || hints.clone()),
         }
     }
@@ -200,18 +199,21 @@ impl Dialog {
         let width = self.size.width(viewport);
         let hints = self.hints;
         let keys = keys.clone();
-        let bar = container()
-            .layout(LayoutStyle::flex_column().fill_width())
+        let bar = sigil::prelude::column()
+            .gap(sigil::prelude::Space::None)
+            .fill_width()
             .children_reactive(move || vec![hints().bar(&keys)]);
         let body = match self.rows {
-            Some(rows) => container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .height(f32::from(canvas::page_rows(rows)) * canvas::cell().h),
-                )
+            Some(rows) => sigil::prelude::column()
+                .gap(sigil::prelude::Space::None)
+                .fill_width()
+                .height(f32::from(canvas::page_rows(rows)) * canvas::cell().h)
                 .child(self.body)
-                .child(container().layout(LayoutStyle::flex_column().grow(1.0)))
+                .child(
+                    sigil::prelude::column()
+                        .gap(sigil::prelude::Space::None)
+                        .grow(1.0),
+                )
                 .child(bar),
             None => self.body.child(bar),
         };
@@ -223,21 +225,22 @@ impl Dialog {
             .dismiss_on_backdrop(backdrop)
             .escape_closes(!backdrop)
             .width(width)
-            .border_w(canvas::frame_border());
+            .border_width(canvas::frame_border());
         if canvas::is_window() {
             shell = shell.height(canvas::window_frame(viewport).1);
         }
         let shell = match self.header {
             Some(header) => shell.child(
-                container()
-                    .layout(LayoutStyle::flex_column().fill_width())
+                sigil::prelude::column()
+                    .gap(sigil::prelude::Space::None)
+                    .fill_width()
                     .child(header)
-                    .child(body.rounded(sigil::prelude::Radius::Base)),
+                    .child(body.radius(sigil::prelude::Radius::Base)),
             ),
             None => shell
                 .title(self.title)
-                .child(body.rounded(sigil::prelude::Radius::Base)),
+                .child(body.radius(sigil::prelude::Radius::Base)),
         };
-        container().layout(LayoutStyle::block()).child(shell)
+        container().child(shell)
     }
 }

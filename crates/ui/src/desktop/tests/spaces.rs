@@ -20,10 +20,7 @@ fn an_agent_moved_into_a_new_workspace_lists_under_it_and_leaves_its_repository(
     ) {
         return;
     }
-    let mut actions = vec![
-        Step::Click("Add project"),
-        Step::Click("New project"),
-    ];
+    let mut actions = vec![Step::Click("Add project"), Step::Click("New project")];
     actions.extend(typed("Launch").into_iter().map(Step::Key));
     actions.extend([
         Step::Key(named(Key::Enter, ModifiersState::empty())),
@@ -42,7 +39,10 @@ fn an_agent_moved_into_a_new_workspace_lists_under_it_and_leaves_its_repository(
         "the workspace, its agent, then the repository with the other agent: {listed:?}"
     );
     assert_eq!(
-        listed.iter().filter(|row| **row == "Fix the parser bug").count(),
+        listed
+            .iter()
+            .filter(|row| **row == "Fix the parser bug")
+            .count(),
         1,
         "the moved agent lists once: {listed:?}"
     );
@@ -63,7 +63,10 @@ fn a_repository_added_with_no_agent_lists_at_once() {
         |_| (),
     );
     let listed = rows(&seen.controls);
-    assert!(listed.contains(&"shop"), "the new repository lists: {listed:?}");
+    assert!(
+        listed.contains(&"shop"),
+        "the new repository lists: {listed:?}"
+    );
     assert!(
         listed.contains(&"Fix the parser bug") && listed.contains(&"Write release notes"),
         "the other agents still list: {listed:?}"

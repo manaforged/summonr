@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use sigil::prelude::Rgba8;
+use sigil::prelude::Color;
 
 use super::canvas::rgb;
 use summonr_agent::durable::store::{self, Durability};
@@ -14,26 +14,26 @@ pub(crate) use tokens::style;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Palette {
-    pub(super) base: Rgba8,
-    pub(super) text: Rgba8,
-    pub(super) gray: Rgba8,
-    pub(super) dim: Rgba8,
-    pub(super) thought: Rgba8,
-    pub(super) green: Rgba8,
-    pub(super) red: Rgba8,
-    pub(super) cyan: Rgba8,
-    pub(super) yellow: Rgba8,
-    pub(super) error: Rgba8,
-    pub(super) black: Rgba8,
-    pub(super) user_bg: Rgba8,
-    pub(super) tool_bg: Rgba8,
-    pub(super) code_bg: Rgba8,
-    pub(super) diff_add_bg: Rgba8,
-    pub(super) diff_del_bg: Rgba8,
-    pub(super) code_comment: Rgba8,
-    pub(super) code_string: Rgba8,
-    pub(super) code_keyword: Rgba8,
-    pub(super) accent: Rgba8,
+    pub(super) base: Color,
+    pub(super) text: Color,
+    pub(super) gray: Color,
+    pub(super) dim: Color,
+    pub(super) thought: Color,
+    pub(super) green: Color,
+    pub(super) red: Color,
+    pub(super) cyan: Color,
+    pub(super) yellow: Color,
+    pub(super) error: Color,
+    pub(super) black: Color,
+    pub(super) user_bg: Color,
+    pub(super) tool_bg: Color,
+    pub(super) code_bg: Color,
+    pub(super) diff_add_bg: Color,
+    pub(super) diff_del_bg: Color,
+    pub(super) code_comment: Color,
+    pub(super) code_string: Color,
+    pub(super) code_keyword: Color,
+    pub(super) accent: Color,
 }
 
 impl Palette {
@@ -181,7 +181,7 @@ impl Palette {
         accent: rgb(129, 161, 193),
     };
 
-    pub(super) fn set(&mut self, key: &str, value: Rgba8) -> bool {
+    pub(super) fn set(&mut self, key: &str, value: Color) -> bool {
         let key = ALIASES
             .iter()
             .find(|(alias, _)| *alias == key)
@@ -202,7 +202,7 @@ impl Palette {
         r * 299 + g * 587 + b * 114 > 128_000
     }
 
-    pub(super) fn colors(mut self) -> Vec<(&'static str, Rgba8)> {
+    pub(super) fn colors(mut self) -> Vec<(&'static str, Color)> {
         SLOTS
             .iter()
             .map(|(name, slot)| (*name, *slot(&mut self)))
@@ -222,14 +222,14 @@ impl Palette {
     }
 }
 
-pub(super) fn color_hex(color: Rgba8) -> String {
+pub(super) fn color_hex(color: Color) -> String {
     format!(
         "#{:02x}{:02x}{:02x}{:02x}",
         color.r, color.g, color.b, color.a
     )
 }
 
-type Slot = fn(&mut Palette) -> &mut Rgba8;
+type Slot = fn(&mut Palette) -> &mut Color;
 
 const ALIASES: [(&str, &str); 2] = [("background", "base"), ("foreground", "text")];
 
@@ -339,7 +339,7 @@ fn overlay(palette: &mut Palette, path: &Path, problems: &mut Vec<String>) {
     }
 }
 
-pub(super) fn hex(value: &str) -> Result<Rgba8> {
+pub(super) fn hex(value: &str) -> Result<Color> {
     let digits = value.trim();
     let digits = digits.strip_prefix('#').unwrap_or(digits);
     let invalid = || {
@@ -360,14 +360,14 @@ pub(super) fn hex(value: &str) -> Result<Rgba8> {
                     .map_err(|_error| invalid())?;
                 Ok(digit * 17)
             };
-            Rgba8 {
+            Color {
                 r: nibble(0)?,
                 g: nibble(1)?,
                 b: nibble(2)?,
                 a: 255,
             }
         }
-        6 | 8 => Rgba8 {
+        6 | 8 => Color {
             r: byte(0..2)?,
             g: byte(2..4)?,
             b: byte(4..6)?,

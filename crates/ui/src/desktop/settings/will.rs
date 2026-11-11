@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, ControlSize, FlexWrap, JustifyContent, LayoutStyle, NodeBuilder, Paint, Position,
-    Radius, Signal, Widget, button, container, signal,
+    AlignItems, ControlSize, FlexWrap, JustifyContent, NodeBuilder, Paint, Position, Radius,
+    Signal, Widget, button, signal,
 };
 use summonr_agent::prefs::{Prefs, Reaction, Tint};
 
@@ -35,29 +35,24 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
 }
 
 fn stage(app: &App, mood: Signal<Mood>) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(STAGE)
-                .position(Position::Relative)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center)
-                .overflow(sigil::prelude::Overflow::Hidden),
-        )
-        .rounded(Radius::Lg)
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .height(STAGE)
+        .position(Position::Relative)
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .overflow(sigil::prelude::Overflow::Hidden)
+        .radius(Radius::Lg)
         .child(super::super::sky::layer(app.appearance, app.sky.get()))
         .child(super::super::will::preview(app, SHOWN, mood))
 }
 
 fn tries(mood: Signal<Mood>) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .flex_wrap(FlexWrap::Wrap)
-                .align_items(AlignItems::Center),
-        )
+    sigil::prelude::row()
+        .gap(S)
+        .flex_wrap(FlexWrap::Wrap)
+        .align_items(AlignItems::Center)
         .children_reactive(move || {
             let shown = mood.get();
             TRIES

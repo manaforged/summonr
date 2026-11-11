@@ -3,7 +3,7 @@ use super::space::hash;
 use super::*;
 
 /// The pigments of the light sky, shared with the desktop wash.
-pub(crate) const DAY: [Rgba8; 4] = [
+pub(crate) const DAY: [Color; 4] = [
     rgb(64, 132, 214),
     rgb(92, 96, 206),
     rgb(168, 82, 190),
@@ -20,7 +20,7 @@ const HUE: [f32; 2] = [0.39, 0.22];
 const CORE: f32 = 0.55;
 const NEBULA: [f32; 2] = [0.45, 0.6];
 
-pub(super) fn paint(samples: &[Sample], cols: u16, paper: Rgba8) -> Vec<Rgba8> {
+pub(super) fn paint(samples: &[Sample], cols: u16, paper: Color) -> Vec<Color> {
     let width = usize::from(cols);
     let amounts: Vec<f32> = samples.iter().map(amount).collect();
     let at = |x: isize, y: isize| {
@@ -67,7 +67,7 @@ fn amount(sample: &Sample) -> f32 {
     settled.max(UNDERWASH * body.sqrt())
 }
 
-fn pigment(sample: &Sample) -> Rgba8 {
+fn pigment(sample: &Sample) -> Color {
     let at = ((sample.hue - HUE[0]) / HUE[1]).clamp(0.0, 1.0) * (DAY.len() - 1) as f32;
     let index = (at as usize).min(DAY.len() - 2);
     let base = blend(DAY[index], DAY[index + 1], at - index as f32);
@@ -83,7 +83,7 @@ fn pigment(sample: &Sample) -> Rgba8 {
     }
 }
 
-fn dye(paper: Rgba8, pigment: Rgba8, amount: f32) -> Rgba8 {
+fn dye(paper: Color, pigment: Color, amount: f32) -> Color {
     let channel = |paper: u8, pigment: u8| {
         let kept = 1.0 - amount + f32::from(pigment) / 255.0 * amount;
         (f32::from(paper) * kept).round() as u8

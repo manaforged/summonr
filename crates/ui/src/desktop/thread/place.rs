@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use crate::app::App;
 use sigil::app::dialog::Picked;
 use sigil::prelude::{
-    ControlSize, Dimension, LayoutStyle, NodeBuilder, Position, Signal, Widget, button, container,
-    signal,
+    ControlSize, Length, NodeBuilder, Position, Signal, Widget, button, container, signal,
 };
 use sigil::widgets::MenuItem;
 use summonr_agent::hub::Open;
@@ -18,20 +17,16 @@ pub(super) fn chip(app: &App) -> NodeBuilder {
     let picked = signal(None::<Picked<PathBuf>>);
     super::super::welcome::follow(app, picked);
     let (shown, menu) = (app.clone(), app.clone());
-    container()
-        .layout(
-            LayoutStyle::flex_row()
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .shrink(0.0)
+        .align_items(sigil::prelude::AlignItems::Center)
+        .position(Position::Relative)
+        .child(
+            sigil::prelude::row()
+                .gap(sigil::prelude::Space::None)
                 .shrink(0.0)
                 .align_items(sigil::prelude::AlignItems::Center)
-                .position(Position::Relative),
-        )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .shrink(0.0)
-                        .align_items(sigil::prelude::AlignItems::Center),
-                )
                 .children_reactive(move || {
                     let mark = if shown.git_branch().is_some() {
                         sigil::icons::Icon::GitBranch
@@ -92,12 +87,9 @@ fn panel(app: &App, open: Signal<bool>, picked: Signal<Option<Picked<PathBuf>>>)
             .activate(move || picked.set(Some(super::super::welcome::folder()))),
     );
     container()
-        .layout(
-            LayoutStyle::block()
-                .position(Position::Absolute)
-                .inset_bottom(Dimension::Percent(1.0))
-                .inset_left(0.0)
-                .width(super::super::style::MENU),
-        )
+        .position(Position::Absolute)
+        .inset_bottom(Length::Percent(1.0))
+        .inset_left(0.0)
+        .width(super::super::style::MENU)
         .child(menu)
 }

@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use sigil::icons::Icon;
 use sigil::prelude::{
-    AlignItems, LayoutStyle, NodeBuilder, Signal, Tone, Widget, button, chip, container,
-    empty_state, icon, signal, text_field,
+    AlignItems, NodeBuilder, Signal, Tone, Widget, button, chip, empty_state, icon, signal,
+    text_field,
 };
 
 use super::super::App;
@@ -61,13 +61,10 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
         nodes.push(search(query));
     }
     nodes.push(
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .align_items(AlignItems::Stretch)
-                    .gap(XL),
-            )
+        sigil::prelude::column()
+            .fill_width()
+            .align_items(AlignItems::Stretch)
+            .gap(XL)
             .children_reactive(move || groups(&list, &query.get())),
     );
     nodes
@@ -75,8 +72,9 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
 
 fn agents(app: &App) -> NodeBuilder {
     let app = app.clone();
-    container()
-        .layout(LayoutStyle::flex_column().fill_width())
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
         .children_reactive(move || {
             let rows: Vec<NodeBuilder> = app
                 .window
@@ -99,12 +97,9 @@ fn agent(app: &App, seen: Seen) -> NodeBuilder {
         State::SignedOut => ("Not signed in", Tone::Neutral),
         State::Missing => ("Not installed", Tone::Neutral),
     };
-    let controls = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .align_items(AlignItems::Center),
-        )
+    let controls = sigil::prelude::row()
+        .gap(S)
+        .align_items(AlignItems::Center)
         .child(chip(label, tone).dot());
     let (act, word): (fn(&App, Friend), &str) = match seen.state {
         State::SignedIn => {
@@ -176,12 +171,9 @@ fn groups(app: &App, query: &str) -> Vec<NodeBuilder> {
 fn entry(app: &App, choice: &AuthInfo, states: &BTreeMap<String, Health>) -> NodeBuilder {
     let state = states.get(&choice.name).copied();
     let (label, tone) = status(choice, state);
-    let controls = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(S)
-                .align_items(AlignItems::Center),
-        )
+    let controls = sigil::prelude::row()
+        .gap(S)
+        .align_items(AlignItems::Center)
         .child(chip(label, tone).dot());
     let controls = match action(choice, state) {
         Some((word, act)) => controls.child(control(app, choice, word, act)),
@@ -241,7 +233,7 @@ fn status(choice: &AuthInfo, state: Option<Health>) -> (&'static str, Tone) {
     match state {
         Some(Health::KeyRejected) => return ("Key rejected", Tone::Error),
         Some(Health::Offline) => return ("Offline", Tone::Error),
-        Some(Health::RateLimited) => return ("Rate limited", Tone::Warn),
+        Some(Health::RateLimited) => return ("Rate limited", Tone::Warning),
         Some(Health::Error) => return ("Not working", Tone::Error),
         Some(
             Health::Ready
@@ -255,7 +247,7 @@ fn status(choice: &AuthInfo, state: Option<Health>) -> (&'static str, Tone) {
         | None => {}
     }
     if choice.unmodeled() {
-        return ("Needs a model", Tone::Warn);
+        return ("Needs a model", Tone::Warning);
     }
     if choice.keyless() {
         return ("No key needed", Tone::Info);

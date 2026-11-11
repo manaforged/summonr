@@ -1,6 +1,5 @@
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ModifiersState, NodeBuilder, Paint, Radius, Widget, button, container,
-    derived,
+    AlignItems, ModifiersState, NodeBuilder, Paint, Radius, Widget, button, derived,
 };
 
 use super::super::App;
@@ -64,13 +63,10 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
     let list = derived(move || shortcuts(&model.get().prefs.hotkeys));
     let edit = app.clone();
     vec![
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .align_items(AlignItems::Stretch)
-                    .gap(XL),
-            )
+        sigil::prelude::column()
+            .fill_width()
+            .align_items(AlignItems::Stretch)
+            .gap(XL)
             .children_reactive(move || {
                 let list = list.get();
                 Group::ALL
@@ -244,17 +240,22 @@ fn keys(bindings: &[Binding]) -> NodeBuilder {
 
 fn caps(chord: &[String]) -> NodeBuilder {
     chord.iter().fold(
-        container().layout(LayoutStyle::flex_row().gap(XS)),
+        sigil::prelude::row()
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .gap(XS),
         |line, cap| line.child(keycap(cap)),
     )
 }
 
 fn keycap(cap: &str) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::flex_row().padding_x(S).padding_y(XS))
-        .bg(TINT)
-        .rounded(Radius::Md)
-        .border_w(1)
+    sigil::prelude::row()
+        .gap(sigil::prelude::Space::None)
+        .align_items(sigil::prelude::AlignItems::Stretch)
+        .padding_x(S)
+        .padding_y(XS)
+        .background(TINT)
+        .radius(Radius::Md)
+        .border_width(1)
         .border_color(OUTLINE)
         .child(text(Text::Label, cap.to_owned()))
 }

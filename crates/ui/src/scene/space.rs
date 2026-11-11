@@ -7,17 +7,17 @@ use sigil::geometry::{Point, Rect};
 use sigil::scene::{DrawRect, GlyphRun, SceneBuilder};
 use sigil::style::TextStyle;
 
-pub(super) const SCRIM: Rgba8 = rgb(10, 8, 20);
+pub(super) const SCRIM: Color = rgb(10, 8, 20);
 
-pub(super) const VOID: Rgba8 = rgb(5, 5, 10);
+pub(super) const VOID: Color = rgb(5, 5, 10);
 
-pub(super) const PLATE: Rgba8 = rgb(42, 44, 58);
+pub(super) const PLATE: Color = rgb(42, 44, 58);
 
 pub(super) const GLASS: f32 = 0.62;
 
-pub(super) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
+pub(super) const STAR_DIM: Color = rgb(58, 74, 110);
 
-pub(super) const STAR_BRIGHT: Rgba8 = rgb(176, 200, 240);
+pub(super) const STAR_BRIGHT: Color = rgb(176, 200, 240);
 
 #[derive(Clone, PartialEq)]
 pub(crate) struct Spot {
@@ -26,9 +26,9 @@ pub(crate) struct Spot {
     pub(crate) cell: Cell,
 }
 
-pub(super) const WARM: Rgba8 = rgb(214, 176, 122);
+pub(super) const WARM: Color = rgb(214, 176, 122);
 
-pub(super) const FLARE: Rgba8 = rgb(244, 246, 255);
+pub(super) const FLARE: Color = rgb(244, 246, 255);
 
 const SKY_PERIOD: u64 = 50;
 
@@ -178,7 +178,7 @@ fn meteor(spots: &mut Vec<Spot>, cols: u16, rows: u16, beat: f64, seed: u64) {
     let field = field(cols, rows, seed);
     let colours = stage();
     let head = inside(cols, rows, flight.x, flight.y);
-    let mut trail: BTreeMap<(u16, u16), (u8, Rgba8)> = BTreeMap::new();
+    let mut trail: BTreeMap<(u16, u16), (u8, Color)> = BTreeMap::new();
     for step in (1..TRAIL).rev() {
         let along = f32::from(step) * TRAIL_STEP;
         let fade = 1.0 - f32::from(step) / f32::from(TRAIL);
@@ -251,7 +251,7 @@ fn lerp(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t
 }
 
-pub(super) fn under(haze: &Field) -> Rgba8 {
+pub(super) fn under(haze: &Field) -> Color {
     blend(haze.top, haze.bottom, 0.5)
 }
 
@@ -259,7 +259,7 @@ pub(super) fn index(cols: u16, x: u16, y: u16) -> usize {
     usize::from(y) * usize::from(cols) + usize::from(x)
 }
 
-fn spot(x: u16, y: u16, text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) -> Spot {
+fn spot(x: u16, y: u16, text: &'static str, fg: Color, bg: Color, bold: bool) -> Spot {
     Spot {
         x,
         y,
@@ -267,7 +267,7 @@ fn spot(x: u16, y: u16, text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) ->
     }
 }
 
-fn cell(text: &'static str, fg: Rgba8, bg: Rgba8, bold: bool) -> Cell {
+fn cell(text: &'static str, fg: Color, bg: Color, bold: bool) -> Cell {
     let mut cell = Cell::blank();
     cell.set_text(text);
     cell.fg = ink(fg);

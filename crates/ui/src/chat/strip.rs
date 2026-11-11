@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use sigil::prelude::Space;
-use sigil::prelude::{ControlSize, LayoutStyle, NodeBuilder, Token, Widget, button, container};
+use sigil::prelude::{ControlSize, NodeBuilder, Token, Widget, button, container};
 
 use super::{Agent, App, Model, Speed, canvas, entry, todos};
 use crate::model::StatusView;
@@ -81,7 +81,10 @@ pub(crate) fn sheet(app: App) -> NodeBuilder {
     )
     .child(container().children_reactive(move || {
         let (current, task_count, agent_count) = tabs_view.get();
-        let mut tabs = container().layout(LayoutStyle::flex_row().fill_width().gap(Space::Sm));
+        let mut tabs = sigil::prelude::row()
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .fill_width()
+            .gap(Space::Sm);
         for (tab, label) in [
             (
                 StatusView::Tasks,

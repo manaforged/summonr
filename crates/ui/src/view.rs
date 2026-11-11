@@ -9,7 +9,7 @@ use super::app::{App, Overlay};
 use super::scene;
 use sigil::prelude::Key;
 use sigil::prelude::KeyEvent;
-use sigil::prelude::LayoutStyle;
+
 use sigil::prelude::LogicalKey;
 use sigil::prelude::ModifiersState;
 use sigil::prelude::NodeBuilder;
@@ -41,22 +41,21 @@ pub(super) fn root(app: App) -> NodeBuilder {
                 surface::layer(screen.clone())
             };
             let overlays = screen.clone();
-            let dialog = container()
-                .layout(LayoutStyle::block())
-                .children_reactive(move || {
-                    let _viewport = overlays.viewport.get();
-                    let screen = overlays.clone();
-                    vec![
-                        screen
-                            .overlay()
-                            .and_then(|overlay| overlay.layer(screen.clone()))
-                            .unwrap_or_else(container),
-                    ]
-                });
+            let dialog = container().children_reactive(move || {
+                let _viewport = overlays.viewport.get();
+                let screen = overlays.clone();
+                vec![
+                    screen
+                        .overlay()
+                        .and_then(|overlay| overlay.layer(screen.clone()))
+                        .unwrap_or_else(container),
+                ]
+            });
             vec![
                 container()
-                    .layout(LayoutStyle::block().fill_width().fill_height())
-                    .bg(sigil::prelude::Token::Surface)
+                    .fill_width()
+                    .fill_height()
+                    .background(sigil::prelude::Token::Surface)
                     .child(chat)
                     .child(dialog)
                     .theme(super::theme::style(appearance)),

@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Signal, Space, Token, Tone,
-    container, list_row, notice_band, section_label, text_edit,
+    AlignItems, ListRowSlots, NodeBuilder, Paint, Signal, Space, Token, Tone, container, list_row,
+    notice_band, section_label, text_edit,
 };
 use sigil::widgets::{RowRender, TextEditBuilder, VirtualListBuilder};
 
@@ -10,9 +10,8 @@ use crate::canvas;
 use crate::text_style::TextStyle;
 use sigil::prelude::Widget;
 
-pub(super) fn row(padding: Space) -> LayoutStyle {
-    LayoutStyle::flex_row()
-        .fill_width()
+pub(super) fn row<W: Widget>(node: W, padding: Space) -> W {
+    node.fill_width()
         .height(canvas::overlay_list_row())
         .padding_x(padding)
 }
@@ -56,12 +55,12 @@ pub(crate) fn slotted(
 }
 
 pub(crate) fn group(title: impl Into<String>) -> NodeBuilder {
-    section_label(title.into()).layout(row(Space::Sm))
+    row(section_label(title.into()), Space::Sm)
 }
 
 pub(crate) fn heading(parts: Vec<(String, TextStyle)>) -> NodeBuilder {
     parts.into_iter().fold(
-        container().layout(row(Space::Sm).align_items(AlignItems::Center)),
+        row(sigil::prelude::row().gap(Space::None), Space::Sm).align_items(AlignItems::Center),
         |line, (text, text_style)| line.child(text_style.on(sigil::prelude::text(text).nowrap())),
     )
 }
@@ -72,9 +71,11 @@ pub(crate) fn notice(text: impl Into<String>, tone: Tone) -> NodeBuilder {
     } else {
         canvas::palette().dim
     };
-    notice_band(text.into(), tone)
-        .layout(row(Space::Sm))
-        .bg(canvas::blend(canvas::palette().base, color, 0.14))
+    row(notice_band(text.into(), tone), Space::Sm).background(canvas::blend(
+        canvas::palette().base,
+        color,
+        0.14,
+    ))
 }
 
 const FIELD_KEY: usize = 11;
@@ -105,7 +106,7 @@ pub(crate) fn overlay_list<T: 'static, R: RowRender<T>>(
 ) -> NodeBuilder {
     let height = row * shown as f32;
     container()
-        .layout(LayoutStyle::block().fill_width())
+        .fill_width()
         .child(list.row_height(row).height(height).viewport_height(height))
 }
 
@@ -131,24 +132,24 @@ pub(crate) fn browser_layout(
 
 pub(crate) fn browser_columns(
     list: impl IntoIterator<Item = NodeBuilder>,
-    layout: LayoutStyle,
+    frame: NodeBuilder,
     detail: Vec<NodeBuilder>,
     gap: Space,
 ) -> Vec<NodeBuilder> {
     let list = list
         .into_iter()
-        .fold(container().layout(layout), |node, child| node.child(child));
+        .fold(frame, |node, child| node.child(child));
     let detail = detail.into_iter().fold(
-        container().layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(canvas::overlay_gap()),
-        ),
+        sigil::prelude::column()
+            .fill_width()
+            .gap(canvas::overlay_gap()),
         |node, child| node.child(child),
     );
     vec![
-        container()
-            .layout(LayoutStyle::flex_row().fill_width().gap(gap))
+        sigil::prelude::row()
+            .align_items(sigil::prelude::AlignItems::Stretch)
+            .fill_width()
+            .gap(gap)
             .child(list)
             .child(detail),
     ]
@@ -166,12 +167,12 @@ pub(crate) fn filter_field(
 }
 
 pub(crate) fn filter_column() -> NodeBuilder {
-    container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .grow(1.0)
-            .min_size(0.0, 0.0),
-    )
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
 }
 
 pub(crate) fn plain(text: impl Into<String>) -> NodeBuilder {

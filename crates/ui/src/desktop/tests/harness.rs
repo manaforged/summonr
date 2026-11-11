@@ -113,7 +113,11 @@ fn click(host: &mut Host, label: &str) {
                 .flatten()
         })
         .unwrap_or_else(|| panic!("no control named {label}"));
-    press_at(host, (bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0);
+    press_at(
+        host,
+        (bounds.x0 + bounds.x1) / 2.0,
+        (bounds.y0 + bounds.y1) / 2.0,
+    );
 }
 
 fn click_rightmost(host: &mut Host, label: &str) {
@@ -125,7 +129,11 @@ fn click_rightmost(host: &mut Host, label: &str) {
         .filter_map(|(_, node)| node.bounds())
         .max_by(|a, b| a.x0.total_cmp(&b.x0))
         .unwrap_or_else(|| panic!("no control named {label}"));
-    press_at(host, (bounds.x0 + bounds.x1) / 2.0, (bounds.y0 + bounds.y1) / 2.0);
+    press_at(
+        host,
+        (bounds.x0 + bounds.x1) / 2.0,
+        (bounds.y0 + bounds.y1) / 2.0,
+    );
 }
 
 fn press_at(host: &mut Host, x: f64, y: f64) {
@@ -192,7 +200,9 @@ pub(super) fn steps<T>(
         }
         for step in steps {
             match step {
-                Step::Key(key) => host.route(key),
+                Step::Key(key) => {
+                    host.route(key);
+                }
                 Step::Click(label) => click(&mut host, label),
                 Step::ClickRightmost(label) => click_rightmost(&mut host, label),
                 Step::RightClick(label) => right_click(&mut host, label),

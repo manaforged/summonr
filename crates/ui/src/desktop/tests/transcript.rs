@@ -149,21 +149,13 @@ fn all_steps_in_the_palette_unfolds_finished_replies_and_folds_them_again() {
         "{}",
         folded.text()
     );
-    let every = steps(
-        ran_tests,
-        all_steps(1),
-        |_| (),
-    );
+    let every = steps(ran_tests, all_steps(1), |_| ());
     assert!(
         every.shows(|text| text.contains("cargo test --workspace")),
         "{}",
         every.text()
     );
-    let back = steps(
-        ran_tests,
-        all_steps(2),
-        |_| (),
-    );
+    let back = steps(ran_tests, all_steps(2), |_| ());
     assert!(
         !back.shows(|text| text.contains("cargo test --workspace")),
         "{}",
@@ -225,7 +217,12 @@ fn worked_turn(app: &super::App) {
     thought(app, "One failure in the parser.");
     tool(app, "b", "run_command", r#"{"command":"rg parse"}"#);
     thought(app, "Fix the off-by-one.");
-    tool(app, "c", "write", r#"{"path":"src/parse.rs","content":"x"}"#);
+    tool(
+        app,
+        "c",
+        "write",
+        r#"{"path":"src/parse.rs","content":"x"}"#,
+    );
     app.update(Msg::Fact(Fact::Event(Event::Assistant {
         text: "Fixed.".to_owned(),
     })));
@@ -237,7 +234,11 @@ fn a_finished_turn_folds_its_thoughts_and_steps_into_one_row() {
         return;
     }
     let folded = drive(worked_turn, Vec::new(), |_| ());
-    let rows = folded.texts.iter().filter(|text| text.starts_with("Thought")).count();
+    let rows = folded
+        .texts
+        .iter()
+        .filter(|text| text.starts_with("Thought"))
+        .count();
     assert_eq!(rows, 0, "{}", folded.text());
     assert!(
         folded.shows(|text| text == "Edited 1 file, ran 2 commands"),
@@ -249,7 +250,15 @@ fn a_finished_turn_folds_its_thoughts_and_steps_into_one_row() {
         vec![Step::Click("Edited 1 file, ran 2 commands")],
         |_| (),
     );
-    let thoughts = open.texts.iter().filter(|text| text.starts_with("Thought")).count();
+    let thoughts = open
+        .texts
+        .iter()
+        .filter(|text| text.starts_with("Thought"))
+        .count();
     assert_eq!(thoughts, 3, "{}", open.text());
-    assert!(open.shows(|text| text.contains("cargo test")), "{}", open.text());
+    assert!(
+        open.shows(|text| text.contains("cargo test")),
+        "{}",
+        open.text()
+    );
 }

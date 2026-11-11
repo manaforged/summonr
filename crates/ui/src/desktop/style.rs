@@ -214,7 +214,7 @@ pub(crate) fn gui(palette: crate::theme::Palette) -> sigil::prelude::Theme {
     let mut theme = crate::theme::style(palette);
     let backdrop = if palette.base.a == 0 {
         sigil::terminal::caps()
-            .and_then(|caps| caps.background)
+            .and_then(|caps| caps.background())
             .unwrap_or(sigil::prelude::Color {
                 a: 255,
                 ..palette.base

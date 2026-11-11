@@ -244,7 +244,7 @@ pub(super) fn steps<T>(
                 let SceneCommand::GlyphRun(draw) = command else {
                     return None;
                 };
-                Some(draw.text.clone())
+                Some(draw.text().to_owned())
             })
             .collect();
         Seen {

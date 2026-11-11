@@ -44,7 +44,7 @@ pub(crate) fn editor(app: &App, editing: bool) -> TextEditBuilder {
     } else {
         (app.draft, app.caret)
     };
-    let editor = input_keys(app, text_edit(value))
+    let editor = input_keys(app, value, text_edit(value))
         .caret_position(caret)
         .focus_when(app.editor_focus);
     if editing {

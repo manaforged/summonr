@@ -77,7 +77,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Esc, "close");
     Dialog::new(Size::Reading, "Help", hints)
         .child(
-            input_keys(&app, text_field(query))
+            input_keys(&app, query, text_field(query))
                 .placeholder("find")
                 .focus_when(focus)
                 .autofocus()

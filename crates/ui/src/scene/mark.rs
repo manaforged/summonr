@@ -151,7 +151,7 @@ const GLYPH_ASPECT: f32 = 252.0 / 224.0;
 const WIDTH_RANGE: [i32; 2] = [20, 48];
 
 fn width() -> i32 {
-    width_for(sigil::terminal::caps().and_then(|caps| caps.cell))
+    width_for(sigil::terminal::caps().and_then(|caps| caps.cell()))
 }
 
 fn width_for(cell: Option<[u16; 2]>) -> i32 {

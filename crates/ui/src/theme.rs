@@ -270,7 +270,7 @@ fn backdrop_light() -> bool {
     LIGHT_BACKDROP.with(Cell::get).unwrap_or_else(|| {
         let backdrop = sigil::terminal::backdrop()
             .peek()
-            .or_else(|| sigil::terminal::caps().and_then(|caps| caps.backdrop));
+            .or_else(|| sigil::terminal::caps().and_then(|caps| caps.backdrop()));
         backdrop == Some(sigil::terminal::Backdrop::Light)
     })
 }

@@ -102,7 +102,7 @@ fn texts(
                 let SceneCommand::GlyphRun(draw) = command else {
                     return None;
                 };
-                Some((draw.text.clone(), draw.rect.origin.y))
+                Some((draw.text().to_owned(), draw.rect.origin.y))
             })
             .collect()
     })

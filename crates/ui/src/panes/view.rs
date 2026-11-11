@@ -49,7 +49,7 @@ pub(super) fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     column = column.child(bar);
     if editing {
         return column.child(node(move || {
-            input_keys(&app, text_edit(app.view_text))
+            input_keys(&app, app.view_text, text_edit(app.view_text))
                 .caret_position(app.view_caret)
                 .autofocus()
                 .gap(sigil::prelude::Space::None)

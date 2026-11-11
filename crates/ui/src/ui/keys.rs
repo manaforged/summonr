@@ -1,8 +1,5 @@
-use std::cell::Cell;
-use std::rc::Rc;
-
-use sigil::prelude::TextCursor;
-use sigil::prelude::{KeyEvent, LogicalKey, ModifiersState, NodeBuilder, Shortcut, Widget};
+use sigil::prelude::{KeyEvent, LogicalKey, ModifiersState, NodeBuilder, Shortcut, Signal, Widget};
+use sigil::reactive::defer;
 
 use crate::app::App;
 use summonr_agent::prefs::EditorKey;
@@ -12,25 +9,23 @@ const OPTION_GLYPHS: [(&str, &str); 3] = [("p", "π"), ("d", "∂"), ("o", "ø")
 pub(crate) type KeyAction = fn(&App, &mut KeyEvent);
 pub(crate) type Bindings = Vec<(Shortcut, KeyAction)>;
 
-pub(crate) fn input_keys<T: sigil::prelude::Widget>(app: &App, input: T) -> T {
+pub(crate) fn input_keys<T: Widget>(app: &App, value: Signal<String>, input: T) -> T {
     let app = app.clone();
     input.map_node(move |node| {
-        let cursor = Rc::new(Cell::new(None::<TextCursor>));
-        let field = Rc::clone(&cursor);
-        node.mutate(move |node| field.set(node.text_cursor()))
-            .key_capture(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
-                let selected = cursor.get().is_some_and(|cursor| {
-                    cursor
-                        .anchor
-                        .peek()
-                        .is_some_and(|anchor| anchor != cursor.caret.peek())
+        node.key_capture(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
+            let before = value.peek().len();
+            if EditorKey::yields('x', before == 0) {
+                let app = app.clone();
+                defer(move || {
+                    if value.peek().len() == before {
+                        app.arm_leader();
+                    }
                 });
-                if EditorKey::yields('x', false) && selected {
-                    return;
-                }
-                app.arm_leader();
-                event.stop_propagation();
-            })
+                return;
+            }
+            app.arm_leader();
+            event.stop_propagation();
+        })
     })
 }
 

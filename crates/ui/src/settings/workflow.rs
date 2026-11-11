@@ -62,9 +62,10 @@ fn title(app: &App) -> String {
 
 fn naming(app: &App) -> Vec<NodeBuilder> {
     let save = app.clone();
+    let query = app.workflow.list.query;
     vec![
         container().child(
-            input_keys(app, text_edit(app.workflow.list.query))
+            input_keys(app, query, text_edit(query))
                 .caret_position(app.workflow.list.caret)
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())

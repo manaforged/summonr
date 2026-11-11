@@ -160,7 +160,7 @@ pub(crate) fn filter_field(
     query: Signal<String>,
     caret: Signal<usize>,
 ) -> TextEditBuilder {
-    input_keys(app, text_edit(query))
+    input_keys(app, query, text_edit(query))
         .caret_position(caret)
         .placeholder(super::FILTER_HINT)
         .height(canvas::overlay_list_row())

@@ -336,7 +336,7 @@ fn hunk_view(
         let commit = app.clone();
         let edit = app.clone();
         card = card.child(node(move || {
-            input_keys(&edit, text_edit(edit.note_text))
+            input_keys(&edit, edit.note_text, text_edit(edit.note_text))
                 .caret_position(edit.note_caret)
                 .submit(move |text| commit.note_commit(text))
                 .autofocus()

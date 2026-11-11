@@ -144,7 +144,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                                 ),
                         )
                         .child(
-                            input_keys(&paint, text_edit(editor.input))
+                            input_keys(&paint, editor.input, text_edit(editor.input))
                                 .caret_position(editor.caret)
                                 .focus_when(editor.focus)
                                 .autofocus()

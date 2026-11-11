@@ -55,6 +55,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
     let typing = app.clone();
     let count = app.clone();
     let chips = app.clone();
+    let query = app.picker.list.query;
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
     let (cols, rows) = app.viewport.peek();
     Dialog::new(Size::Page, "Models", Hints::new())
@@ -69,7 +70,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
         })
         .child(
             container().child(
-                input_keys(&app, text_field(app.picker.list.query))
+                input_keys(&app, query, text_field(query))
                     .placeholder("Search models, providers, or type a model id")
                     .focus_when(app.picker.focus)
                     .autofocus()

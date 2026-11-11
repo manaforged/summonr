@@ -85,7 +85,7 @@ pub(super) fn field(app: &App, input: Input, focus: bool) -> NodeBuilder {
     } else {
         app.auth.key
     };
-    let field = input_keys(app, text_field(value)).placeholder(input.placeholder());
+    let field = input_keys(app, value, text_field(value)).placeholder(input.placeholder());
     let field = if focus {
         field.focus_when(app.auth.focus).autofocus()
     } else {

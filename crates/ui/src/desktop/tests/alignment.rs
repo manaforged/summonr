@@ -139,7 +139,7 @@ fn marks(setup: impl FnOnce(&App)) -> Vec<Mark> {
                     offset.push((dx + transform[0][2], dy + transform[1][2]))
                 }
                 SceneCommand::PopTransform => drop(offset.pop()),
-                SceneCommand::GlyphRun(run) => push(Kind::Text, run.text.clone(), run.rect),
+                SceneCommand::GlyphRun(run) => push(Kind::Text, run.text().to_owned(), run.rect),
                 SceneCommand::Sprite(sprite) => push(Kind::Fill, String::new(), sprite.destination),
                 SceneCommand::Rect(rect) => push(Kind::Fill, String::new(), rect.rect),
                 _ => {}

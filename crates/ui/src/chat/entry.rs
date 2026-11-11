@@ -162,7 +162,7 @@ fn verify(command: &str, passed: bool) -> NodeBuilder {
 }
 
 fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeBuilder {
-    if !canvas::is_window() && caps().is_none_or(|caps| caps.graphics.is_none()) {
+    if !canvas::is_window() && caps().is_none_or(|caps| caps.graphics().is_none()) {
         return wrap(TextStyle::sm(sigil::prelude::Token::Gray11).on(text("[attached image]")));
     }
     let aspect = if canvas::is_window() {

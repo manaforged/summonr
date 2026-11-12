@@ -97,13 +97,7 @@ pub(crate) fn snapshot(
             hashed,
         })
     };
-    let threaded = tokio::runtime::Handle::try_current()
-        .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
-    if threaded {
-        tokio::task::block_in_place(walk)
-    } else {
-        walk()
-    }
+    crate::tools::blocking(walk)
 }
 
 fn mark(

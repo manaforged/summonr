@@ -65,12 +65,7 @@ impl Checkpoints {
             return Ok(());
         }
         trees.resize(turn, tree);
-        store::write(
-            &self.log,
-            format!("{}\n", trees.join("\n")),
-            store::Durability::Renamed,
-        )?;
-        Ok(())
+        write_lines(&self.log, &trees)
     }
 
     /// Adds the current content of `paths` to turn `turn`'s checkpoint before a tool rewrites
@@ -108,12 +103,7 @@ impl Checkpoints {
         if let Some(slot) = trees.get_mut(turn - 1) {
             *slot = tree;
         }
-        store::write(
-            &self.log,
-            format!("{}\n", trees.join("\n")),
-            store::Durability::Renamed,
-        )?;
-        Ok(())
+        write_lines(&self.log, &trees)
     }
 
     pub(crate) fn deferred(&self) -> bool {
@@ -151,7 +141,7 @@ impl Checkpoints {
     }
 
     fn skipped(&self) -> Result<Vec<String>> {
-        let mut paths: Vec<String> = read_text(&self.skip)?.lines().map(str::to_string).collect();
+        let mut paths = read_lines(&self.skip)?;
         let known = paths.len();
         let mut seen: std::collections::HashSet<String> = paths.iter().cloned().collect();
         for path in crate::durable::tree::own_files(&self.root)? {
@@ -160,11 +150,7 @@ impl Checkpoints {
             }
         }
         if paths.len() > known {
-            store::write(
-                &self.skip,
-                format!("{}\n", paths.join("\n")),
-                store::Durability::Renamed,
-            )?;
+            write_lines(&self.skip, &paths)?;
         }
         Ok(paths)
     }
@@ -199,7 +185,7 @@ impl Checkpoints {
     }
 
     pub(crate) fn trees(&self) -> Result<Vec<String>> {
-        Ok(read_text(&self.log)?.lines().map(str::to_string).collect())
+        read_lines(&self.log)
     }
 
     pub(crate) fn git(&self, args: &[&str]) -> Result<String> {
@@ -293,9 +279,19 @@ fn seed(workspace: &Path, index: &Path) {
     }
 }
 
-fn read_text(path: &Path) -> Result<String> {
-    store::read_or_empty(path)
-        .map_err(|error| Error::Config(format!("cannot read {}: {error}", path.display())))
+fn read_lines(path: &Path) -> Result<Vec<String>> {
+    let text = store::read_or_empty(path)
+        .map_err(|error| Error::Config(format!("cannot read {}: {error}", path.display())))?;
+    Ok(text.lines().map(str::to_string).collect())
+}
+
+fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
+    store::write(
+        path,
+        format!("{}\n", lines.join("\n")),
+        store::Durability::Renamed,
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

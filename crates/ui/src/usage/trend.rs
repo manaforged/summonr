@@ -1,5 +1,5 @@
 use sigil::prelude::Space;
-use sigil::prelude::{AlignItems, Color, JustifyContent, NodeBuilder, Paint, container, panel};
+use sigil::prelude::{AlignItems, Color, JustifyContent, NodeBuilder, Paint, card, container};
 
 use super::super::canvas::palette;
 use super::report::{Metric, Report};
@@ -33,10 +33,13 @@ pub(super) fn trend(report: &Report, metric: Metric) -> NodeBuilder {
                 )),
             container()
                 .fill_width()
-                .child(panel().padding(Space::Lg).child(column(
-                    vec![plot(report, peak, divisor, &colors), label_row(&labels)],
-                    Space::Sm,
-                ))),
+                .child(
+                    card(column(
+                        vec![plot(report, peak, divisor, &colors), label_row(&labels)],
+                        Space::Sm,
+                    ))
+                    .padding(Space::Lg),
+                ),
         ],
         Space::Sm,
     )

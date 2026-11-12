@@ -11,7 +11,7 @@ use sigil::prelude::Space;
 use sigil::prelude::chart;
 use sigil::prelude::container;
 use sigil::prelude::diff;
-use sigil::prelude::icon_button;
+use sigil::prelude::button;
 use sigil::prelude::image;
 use sigil::prelude::markdown_inline;
 use sigil::prelude::text;
@@ -142,7 +142,7 @@ fn assistant(body: sigil::prelude::Signal<String>, app: &App) -> NodeBuilder {
                     .child(shown),
             )
             .child(
-                icon_button("⧉", move || copy_app.copy.set(Some(body.peek())))
+                button("⧉").ghost().square().activate(move || copy_app.copy.set(Some(body.peek())))
                     .ghost()
                     .accessible("Copy reply"),
             ),

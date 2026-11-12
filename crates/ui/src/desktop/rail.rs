@@ -1,5 +1,5 @@
 use sigil::icons::Icon;
-use sigil::prelude::{NodeBuilder, Paint, Widget, container, derived, icon_button};
+use sigil::prelude::{NodeBuilder, Paint, Widget, button, container, derived};
 use summonr_agent::panel::{Panel, Place};
 
 use super::App;
@@ -70,7 +70,7 @@ pub(super) fn view(app: &App) -> NodeBuilder {
 fn entry(app: &App, name: Option<String>, glyph: Icon, label: &str, current: bool) -> NodeBuilder {
     let pick = app.clone();
     let button =
-        icon_button(glyph, move || pick.panels.side.set(name.clone())).accessible(label.to_owned());
+        button(glyph).activate(move || pick.panels.side.set(name.clone())).accessible(label.to_owned());
     super::tip(
         label,
         None,

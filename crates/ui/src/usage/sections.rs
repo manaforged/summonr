@@ -1,7 +1,7 @@
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, Color, FlexWrap, NodeBuilder, Tone, container, heatmap, panel, progress, signal,
+    AlignItems, Color, FlexWrap, NodeBuilder, Tone, container, heatmap, progress, signal,
     sparkline,
 };
 use sigil::widgets::SparkMark;
@@ -100,11 +100,10 @@ fn card(title: &str, value: String, visual: Option<NodeBuilder>, note: String) -
         .min_width(0.0)
         .min_height(0.0)
         .child(
-            panel()
+            sigil::prelude::card(body)
                 .title(title)
                 .padding(Space::Lg)
-                .grow(1.0)
-                .child(body),
+                .grow(1.0),
         )
 }
 

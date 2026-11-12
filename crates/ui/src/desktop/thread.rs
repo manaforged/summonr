@@ -2,7 +2,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::Widget;
 use sigil::prelude::{
     AlignItems, ControlSize, JustifyContent, LogicalKey, ModifiersState, NodeBuilder, Shortcut,
-    Space, Token, Tone, button, container, icon_button, node, notice_band, spacer,
+    Space, Token, Tone, button, container, node, notice_band, spacer,
 };
 
 use super::{App, chat};

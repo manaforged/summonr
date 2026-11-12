@@ -9,7 +9,7 @@ use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::container;
 use sigil::prelude::context_menu;
-use sigil::prelude::icon_button;
+use sigil::prelude::button;
 use sigil::prelude::list_row;
 
 use super::{App, Pane, PaneRow, diff, todos, tree_actions, view};
@@ -230,7 +230,7 @@ pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
 }
 
 pub(super) fn close(app: App) -> impl IntoNode {
-    icon_button("✕", move || app.toggle_side()).accessible("Close pane")
+    button("✕").ghost().square().activate(move || app.toggle_side()).accessible("Close pane")
 }
 
 #[expect(

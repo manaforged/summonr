@@ -46,7 +46,7 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
     items.extend(super::super::side::toggles(app));
     if let Some(term) = terminal {
         let (close, id) = (app.clone(), term.id);
-        let button = sigil::prelude::icon_button(sigil::icons::Icon::X, move || {
+        let button = sigil::prelude::button(sigil::icons::Icon::X).activate(move || {
             super::super::terminal::close(&close, id)
         })
         .accessible(CLOSE_TERMINAL);
@@ -54,14 +54,14 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
     }
     items.extend(run(app));
     let pane = app.clone();
-    let button = sigil::prelude::icon_button(sigil::icons::Icon::Columns2, move || {
+    let button = sigil::prelude::button(sigil::icons::Icon::Columns2).activate(move || {
         super::super::split::split_app(&pane)
     })
     .accessible(SPLIT_PANE);
     items.push(super::super::tip(SPLIT_PANE, Some("⌘D"), button.into()));
     if split {
         let close = app.clone();
-        let button = sigil::prelude::icon_button(sigil::icons::Icon::X, move || {
+        let button = sigil::prelude::button(sigil::icons::Icon::X).activate(move || {
             super::super::split::close_app(&close)
         })
         .accessible(CLOSE_PANE);
@@ -75,7 +75,7 @@ fn run(app: &App) -> Option<NodeBuilder> {
     let rows = super::super::terminal::run_rows(&app.workspace());
     let first = rows.iter().find(|row| !row.cloud_only)?;
     let (start, id) = (app.clone(), first.id.clone());
-    let button = sigil::prelude::icon_button(sigil::icons::Icon::Play, move || {
+    let button = sigil::prelude::button(sigil::icons::Icon::Play).activate(move || {
         super::super::terminal::run_action(&start, id.as_deref())
     })
     .accessible(RUN_BUTTON);

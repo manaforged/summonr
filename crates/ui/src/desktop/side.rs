@@ -33,7 +33,7 @@ pub(super) fn toggles(app: &App) -> Vec<NodeBuilder> {
             )]
         });
     let shell =
-        sigil::prelude::icon_button(Icon::Terminal, move || terminal.toggle_pane(Pane::Terminal))
+        sigil::prelude::button(Icon::Terminal).activate(move || terminal.toggle_pane(Pane::Terminal))
             .accessible(TERMINAL);
     vec![stat, super::tip(TERMINAL, Some("⌃`"), shell.into())]
 }
@@ -92,7 +92,7 @@ fn tabs(app: &App, pane: Pane) -> NodeBuilder {
         .border_color(DIVIDER)
         .child(super::drag_area())
         .child(
-            sigil::prelude::icon_button(Icon::X, move || close.toggle_side())
+            sigil::prelude::button(Icon::X).activate(move || close.toggle_side())
                 .accessible("Close panel"),
         )
 }

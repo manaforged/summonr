@@ -24,7 +24,7 @@ pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
     super::super::welcome::follow(app, picked);
     let open = signal(false);
     let button =
-        sigil::prelude::icon_button(Icon::Plus, move || open.update(|shown| *shown = !*shown))
+        sigil::prelude::button(Icon::Plus).activate(move || open.update(|shown| *shown = !*shown))
             .accessible(ADD_PROJECT);
     let anchored = container()
         .position(Position::Relative)

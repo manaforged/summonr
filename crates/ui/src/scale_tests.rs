@@ -34,6 +34,7 @@ mod paths;
 mod picker;
 mod projections;
 mod reflow;
+mod rendering;
 mod right_click;
 mod secret;
 mod settings;

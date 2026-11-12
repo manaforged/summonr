@@ -1,7 +1,7 @@
 use sigil::icons::Icon;
 use sigil::prelude::{
     AlignItems, JustifyContent, Length, NodeBuilder, Paint, Position, Radius, Widget, button,
-    container, icon_button, signal,
+    container, signal,
 };
 use sigil::widgets::MenuItem;
 
@@ -141,7 +141,7 @@ fn wider_menu(app: &App, wider: &[&(String, Pick)]) -> NodeBuilder {
             .collect::<Vec<_>>(),
         app.clone(),
     );
-    let arrow = icon_button(Icon::ChevronDown, move || open.set(!open.peek())).accessible(MORE);
+    let arrow = button(Icon::ChevronDown).activate(move || open.set(!open.peek())).accessible(MORE);
     container()
         .position(Position::Relative)
         .shrink(0.0)

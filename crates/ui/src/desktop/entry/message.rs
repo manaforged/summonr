@@ -60,7 +60,7 @@ fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
         .justify_content(JustifyContent::SpaceBetween)
         .child(styled(Text::Meta, lang.clone()))
         .child(
-            sigil::prelude::icon_button(sigil::icons::Icon::Copy, move || {
+            sigil::prelude::button(sigil::icons::Icon::Copy).activate(move || {
                 copy.copy.set(Some(copied.clone()));
             })
             .size(sigil::prelude::ControlSize::Compact)

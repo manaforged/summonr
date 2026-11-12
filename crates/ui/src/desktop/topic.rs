@@ -256,7 +256,7 @@ pub(super) fn strip(app: &App) -> NodeBuilder {
 
 fn new_thread(app: &App) -> NodeBuilder {
     let open = app.clone();
-    let button = sigil::prelude::icon_button(sigil::icons::Icon::Plus, move || {
+    let button = sigil::prelude::button(sigil::icons::Icon::Plus).activate(move || {
         let session = open.model.with(|model| model.session.clone());
         let chats = open.sessions.all_chats();
         let Some(info) = chats.iter().find(|info| info.id == session) else {

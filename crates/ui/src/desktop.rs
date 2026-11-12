@@ -47,7 +47,7 @@ const CONTROLS: f32 = 84.0;
 /// The button that shows or hides the sidebar.
 fn sidebar_toggle(app: &App) -> NodeBuilder {
     let side = app.clone();
-    let toggle = sigil::prelude::icon_button(sigil::icons::Icon::PanelLeft, move || {
+    let toggle = sigil::prelude::button(sigil::icons::Icon::PanelLeft).activate(move || {
         side.window.sidebar.set(!side.window.sidebar.peek());
     })
     .accessible(SIDEBAR);

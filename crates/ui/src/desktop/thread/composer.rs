@@ -162,7 +162,7 @@ fn approval(app: App) -> NodeBuilder {
 }
 
 fn attach(app: App) -> NodeBuilder {
-    icon_button(sigil::icons::Icon::Plus, move || {
+    button(sigil::icons::Icon::Plus).activate(move || {
         if app.view_edit.peek() {
             return;
         }
@@ -185,7 +185,7 @@ fn send(app: App, editing: bool) -> NodeBuilder {
         let app = shown.clone();
         if running(&app) {
             return vec![
-                icon_button(sigil::icons::Icon::Square, move || app.interrupt())
+                button(sigil::icons::Icon::Square).activate(move || app.interrupt())
                     .primary()
                     .solid()
                     .accessible("Stop")
@@ -195,7 +195,7 @@ fn send(app: App, editing: bool) -> NodeBuilder {
         }
         let (draft, attached, submit) = (app.draft, app.attached, app.clone());
         vec![
-            icon_button(sigil::icons::Icon::ArrowUp, move || submit.submit())
+            button(sigil::icons::Icon::ArrowUp).activate(move || submit.submit())
                 .primary()
                 .solid()
                 .accessible("Send")

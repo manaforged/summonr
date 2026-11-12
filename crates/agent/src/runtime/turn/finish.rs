@@ -1,20 +1,32 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
-    fn close_plain(&mut self, snapshot: String, events: &[Event]) -> Result<()> {
-        if self.session.stage() == Some(Stage::Execute)
-            && self.work_progress()?.kind == crate::WorkKind::Single
+    fn verify_plain(&mut self) -> Result<Option<Vec<String>>> {
+        if self.session.stage() != Some(Stage::Execute)
+            || self.work_progress()?.kind != crate::WorkKind::Single
         {
-            let wrote = self.tools.wrote();
-            drop(self.session.enter_verify(&wrote)?);
-            drop(self.session.limit_changes(&wrote)?);
-            let receipt = self.turn_receipt(&wrote, snapshot, events);
-            let verdict = self.session.captured_verdict(true);
-            self.session
-                .commit_verdict(verdict, Decision::Automatic, Some(&receipt))?;
-        } else {
-            self.session.close()?;
+            return Ok(None);
         }
+        let wrote = self.tools.wrote();
+        drop(self.session.enter_verify(&wrote)?);
+        drop(self.session.limit_changes(&wrote)?);
+        Ok(Some(wrote))
+    }
+
+    fn close_plain(
+        &mut self,
+        wrote: Option<Vec<String>>,
+        snapshot: String,
+        events: &[Event],
+    ) -> Result<()> {
+        let Some(wrote) = wrote else {
+            self.session.close()?;
+            return Ok(());
+        };
+        let receipt = self.turn_receipt(&wrote, snapshot, events);
+        let verdict = self.session.captured_verdict(true);
+        self.session
+            .commit_verdict(verdict, Decision::Automatic, Some(&receipt))?;
         Ok(())
     }
 
@@ -36,9 +48,11 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         pre: &mut Pretask,
     ) -> Result<Turn> {
+        let plain = !self.executes_work();
+        let verified = if plain { self.verify_plain() } else { Ok(None) };
         let snapshot = self.settle(pre, events, &mut emit).await?;
-        if !self.executes_work() {
-            self.close_plain(snapshot, events)?;
+        if plain {
+            self.close_plain(verified?, snapshot, events)?;
             return self.close_turn(
                 Ending::Done(Vec::new()),
                 message.content,

@@ -34,6 +34,9 @@ struct Shipped {
     every_secs: u64,
 }
 
+/// The cache file name of the plan that Claude Code reports its own usage for.
+pub(crate) const CLAUDE_CODE: &str = "claude-code";
+
 fn shipped() -> &'static Shipped {
     static SHIPPED: OnceLock<Shipped> = OnceLock::new();
     SHIPPED.get_or_init(|| summonr_core::embedded!("usage plan", "quota/plans.toml"))

@@ -54,7 +54,7 @@ fn keep_good(fresh: Vec<Reading>, old: Vec<Reading>) -> Vec<Reading> {
         .collect()
 }
 
-fn folder() -> std::io::Result<PathBuf> {
+pub(super) fn folder() -> std::io::Result<PathBuf> {
     let home = summonr_core::dirs::summonr_home().map_err(std::io::Error::other)?;
     Ok(home.join("cache/quota"))
 }

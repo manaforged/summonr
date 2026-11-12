@@ -137,10 +137,13 @@ pub(super) async fn fetch(plan: &Plan, source: Source<'_>) -> Reading {
 }
 
 fn path(file: &str) -> PathBuf {
-    let file = match summonr_core::dirs::summonr_home() {
-        Ok(home) => file.replace("$SUMMONR_HOME", &home.to_string_lossy()),
-        Err(_) => file.to_string(),
-    };
+    let mut file = file.to_string();
+    if let Ok(cache) = super::refresh::folder() {
+        file = file.replace("$QUOTA_CACHE", &cache.to_string_lossy());
+    }
+    if let Ok(home) = summonr_core::dirs::summonr_home() {
+        file = file.replace("$SUMMONR_HOME", &home.to_string_lossy());
+    }
     crate::config::expand_tilde(&file).unwrap_or_else(|| file.into())
 }
 
@@ -225,3 +228,7 @@ fn json(printed: Result<String, String>) -> Result<Value, String> {
     serde_json::from_str(&printed?)
         .map_err(|error| format!("printed JSON that does not parse: {error}"))
 }
+
+#[cfg(test)]
+#[path = "fetch_tests.rs"]
+mod tests;

@@ -271,7 +271,7 @@ pub(crate) fn gui(palette: crate::theme::Palette) -> sigil::prelude::Theme {
         ("on-accent", backdrop),
         ("on-solid", backdrop),
     ] {
-        theme.register_token(name, sigil::style::ThemeValue::Color(color));
+        theme = theme.token(name, sigil::style::ThemeValue::Color(color));
     }
     theme
 }

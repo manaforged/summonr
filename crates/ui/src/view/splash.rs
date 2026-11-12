@@ -41,8 +41,7 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
         a: (colours.pane * 255.0) as u8,
         ..colours.plate
     };
-    let mut clear = super::super::theme::style(super::super::theme::palette());
-    clear.register_token(
+    let clear = super::super::theme::style(super::super::theme::palette()).token(
         "surface",
         ThemeValue::Color(Color {
             a: 0,

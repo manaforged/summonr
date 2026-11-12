@@ -69,7 +69,7 @@ pub(crate) fn style(palette: Palette) -> Theme {
         ("on-solid", theme.accent_scale.on_solid),
         ("ring", palette.accent),
     ] {
-        theme.register_token(name, ThemeValue::Color(color));
+        theme = theme.token(name, ThemeValue::Color(color));
     }
     if palette.light() {
         theme.accent_scale.steps = steps(palette.base, palette.accent, palette.text);

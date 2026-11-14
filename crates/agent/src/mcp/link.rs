@@ -130,7 +130,7 @@ impl Link {
         gate.policy
             .decide(Action::Tool {
                 alias: &tool.alias,
-                read_only: tool.read_only,
+                read_only: gate.policy.trusts_hint(tool.read_only),
             })
             .into_result()?;
         let mut slot = self.conn.lock().await;

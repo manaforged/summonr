@@ -140,6 +140,12 @@ impl Policy {
         self.read_only
     }
 
+    /// Whether a tool whose server calls it read-only is treated as read-only; strict mode trusts no server's hint.
+    #[must_use]
+    pub(crate) fn trusts_hint(&self, read_only_hint: bool) -> bool {
+        read_only_hint && !self.strict
+    }
+
     pub(crate) fn command(&self, command: &str, workspace: &Path, start: &Path) -> Result<()> {
         self.decide(Action::Command {
             text: command,

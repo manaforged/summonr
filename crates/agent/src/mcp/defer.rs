@@ -91,7 +91,7 @@ fn allowed<'a>(link: &'a Arc<Link>, policy: &'a Policy) -> impl Iterator<Item = 
     link.tools.iter().filter(|item| {
         policy.decide(Action::Tool {
             alias: &item.alias,
-            read_only: item.read_only,
+            read_only: policy.trusts_hint(item.read_only),
         }) == Decision::Allow
     })
 }

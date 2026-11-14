@@ -4,22 +4,17 @@ use std::sync::{Arc, Mutex, PoisonError};
 use super::rules;
 
 pub(crate) fn workspace_control(path: &Path) -> bool {
-    let parts: Vec<&str> = path
-        .components()
-        .filter_map(|part| match part {
+    rules().secrets.control.iter().any(|tail| {
+        let mut parts = path.components().rev().filter_map(|part| match part {
             Component::Normal(name) => name.to_str(),
             Component::Prefix(_)
             | Component::RootDir
             | Component::CurDir
             | Component::ParentDir => None,
-        })
-        .collect();
-    rules().secrets.control.iter().any(|tail| {
-        parts.len() >= tail.len()
-            && parts[parts.len() - tail.len()..]
-                .iter()
-                .zip(tail)
-                .all(|(part, name)| *part == name.as_str())
+        });
+        tail.iter()
+            .rev()
+            .all(|name| parts.next() == Some(name.as_str()))
     })
 }
 

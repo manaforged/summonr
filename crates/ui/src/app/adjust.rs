@@ -59,6 +59,15 @@ impl App {
         }
     }
 
+    pub(crate) fn cycle_splash(&self) {
+        self.flip(|prefs| prefs.splash = prefs.splash.next());
+        let model = self.model.peek();
+        self.splash
+            .set(model.prefs.splash.shown() && model.entries.is_empty());
+        self.splash_since.set(std::time::Instant::now());
+        self.splash_revealed.set(!model.prefs.animations);
+    }
+
     pub(crate) fn toggle_motion(&self) {
         self.flip(|prefs| prefs.animations = !prefs.animations);
         self.splash_since.set(std::time::Instant::now());

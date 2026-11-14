@@ -7,9 +7,9 @@ use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::Widget;
 
-const COMPOSER_ROWS: u16 = 7;
+pub(super) const COMPOSER_ROWS: u16 = 7;
 const WORD_WIPE_MS: u64 = 480;
-const FADE_MS: u64 = 160;
+pub(super) const FADE_MS: u64 = 160;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Card {
@@ -48,7 +48,7 @@ impl Card {
 const LOCKUP_GAP: u16 = 5;
 const WORD_GAP: u16 = 2;
 const LOCKUP_MARGIN: u16 = 10;
-const FACT_LABEL: u16 = 9;
+pub(super) const FACT_LABEL: u16 = 9;
 
 struct Placed {
     mark: [u16; 2],
@@ -89,11 +89,16 @@ fn place(
 pub(crate) struct Composed {
     pub(crate) plate: Plate,
     pub(crate) shimmer: Option<Shimmer>,
+    pub(crate) will: Option<super::lockup::Figure>,
 }
 
 pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64) -> Composed {
     if cols == 0 || rows == 0 {
         return Composed::default();
+    }
+    let splash = app.model.with(|model| model.prefs.splash);
+    if super::lockup::drawn(splash) {
+        return super::lockup::compose(cols, rows, app, elapsed, splash);
     }
     let model = app.model.get();
     let facts = facts(&model, app);
@@ -152,10 +157,17 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64) -> Composed
         .flatten()
         .filter(|_| model.prefs.animations && elapsed >= card_kind.reveal_ms());
     drop(model);
-    Composed { plate, shimmer }
+    Composed {
+        plate,
+        shimmer,
+        will: None,
+    }
 }
 
 pub(crate) fn reveal_ms(app: &App) -> u64 {
+    if super::lockup::drawn(app.model.with(|model| model.prefs.splash)) {
+        return super::lockup::reveal_ms();
+    }
     let (cols, rows) = app.viewport.peek();
     fitting(cols, rows, &facts(&app.model.get(), app)).reveal_ms()
 }

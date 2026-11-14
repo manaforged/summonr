@@ -40,6 +40,7 @@ mod theme;
 mod ui;
 mod usage;
 mod view;
+mod will;
 
 pub(crate) use matching::matching_commands;
 pub use profile::run as profile;

@@ -11,7 +11,7 @@ fn the_terminal_background_leaves_the_base_unpainted() {
         ..Prefs::default()
     };
     assert_eq!(Background::default(), Background::Terminal);
-    assert!(!Prefs::default().splash);
+    assert!(!Prefs::default().splash.shown());
     drop(install(&prefs, dir.path(), None));
     assert!(matches!(ink(palette().base), Ink::Exact(_)));
     prefs.background = Background::Terminal;

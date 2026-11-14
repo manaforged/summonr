@@ -18,8 +18,11 @@ use sigil::prelude::container;
 
 pub(crate) use input::window_area;
 
+mod lockup;
 mod logo;
 mod mark;
+mod sprite;
+pub(crate) use lockup::ground;
 pub(crate) use logo::{Line, compose, placed, reveal_ms};
 pub(crate) use mark::Mark;
 pub(crate) use space::Plate;
@@ -48,6 +51,25 @@ pub(crate) fn fresh_sky() -> u64 {
 }
 
 pub(crate) fn layer(app: App) -> NodeBuilder {
+    let picked = app.clone();
+    let splash = sigil::reactive::derived(move || picked.model.with(|model| model.prefs.splash));
+    let card = card(app.clone());
+    fill(container()).children_reactive(move || {
+        let splash = splash.get();
+        vec![sigil::reactive::untrack(|| backdrop(app.clone(), splash, card))]
+    })
+}
+
+fn backdrop(
+    app: App,
+    splash: summonr_agent::prefs::Splash,
+    card: sigil::prelude::Signal<Rc<[Line]>>,
+) -> NodeBuilder {
+    use summonr_agent::prefs::Splash;
+    let root = fill(sigil::prelude::column());
+    if matches!(splash, Splash::Plain | Splash::Motes) {
+        return root.background(palette().base).child(card_rows(card));
+    }
     let stars = app.clone();
     let painter = app.clone();
     let shape = app.clone();
@@ -74,8 +96,7 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
         beats = beats.wrapping_add(1);
         beats
     });
-    let card = card(app);
-    fill(sigil::prelude::column())
+    let mut root = root
         .background(stage().void)
         .child(fill(
             sigil::widgets::canvas(move |scene, area| {
@@ -90,8 +111,30 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
                 });
             })
             .redraw_on(twinkle),
-        ))
-        .child(card_rows(card))
+        ));
+    if splash == Splash::Atmosphere {
+        let veiled = app.clone();
+        let painter = app.clone();
+        let mut version = 0_u64;
+        let clear = sigil::reactive::derived(move || {
+            let (cols, rows) = veiled.viewport.get();
+            let _appearance = veiled.appearance.get();
+            let _card = input::window_area(&veiled, cols, rows);
+            version = version.wrapping_add(1);
+            version
+        });
+        root = root.child(fill(
+            sigil::widgets::canvas(move |scene, area| {
+                sigil::reactive::untrack(|| {
+                    let (cols, rows) = painter.viewport.peek();
+                    let card = input::window_area(&painter, cols, rows);
+                    lockup::veil(scene, area, (cols, rows), card);
+                });
+            })
+            .redraw_on(clear),
+        ));
+    }
+    root.child(card_rows(card))
 }
 
 fn sky_seconds(app: &App) -> f64 {
@@ -107,7 +150,13 @@ pub(crate) fn next_change(app: &App, seconds: f64) -> std::time::Duration {
     let (cols, rows) = app.viewport.get();
     let sky = space::sky_wait(cols, rows, seconds / per_beat, app.sky.peek())
         .map(|beats| beats * per_beat);
-    let shimmer = mark::shimmer_wait(logo::shimmer_clock(app)) as f64 / 1000.0;
+    let clock = logo::shimmer_clock(app);
+    let shimmer = if lockup::drawn(app.model.with(|model| model.prefs.splash)) {
+        lockup::frame_wait(clock)
+    } else {
+        mark::shimmer_wait(clock)
+    } as f64
+        / 1000.0;
     let wait = sky.map_or(shimmer, |sky| sky.min(shimmer));
     let ticks = (wait / per_beat).ceil().max(1.0);
     std::time::Duration::try_from_secs_f64(ticks * per_beat).map_or(animation, |wake| {
@@ -152,6 +201,15 @@ fn card(app: App) -> sigil::prelude::Signal<Rc<[Line]>> {
             if let Some(shimmer) = &composed.shimmer {
                 shimmer.apply(
                     &mut painted.work,
+                    logo::shimmer_clock(&app),
+                    &mut painted.lit,
+                );
+                dirty.extend(painted.lit.iter().map(|at| at[1]));
+            }
+            if let Some(figure) = &composed.will {
+                figure.apply(
+                    &mut painted.work,
+                    &composed.plate,
                     logo::shimmer_clock(&app),
                     &mut painted.lit,
                 );

@@ -206,7 +206,7 @@ Top-level keys in `~/.summonr/config.toml`:
 
 | Key | Values | Effect |
 | --- | --- | --- |
-| `splash` | `true`, `false` (default) | Show the decorative startup screen. |
+| `splash` | `off` (default), `classic`, `plain`, `motes`, `atmosphere`, `sky`; `true` means `atmosphere` | The startup screen: the classic mark, or pixel Will on a plain, mote, cleared-sky or glass-card backdrop. `/settings` cycles it. |
 | `usage` | `off = ["NAME", …]`, `[[usage.plan]]` | Plans for `summonr endpoint usage`: `off` skips plans by name. Each `[[usage.plan]]` adds one with `name`, `shape` (`codex`, `zai`, `antigravity`, or `windows` for a list of `{group, minutes, used, resets}`), and a source: `command = [...]` that prints JSON (with `stdin = [lines]` and `reply = "/json/pointer"`, summonr writes the lines and takes the first printed line that has the pointer); `file` with JSON; or `url` with `via` (a URL prefix of a set-up endpoint's `base_url` or OAuth `token_url`, whose login is used); or `url` with `token`. `token` and each `headers` value is text, `{ file, pointer }`, or `{ command, pointer }` (a JSON pointer into the file or the output). `installed = "PROGRAM"` and `os = "macos"` limit where a plan applies. Settings → Usage shows the saved readings and reads again every 30 minutes while it shows; one read runs at a time. `every_secs = N` sets the interval; `every_secs = 0` reads only on `summonr endpoint usage`. |
 | `models_catalog` | `true` (default), `false` | Fetch the models.dev catalog for `summonr endpoint list --check` and `/model`; `false` keeps every request on your own endpoints. |
 | `animations` | `true` (default), `false` | Animate the interface. |

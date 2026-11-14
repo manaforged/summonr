@@ -14,8 +14,18 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         let (cols, rows) = shape.viewport.get();
         (rows, scene::window_area(&shape, cols, rows))
     });
+    let splash = app.model.with(|model| model.prefs.splash);
+    let backdrop = match splash {
+        summonr_agent::prefs::Splash::Plain | summonr_agent::prefs::Splash::Motes => {
+            scene::ground(splash)
+        }
+        summonr_agent::prefs::Splash::Off
+        | summonr_agent::prefs::Splash::Classic
+        | summonr_agent::prefs::Splash::Atmosphere
+        | summonr_agent::prefs::Splash::Sky => scene::stage().scrim,
+    };
     container()
-        .background(scene::stage().scrim)
+        .background(backdrop)
         .fill_width()
         .fill_height()
         .child(scene::layer(surface))

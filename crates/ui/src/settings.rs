@@ -146,7 +146,7 @@ impl Setting {
             Self::Background => app.toggle_background(),
             Self::Notify => app.flip(|prefs| prefs.notify = prefs.notify.toggle()),
             Self::DiffLayout => app.set_diff_layout(app.model.get().prefs.diff_layout.toggle()),
-            Self::Splash => app.flip(|prefs| prefs.splash = !prefs.splash),
+            Self::Splash => app.cycle_splash(),
             Self::Motion => app.toggle_motion(),
             Self::Spinner => app.flip(|prefs| prefs.spinner = prefs.spinner.toggle()),
             Self::Hotkeys => app.open_hotkeys(),
@@ -224,7 +224,7 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             Setting::Background => row("background", prefs.background.name()),
             Setting::Notify => row("notify", prefs.notify.label()),
             Setting::DiffLayout => row("diff layout", prefs.diff_layout.name()),
-            Setting::Splash => row("splash", on_off(prefs.splash)),
+            Setting::Splash => row("splash", prefs.splash.name()),
             Setting::Motion => row("motion", on_off(prefs.animations)),
             Setting::Spinner => row("spinner", prefs.spinner.name()),
             Setting::Hotkeys => row(

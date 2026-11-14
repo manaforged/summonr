@@ -21,7 +21,7 @@ pub(crate) use input::window_area;
 mod lockup;
 mod logo;
 mod mark;
-mod sprite;
+pub(crate) mod sprite;
 pub(crate) use lockup::{ground, panel};
 pub(crate) use logo::{Line, compose, placed, reveal_ms};
 pub(crate) use mark::Mark;

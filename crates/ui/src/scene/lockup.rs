@@ -4,8 +4,6 @@ use super::space::Plate;
 use super::sprite::{FRAME_MS, Pixel, Size};
 use super::*;
 use sigil::animation::Easing;
-use sigil::geometry::{Point, Rect};
-use sigil::scene::{DrawRect, SceneBuilder};
 use summonr_agent::prefs::{Splash, Tint};
 
 const GAP: u16 = 4;
@@ -14,8 +12,6 @@ const WORD_START_MS: u64 = ENTRANCE_MS / 2;
 const MOTE_STEP: u64 = 2;
 const MOTE_PHASE: u64 = 3;
 const SCALES: [u16; 3] = [3, 2, 1];
-const CLEAR: f32 = 1.45;
-const FALLOFF: f32 = 0.55;
 
 /// Whether `splash` draws the pixel Will lockup rather than the classic mark.
 pub(crate) const fn drawn(splash: Splash) -> bool {
@@ -130,7 +126,7 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64, splash: Spl
         Splash::Sky => glass(plan.card),
         Splash::Atmosphere => {
             let mut blank = Cell::blank();
-            blank.bg = ink(tone);
+            blank.bg = ink(Color { a: 0, ..tone });
             Plate::new(plan.card, blank)
         }
         Splash::Off | Splash::Classic | Splash::Plain | Splash::Motes => {
@@ -299,41 +295,5 @@ impl Figure {
             }
         }
         cells
-    }
-}
-
-/// Paints the clear oval around the lockup on the atmosphere splash: full void over `area` and its composer, fading into the sky.
-pub(crate) fn veil(scene: &mut SceneBuilder, frame: Rect, (cols, rows): (u16, u16), area: [u16; 4]) {
-    let cell = metrics();
-    let void = stage().void;
-    let [left, top, width, height] = area.map(f32::from);
-    let height = height + f32::from(COMPOSER_ROWS);
-    let centre = [left + width / 2.0, top + height / 2.0];
-    let radius = [width / 2.0 * CLEAR, height / 2.0 * CLEAR];
-    for y in 0..rows {
-        for x in 0..cols {
-            let dx = (f32::from(x) + 0.5 - centre[0]) / radius[0];
-            let dy = (f32::from(y) + 0.5 - centre[1]) / radius[1];
-            let reach = ((dx.hypot(dy) - 1.0) / FALLOFF).clamp(0.0, 1.0);
-            let alpha = 1.0 - reach * reach * (3.0 - 2.0 * reach);
-            if alpha <= 0.01 {
-                continue;
-            }
-            let rect = Rect::new(
-                Point::new(
-                    frame.origin.x + f32::from(x) * cell.w,
-                    frame.origin.y + f32::from(y) * cell.h,
-                ),
-                cell.w,
-                cell.h,
-            );
-            scene.draw_rect(DrawRect::new(
-                rect,
-                Color {
-                    a: (alpha * 255.0) as u8,
-                    ..void
-                },
-            ));
-        }
     }
 }

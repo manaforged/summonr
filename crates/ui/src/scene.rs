@@ -96,7 +96,7 @@ fn backdrop(
         beats = beats.wrapping_add(1);
         beats
     });
-    let mut root = root
+    let root = root
         .background(stage().void)
         .child(fill(
             sigil::widgets::canvas(move |scene, area| {
@@ -112,28 +112,6 @@ fn backdrop(
             })
             .redraw_on(twinkle),
         ));
-    if splash == Splash::Atmosphere {
-        let veiled = app.clone();
-        let painter = app.clone();
-        let mut version = 0_u64;
-        let clear = sigil::reactive::derived(move || {
-            let (cols, rows) = veiled.viewport.get();
-            let _appearance = veiled.appearance.get();
-            let _card = input::window_area(&veiled, cols, rows);
-            version = version.wrapping_add(1);
-            version
-        });
-        root = root.child(fill(
-            sigil::widgets::canvas(move |scene, area| {
-                sigil::reactive::untrack(|| {
-                    let (cols, rows) = painter.viewport.peek();
-                    let card = input::window_area(&painter, cols, rows);
-                    lockup::veil(scene, area, (cols, rows), card);
-                });
-            })
-            .redraw_on(clear),
-        ));
-    }
     root.child(card_rows(card))
 }
 

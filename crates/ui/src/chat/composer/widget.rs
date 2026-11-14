@@ -136,14 +136,12 @@ fn gap() -> NodeBuilder {
 type ModeText = (String, u8);
 
 fn mode_text(model: &Model) -> ModeText {
-    let class: usize = if model.snapshot.work {
-        0
-    } else if model.snapshot.goal {
-        1
-    } else {
-        2
+    let class: usize = match model.snapshot.mode {
+        summonr_agent::WorkKind::Steps => 0,
+        summonr_agent::WorkKind::Goal => 1,
+        summonr_agent::WorkKind::Single => 2,
     };
-    let mode = model.snapshot.mode_name();
+    let mode = model.snapshot.mode.name();
     let glyph = ["▣", "◎", "●"][class];
     let approval = if model.snapshot.strict {
         "strict"

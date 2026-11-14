@@ -263,9 +263,7 @@ impl Model {
             Msg::Fact(Fact::Pending(rows)) => self.pending = rows,
             Msg::Intent(Intent::Reset) => self.reset(),
             Msg::Intent(Intent::RunMode(mode)) => {
-                let snapshot = Arc::make_mut(&mut self.snapshot);
-                snapshot.work = mode == summonr_agent::WorkKind::Steps;
-                snapshot.goal = mode == summonr_agent::WorkKind::Goal;
+                Arc::make_mut(&mut self.snapshot).mode = mode;
             }
             Msg::Fact(Fact::Settings(snapshot)) => {
                 if (&snapshot.endpoint, &snapshot.model)

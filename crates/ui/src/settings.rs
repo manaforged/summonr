@@ -170,12 +170,10 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     let model = app.model.get();
     let snapshot = &model.snapshot;
     let prefs = &model.prefs;
-    let mode = if snapshot.work {
-        "work · run the steps"
-    } else if snapshot.goal {
-        "goal · loop until met"
-    } else {
-        "auto"
+    let mode = match snapshot.mode {
+        summonr_agent::WorkKind::Steps => "work · run the steps",
+        summonr_agent::WorkKind::Goal => "goal · loop until met",
+        summonr_agent::WorkKind::Single => "auto",
     };
     let verify = snapshot
         .verify

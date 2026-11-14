@@ -203,7 +203,7 @@ impl Picker {
         let rows = rows
             .into_iter()
             .filter(|(name, _)| match parse_command(name) {
-                Some(SlashCommand::Auto) => model.snapshot.goal || model.snapshot.work,
+                Some(SlashCommand::Auto) => model.snapshot.mode != summonr_agent::WorkKind::Single,
                 _ => true,
             })
             .map(|(name, help)| (name.to_string(), help.to_string()))

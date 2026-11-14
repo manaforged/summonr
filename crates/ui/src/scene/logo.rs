@@ -217,7 +217,7 @@ pub(crate) fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {
     if app.unconfigured() {
         facts.push(("setup", "/login · /model · /help".to_string()));
     }
-    if model.snapshot.work {
+    if model.snapshot.mode == summonr_agent::WorkKind::Steps {
         facts.push(("mode", "work · steps and verify".to_string()));
     }
     if model.snapshot.strict {

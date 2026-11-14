@@ -263,8 +263,7 @@ pub struct Snapshot {
     /// The folder this session works in.
     pub workspace: std::path::PathBuf,
     pub relay: Option<String>,
-    pub work: bool,
-    pub goal: bool,
+    pub mode: crate::WorkKind,
     pub effort: Option<crate::provider::Effort>,
     pub levels: Vec<crate::provider::Effort>,
     pub verify: Option<String>,
@@ -287,17 +286,6 @@ impl Snapshot {
             format!("{}{suffix}", self.model)
         } else {
             format!("{}{suffix} · {}", self.model, self.endpoint)
-        }
-    }
-
-    #[must_use]
-    pub fn mode_name(&self) -> &'static str {
-        if self.work {
-            crate::WorkKind::Steps.name()
-        } else if self.goal {
-            crate::WorkKind::Goal.name()
-        } else {
-            crate::WorkKind::Single.name()
         }
     }
 }

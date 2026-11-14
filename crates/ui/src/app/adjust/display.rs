@@ -67,11 +67,7 @@ impl App {
     }
 
     pub(crate) fn cycle_run_mode(&self) {
-        let (goal, work) = {
-            let model = self.model.peek();
-            (model.snapshot.goal, model.snapshot.work)
-        };
-        if goal || work {
+        if self.model.peek().snapshot.mode != summonr_agent::WorkKind::Single {
             drop(self.cmd.send(Cmd::Command(AUTO_COMMAND.to_string())));
         } else {
             self.settings_open.set(false);

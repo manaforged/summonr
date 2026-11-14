@@ -1,68 +1,58 @@
 use std::path::{Path, PathBuf};
 
 use super::store::{Notify, Task};
-use super::view;
-use crate::command::table::{self, Row, Table};
+use crate::command::table::{self, Row, Table, on, set};
 use summonr_core::error::{Error, Result};
 
-pub(super) const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME | --manual) (-p PROMPT | --goal GOAL)\n      [--dir D] [-e|--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION] [--wake SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|remove NAME\n  summonr cron run NAME [--raw] [--notify never|failure|always]\n  summonr cron log NAME [--last N] [--raw]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nTIME is HH:MM, YYYY-MM-DD HH:MM, or RFC 3339. A --manual job runs only through `cron run` or the webhook.\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.\n--wake SESSION delivers -p PROMPT directly to that live session as a wake-up, without starting a model or another session.";
+/// The `summonr cron --help` text.
+pub const USAGE: &str = "usage:\n  summonr cron add NAME (--cron EXPR | --every 30m | --at TIME | --manual) (-p PROMPT | --goal GOAL)\n      [--dir D] [-e|--endpoint E] [--model M] [--tz ZONE] [--max-secs N] [--max-tokens N]\n      [--worktree] [--chat] [--notify never|failure|always] [--mail SESSION] [--wake SESSION]\n  summonr cron edit NAME [same flags]\n  summonr cron list [--json]\n  summonr cron show|pause|resume|remove NAME\n  summonr cron run NAME [--raw] [--notify never|failure|always]\n  summonr cron log NAME [--last N] [--raw]\n  summonr cron token NAME\n  summonr cron install|uninstall|status\n\nTIME is HH:MM, YYYY-MM-DD HH:MM, or RFC 3339. A --manual job runs only through `cron run` or the webhook.\nThe OS starts `summonr cron tick` once a minute after `summonr cron install`.\n--wake SESSION delivers -p PROMPT directly to that live session as a wake-up, without starting a model or another session.";
 
-#[derive(Default)]
-pub(super) struct Spec {
-    pub cron: Option<String>,
-    pub every: Option<String>,
-    pub at: Option<String>,
-    pub manual: bool,
-    pub task: Option<Task>,
-    pub dir: Option<PathBuf>,
-    pub endpoint: Option<String>,
-    pub model: Option<String>,
-    pub tz: Option<String>,
-    pub max_secs: Option<u64>,
-    pub max_tokens: Option<u64>,
-    pub worktree: bool,
-    pub chat: bool,
-    pub notify: Option<Notify>,
-    pub mail: Option<String>,
-    pub wake: Option<String>,
+/// The schedule, task and options of a `cron add` or `cron edit`.
+#[derive(Clone, Debug, Default)]
+pub struct Spec {
+    pub(super) cron: Option<String>,
+    pub(super) every: Option<String>,
+    pub(super) at: Option<String>,
+    pub(super) manual: bool,
+    pub(super) task: Option<Task>,
+    pub(super) dir: Option<PathBuf>,
+    pub(super) endpoint: Option<String>,
+    pub(super) model: Option<String>,
+    pub(super) tz: Option<String>,
+    pub(super) max_secs: Option<u64>,
+    pub(super) max_tokens: Option<u64>,
+    pub(super) worktree: bool,
+    pub(super) chat: bool,
+    pub(super) notify: Option<Notify>,
+    pub(super) mail: Option<String>,
+    pub(super) wake: Option<String>,
 }
 
-#[derive(Clone, Copy, Default)]
-pub(super) struct Show {
-    pub last: Option<usize>,
-    pub raw: bool,
-    pub notify: Option<Notify>,
-}
-
-pub(super) fn wants_help(words: &[&str]) -> bool {
-    matches!(words, [] | ["help", ..]) || table::asks_help(words)
+/// The options of a `cron run` or `cron log`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Show {
+    pub(super) last: Option<usize>,
+    pub(super) raw: bool,
+    pub(super) notify: Option<Notify>,
 }
 
 pub(super) fn usage(message: &str) -> Error {
-    Error::Setup(format!("{message}{}", view::HELP_HINT))
+    table::misuse("cron", message)
 }
 
-pub(super) fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
-    table::number(text).map_err(Error::Config)
+fn number<T: std::str::FromStr<Err = std::num::ParseIntError>>(text: &str) -> Result<T> {
+    table::number(text).map_err(|message| usage(&message))
 }
 
 const fn flags<T>(rows: &'static [Row<T>]) -> Table<T> {
     Table {
         rows,
-        missing: needs_value,
-        unknown: unknown_option,
+        missing: table::needs_value,
+        unknown: table::unknown_option,
         error: misuse,
         dash_values: true,
         pairs: false,
     }
-}
-
-fn needs_value(flag: &str, _: &str) -> String {
-    format!("{flag} needs a value")
-}
-
-fn unknown_option(flag: &str) -> String {
-    format!("unknown option `{flag}`")
 }
 
 fn misuse(message: String) -> Error {
@@ -96,11 +86,14 @@ fn raw(show: &mut Show) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn show(words: &[&str], last: bool) -> Result<Show> {
-    let mut show = Show::default();
-    let table = if last { LOG } else { RUN };
-    table.walk(&mut show, words.iter().map(ToString::to_string))?;
-    Ok(show)
+impl Show {
+    /// Reads the flags of `cron log` when `log` is set, else of `cron run`.
+    pub fn parse(words: impl IntoIterator<Item = String>, log: bool) -> Result<Self> {
+        let mut show = Self::default();
+        let table = if log { LOG } else { RUN };
+        table.walk(&mut show, words)?;
+        Ok(show)
+    }
 }
 
 type SpecFlag = Row<Spec>;
@@ -141,21 +134,20 @@ const SPEC_ROWS: &[SpecFlag] = &[
 
 const SPEC: Table<Spec> = flags(SPEC_ROWS);
 
-fn on(flag: &mut bool) -> Result<()> {
-    *flag = true;
-    Ok(())
-}
+impl Spec {
+    /// Reads the flags of `cron add` and `cron edit`.
+    pub fn parse(words: impl IntoIterator<Item = String>) -> Result<Self> {
+        let mut spec = Self::default();
+        SPEC.walk(&mut spec, words)?;
+        Ok(spec)
+    }
 
-fn set<T>(slot: &mut Option<T>, value: T) -> Result<()> {
-    *slot = Some(value);
-    Ok(())
-}
-
-pub(super) fn spec(words: &[&str], cwd: &Path) -> Result<Spec> {
-    let mut spec = Spec::default();
-    SPEC.walk(&mut spec, words.iter().map(ToString::to_string))?;
-    spec.dir = spec.dir.map(|dir| cwd.join(dir));
-    Ok(spec)
+    pub(super) fn rooted(&self, cwd: &Path) -> Self {
+        Self {
+            dir: self.dir.as_ref().map(|dir| cwd.join(dir)),
+            ..self.clone()
+        }
+    }
 }
 
 fn notify(text: &str) -> Result<Notify> {

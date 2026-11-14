@@ -1,3 +1,4 @@
+use std::iter::Peekable;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -175,6 +176,24 @@ impl<T: 'static> Table<T> {
         Ok(())
     }
 
+    /// Applies the flags before the first plain word; `--` ends them.
+    pub fn lead<I: Iterator<Item = String>>(
+        &self,
+        target: &mut T,
+        input: &mut Peekable<I>,
+    ) -> Result<()> {
+        while let Some(flag) = input.next_if(|word| word.starts_with('-')) {
+            if flag == "--" {
+                break;
+            }
+            let row = self
+                .find(&flag, target)
+                .ok_or_else(|| (self.error)((self.unknown)(&flag)))?;
+            self.apply(row, &flag, target, input)?;
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn help_lines(&self) -> String {
         self.rows
@@ -185,8 +204,45 @@ impl<T: 'static> Table<T> {
     }
 }
 
+/// A usage error that points at `summonr NOUN --help`.
 #[must_use]
-pub(crate) fn asks_help(words: &[&str]) -> bool {
+pub fn misuse(noun: &str, text: &str) -> Error {
+    Error::Setup(format!("{text}; see `summonr {noun} --help`"))
+}
+
+/// The text of a flag a table does not know.
+#[must_use]
+pub fn unknown_option(flag: &str) -> String {
+    format!("unknown option `{flag}`")
+}
+
+/// The text of a value flag with no value, for tables that name no value.
+#[must_use]
+pub fn needs_value(flag: &str, _expected: &str) -> String {
+    format!("{flag} needs a value")
+}
+
+/// The text of a value flag with no value, naming the value it wants.
+#[must_use]
+pub fn requires(flag: &str, expected: &str) -> String {
+    format!("{flag} requires {expected}")
+}
+
+/// Turns a switch on, as a flag-table setter.
+pub const fn on(flag: &mut bool) -> Result<()> {
+    *flag = true;
+    Ok(())
+}
+
+/// Stores a flag's value, as a flag-table setter.
+pub fn set<T>(slot: &mut Option<T>, value: T) -> Result<()> {
+    *slot = Some(value);
+    Ok(())
+}
+
+/// Whether the words ask for help with `-h` or `--help`.
+#[must_use]
+pub fn asks_help(words: &[&str]) -> bool {
     words.iter().any(|word| matches!(*word, "--help" | "-h"))
 }
 

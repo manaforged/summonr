@@ -47,7 +47,7 @@ fn noun_verbs_and_old_words_reach_the_same_command() {
         assert_eq!(new.prompt, old.prompt);
     }
     let search = parse(&["session", "search", "needle"]);
-    assert!(matches!(search.verb, Some(Verb::Sessions)));
+    assert!(matches!(search.verb, Some(Verb::SessionList)));
     assert_eq!(search.grep.as_deref(), Some("needle"));
     assert!(parse(&["plugin", "list"]).add_list);
     let tool = parse(&["tool", "run", "read"]);
@@ -79,7 +79,7 @@ fn help_renders_exactly_the_old_verb_sections() {
 fn every_help_line_starts_with_its_command_name() {
     for row in super::commands::COMMANDS
         .iter()
-        .chain(super::commands::SUBCOMMANDS.iter())
+        .chain(super::commands::subcommands())
     {
         if row.help.is_empty() {
             continue;
@@ -96,7 +96,7 @@ fn every_help_line_starts_with_its_command_name() {
 fn help_sections_claim_every_visible_row_exactly_once() {
     let rows: Vec<&str> = super::commands::COMMANDS
         .iter()
-        .chain(super::commands::SUBCOMMANDS.iter())
+        .chain(super::commands::subcommands())
         .map(|row| row.name)
         .collect();
     let mut claimed = Vec::new();
@@ -116,7 +116,7 @@ fn help_sections_claim_every_visible_row_exactly_once() {
     for name in rows {
         let visible = super::commands::COMMANDS
             .iter()
-            .chain(super::commands::SUBCOMMANDS.iter())
+            .chain(super::commands::subcommands())
             .find(|row| row.name == name)
             .is_some_and(|row| !row.help.is_empty());
         assert_eq!(

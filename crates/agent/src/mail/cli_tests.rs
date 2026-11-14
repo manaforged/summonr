@@ -4,6 +4,13 @@ use crate::mail::Mailbox;
 const SENDER: &str = "000000000000000018d2297ad34281e1";
 const RECEIVER: &str = "000000000000000018d2297ad34281e2";
 
+fn clear() -> Command {
+    Command::Inbox {
+        id: RECEIVER.to_string(),
+        clear: true,
+    }
+}
+
 fn peers(dir: &Path) -> (Mailbox, Mailbox) {
     let sender = Mailbox::open(dir, SENDER, Some("sender"), "summonr", "model", dir)
         .expect("sender mailbox");
@@ -20,19 +27,12 @@ fn cli_replies_return_structured_message_ids() {
         .send("receiver", "measure the candidate", None)
         .expect("request");
     assert_eq!(receiver.poll().expect("receive request").len(), 1);
-    let shown = answer(
-        home.path(),
-        home.path(),
-        &[
-            "send",
-            "--reply-to",
-            &request,
-            "--json",
-            "sender",
-            "measurement finished",
-        ],
-    )
-    .expect("CLI reply receipt");
+    let send = Command::Send {
+        to: "sender".to_string(),
+        text: "measurement finished".to_string(),
+        reply_to: Some(request.clone()),
+    };
+    let shown = answer(home.path(), home.path(), &send, true).expect("CLI reply receipt");
     let receipt: serde_json::Value = serde_json::from_str(&shown).expect("JSON receipt");
     let reply = sender.poll().expect("receive reply");
     assert_eq!(receipt["delivered"], 1);
@@ -59,8 +59,7 @@ fn clearing_an_inbox_is_audited_without_claiming_the_worker_read_it() {
         .send("receiver", "unread work", None)
         .expect("send work");
     drop(receiver);
-    let shown = answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"])
-        .expect("clear inactive inbox");
+    let shown = answer(home.path(), home.path(), &clear(), false).expect("clear inactive inbox");
     assert!(shown.contains("unread work"), "{shown}");
     assert!(
         read_inbox(home.path(), RECEIVER)
@@ -90,7 +89,7 @@ fn a_failed_clear_audit_preserves_the_inbox() {
     drop(receiver);
     std::fs::create_dir_all(files::audit_path(home.path(), RECEIVER))
         .expect("make the audit destination unwritable as a file");
-    answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"]).unwrap_err();
+    answer(home.path(), home.path(), &clear(), false).unwrap_err();
     let retained = read_inbox(home.path(), RECEIVER).expect("retained inbox");
     assert_eq!(retained.len(), 1);
     assert_eq!(retained[0].text, "keep this work");
@@ -103,7 +102,7 @@ fn clearing_a_corrupt_inbox_fails_without_deleting_evidence() {
     std::fs::create_dir_all(path.parent().expect("inbox folder")).expect("create inbox");
     let evidence = b"not a complete mail record\n";
     std::fs::write(&path, evidence).expect("corrupt inbox fixture");
-    answer(home.path(), home.path(), &["inbox", RECEIVER, "--clear"]).unwrap_err();
+    answer(home.path(), home.path(), &clear(), false).unwrap_err();
     assert_eq!(
         std::fs::read(&path).expect("retained corrupt evidence"),
         evidence

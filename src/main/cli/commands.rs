@@ -1,5 +1,5 @@
 use super::flags::{Run, verb};
-use super::{Args, Verb, exit_help, mcp};
+use super::{Args, Verb, exit_help};
 
 pub(super) struct Command {
     pub(super) name: &'static str,
@@ -7,6 +7,18 @@ pub(super) struct Command {
     pub(super) run: Run,
     /// The help line as printed, or empty to stay out of `summonr --help`.
     pub(super) help: &'static str,
+}
+
+impl Command {
+    /// A row that takes no words past its own and stays out of `summonr --help`.
+    pub(super) const fn hidden(name: &'static str, run: Run) -> Self {
+        Self {
+            name,
+            most: Some(0),
+            run,
+            help: "",
+        }
+    }
 }
 
 /// Help sections claim command rows by name, in print order.
@@ -119,40 +131,37 @@ pub(super) const COMMANDS: [Command; 19] = [
     Command {
         name: "mail",
         most: None,
-        run: |args, input| verb(args, Verb::Mail(input.by_ref().collect())),
+        run: |args, input| args.noun("mail", input),
         help: "mail                        peer mail between agent sessions: agents, send, inbox, board",
     },
     Command {
         name: "cron",
         most: None,
-        run: |args, input| verb(args, Verb::Cron(input.by_ref().collect())),
+        run: |args, input| args.noun("cron", input),
         help: "cron add NAME ...           run a prompt or goal on a schedule; cron --help",
     },
     Command {
         name: "panel",
         most: None,
-        run: |args, input| verb(args, Verb::Panel(input.by_ref().collect())),
+        run: |args, input| args.noun("panel", input),
         help: "panel list|check NAME       list custom panels, or run one and validate its output",
     },
     Command {
         name: "gateway",
         most: None,
-        run: |args, input| verb(args, Verb::Gateway(input.by_ref().collect())),
+        run: |args, input| args.noun("gateway", input),
         help: "gateway telegram|webhook    start work from a Telegram chat or a web request; gateway --help",
     },
     Command {
         name: "tool",
         most: None,
-        run: |args, input| {
-            input.next_if(|word| word == "run");
-            verb(args, Verb::Tool(input.by_ref().collect()))
-        },
+        run: super::integrations::tool,
         help: "tool run NAME [JSON]        run one tool and print the result",
     },
     Command {
         name: "mcp",
         most: None,
-        run: |args, input| verb(args, Verb::Mcp(mcp::parse(input)?)),
+        run: |args, input| args.noun("mcp", input),
         help: "mcp list [--json]           list MCP servers, their state, and tool counts\nmcp get NAME [--json]       show one MCP server and its tools\nmcp add NAME -- CMD [ARGS]  add a stdio server (--env K=V), or --url URL (--header K=V)\nmcp remove NAME             remove an MCP server from ~/.summonr/config.toml",
     },
     Command {
@@ -175,11 +184,25 @@ pub(super) const COMMANDS: [Command; 19] = [
     },
 ];
 
-pub(super) const SUBCOMMANDS: [Command; 18] = [
+const GROUPS: [&[Command]; 6] = [
+    &CORE,
+    &super::cron::ROWS,
+    &super::mcp::ROWS,
+    &super::integrations::MAIL,
+    &super::integrations::GATEWAY,
+    &super::integrations::PANEL,
+];
+
+/// Every `noun verb` row.
+pub(super) fn subcommands() -> impl Iterator<Item = &'static Command> + Clone {
+    GROUPS.into_iter().flatten()
+}
+
+const CORE: [Command; 18] = [
     Command {
         name: "session list",
         most: Some(0),
-        run: |args, _| verb(args, Verb::Sessions),
+        run: |args, _| verb(args, Verb::SessionList),
         help: "session list                list sessions",
     },
     Command {
@@ -221,13 +244,13 @@ pub(super) const SUBCOMMANDS: [Command; 18] = [
     Command {
         name: "endpoint list",
         most: Some(0),
-        run: |args, _| verb(args, Verb::Endpoints),
+        run: |args, _| verb(args, Verb::EndpointList),
         help: "endpoint list               list endpoints, their models, and each key state (--all, --check)",
     },
     Command {
         name: "endpoint usage",
         most: Some(0),
-        run: |args, _| verb(args, Verb::Plans),
+        run: |args, _| verb(args, Verb::EndpointUsage),
         help: "endpoint usage              show each plan's usage windows and when they reset (--json)",
     },
     Command {
@@ -278,7 +301,7 @@ pub(super) const SUBCOMMANDS: [Command; 18] = [
     Command {
         name: "plugin install",
         most: Some(1),
-        run: |args, _| verb(args, Verb::Install),
+        run: |args, _| verb(args, Verb::PluginInstall),
         help: "plugin install PATH         install a directory of extras",
     },
     Command {
@@ -286,14 +309,14 @@ pub(super) const SUBCOMMANDS: [Command; 18] = [
         most: Some(0),
         run: |args, _| {
             args.add_list = true;
-            verb(args, Verb::Install)
+            verb(args, Verb::PluginInstall)
         },
         help: "plugin list                 list installed plugins",
     },
     Command {
         name: "plugin remove",
         most: Some(1),
-        run: |args, _| verb(args, Verb::Uninstall),
+        run: |args, _| verb(args, Verb::PluginRemove),
         help: "plugin remove NAME          remove an installed plugin",
     },
 ];

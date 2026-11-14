@@ -4,7 +4,8 @@ use summonr_core::error::{Error, Result};
 
 use super::{Content, Fill, Panel};
 
-const USAGE: &str = r#"summonr panel list|check NAME
+/// The `summonr panel --help` text, with the panel file format.
+pub const USAGE: &str = r#"summonr panel list|check NAME
 
 A panel is a tab in the desktop app's right panel, or a section of its sidebar. It appears within seconds of writing its file. A tab's command runs only while the tab is open; a sidebar section's command runs while the sidebar shows.
 
@@ -38,24 +39,25 @@ Besides the A2UI basic catalog, a surface can use Sigil's components: Chart, Sta
 
 Run `summonr panel check NAME` after writing a panel. It runs the command and reports what the app cannot draw."#;
 
+/// One `summonr panel` command.
+#[derive(Clone, Debug)]
+pub enum Command {
+    /// `panel list`.
+    List,
+    /// `panel check NAME`: run a panel and validate what it prints.
+    Check(String),
+}
+
 /// Runs `summonr panel`, with the workspace's panels when it is trusted.
-pub async fn run(words: &[String], cwd: &Path, trust: bool) -> Result<i32> {
-    let words: Vec<&str> = words.iter().map(String::as_str).collect();
-    match words.as_slice() {
-        ["list"] => {
+pub async fn run(command: &Command, cwd: &Path, trust: bool) -> Result<i32> {
+    match command {
+        Command::List => {
             for panel in super::list(cwd, trust) {
                 println!("{}\t{}", panel.name, panel.title);
             }
             Ok(0)
         }
-        ["check", name] => check(name, cwd, trust).await,
-        ["-h" | "--help"] => {
-            println!("{USAGE}");
-            Ok(0)
-        }
-        [..] => Err(Error::Config(
-            "usage: summonr panel list|check NAME; panel --help has the file format".to_string(),
-        )),
+        Command::Check(name) => check(name, cwd, trust).await,
     }
 }
 

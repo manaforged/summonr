@@ -280,10 +280,10 @@ pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
     Ok(moved)
 }
 
-pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
+pub(super) async fn mcp(command: &McpCommand, json: bool) -> Result<()> {
     match command {
-        McpCommand::List { json } => mcp_list(*json || json_flag),
-        McpCommand::Get { name, json } => mcp_get(name, *json || json_flag),
+        McpCommand::List => mcp_list(json),
+        McpCommand::Get { name } => mcp_get(name, json),
         McpCommand::Add { name, launch } => {
             let kept = summonr_agent::mcp_add(name, launch)?;
             let count = summonr_agent::mcp_probe(&workspace()?, name)

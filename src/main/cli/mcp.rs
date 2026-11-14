@@ -1,14 +1,16 @@
 use std::fmt;
 
-use summonr_agent::table::{Row, Table};
+use summonr_agent::table::{self, Row, Table};
 use summonr_agent::{Error, McpLaunch, Result};
 
-use super::flags::Input;
+use super::commands::Command;
+use super::flags::{Input, verb};
+use super::{Args, Verb};
 
 #[derive(Clone)]
 pub(crate) enum McpCommand {
-    List { json: bool },
-    Get { name: String, json: bool },
+    List,
+    Get { name: String },
     Add { name: String, launch: McpLaunch },
     Remove { name: String },
 }
@@ -16,71 +18,41 @@ pub(crate) enum McpCommand {
 impl fmt::Debug for McpCommand {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::List { json } => write!(formatter, "List {{ json: {json} }}"),
-            Self::Get { name, json } => write!(formatter, "Get {{ name: {name}, json: {json} }}"),
+            Self::List => write!(formatter, "List"),
+            Self::Get { name } => write!(formatter, "Get {{ name: {name} }}"),
             Self::Add { name, .. } => write!(formatter, "Add {{ name: {name} }}"),
             Self::Remove { name } => write!(formatter, "Remove {{ name: {name} }}"),
         }
     }
 }
 
-const USAGE: &str = "summonr mcp list|get NAME|add NAME ...|remove NAME";
 const ADD_USAGE: &str = "summonr mcp add NAME [--env KEY=VALUE]... -- COMMAND [ARGS...]  or  summonr mcp add NAME --url URL [--header KEY=VALUE]...";
 
-pub(super) fn parse(input: &mut Input) -> Result<McpCommand> {
-    let verb = input.next().ok_or_else(|| usage(USAGE))?;
-    match verb.as_str() {
-        "-h" | "--help" => super::exit_help(Some("mcp")),
-        "list" => Ok(McpCommand::List { json: json(input)? }),
-        "get" => {
-            let name = name(input)?;
-            Ok(McpCommand::Get {
-                name,
-                json: json(input)?,
-            })
-        }
-        "add" => add(input),
-        "remove" => {
-            let name = name(input)?;
-            finished(input)?;
-            Ok(McpCommand::Remove { name })
-        }
-        unknown => Err(usage(&format!("unknown `mcp {unknown}`; {USAGE}"))),
-    }
+pub(super) const ROWS: [Command; 4] = [
+    Command::hidden("mcp list", |args, _| mcp(args, McpCommand::List)),
+    Command::hidden("mcp get", |args, input| {
+        let name = args.word(input, "NAME")?;
+        mcp(args, McpCommand::Get { name })
+    }),
+    Command::hidden("mcp add", add),
+    Command::hidden("mcp remove", |args, input| {
+        let name = args.word(input, "NAME")?;
+        mcp(args, McpCommand::Remove { name })
+    }),
+];
+
+fn mcp(args: &mut Args, command: McpCommand) -> Result<()> {
+    verb(args, Verb::Mcp(command))
 }
 
-fn name(input: &mut Input) -> Result<String> {
-    if input
-        .peek()
-        .is_some_and(|next| next == "-h" || next == "--help")
-    {
-        super::exit_help(Some("mcp"));
-    }
-    input
-        .next_if(|next| !next.starts_with('-'))
-        .ok_or_else(|| usage(USAGE))
-}
-
-fn json(input: &mut Input) -> Result<bool> {
-    let json = input.next_if(|next| next == "--json").is_some();
-    finished(input)?;
-    Ok(json)
-}
-
-fn finished(input: &mut Input) -> Result<()> {
-    match input.next().as_deref() {
-        None => Ok(()),
-        Some("-h" | "--help") => super::exit_help(Some("mcp")),
-        Some(extra) => Err(usage(&format!("unexpected `{extra}`; {USAGE}"))),
-    }
-}
-
-fn add(input: &mut Input) -> Result<McpCommand> {
-    let name = name(input).map_err(|_unnamed| usage(ADD_USAGE))?;
+fn add(args: &mut Args, input: &mut Input) -> Result<()> {
+    let name = args
+        .word(input, "NAME")
+        .map_err(|_unnamed| usage(ADD_USAGE))?;
     let mut flags = AddFlags::default();
     ADD.walk(&mut flags, input.by_ref())?;
     let launch = flags.launch()?;
-    Ok(McpCommand::Add { name, launch })
+    mcp(args, McpCommand::Add { name, launch })
 }
 
 #[derive(Default)]
@@ -109,11 +81,10 @@ const ADD: Table<AddFlags> = Table {
         })
         .once(),
         AddFlag::rest(&["--"], |flags, command| flags.command.extend(command)),
-        AddFlag::switch(&["-h", "--help"], |_| super::exit_help(Some("mcp"))),
     ],
-    missing: |flag, expected| format!("{flag} requires {expected}"),
+    missing: table::requires,
     unknown: |flag| format!("usage: unexpected `{flag}`; {ADD_USAGE}"),
-    error: Error::Config,
+    error: Error::Setup,
     dash_values: false,
     pairs: false,
 };
@@ -155,5 +126,5 @@ impl AddFlags {
 }
 
 fn usage(text: &str) -> Error {
-    Error::Config(format!("usage: {text}"))
+    Error::Setup(format!("usage: {text}"))
 }

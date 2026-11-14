@@ -10,7 +10,6 @@ use crate::config::tilde;
 const TIME_FORMAT: &str = "%Y-%m-%d %H:%M %Z";
 const SHOWN_RUNS: usize = 5;
 const HEADER: [&str; 5] = ["NAME", "SCHEDULE", "NEXT", "LAST", "DIR"];
-pub(super) const HELP_HINT: &str = "; see `summonr cron --help`";
 pub(super) const EMPTY: &str =
     "no cron jobs; add one with `summonr cron add NAME --every 1d -p PROMPT`";
 pub(super) const UNSCHEDULED: &str =

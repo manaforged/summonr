@@ -1,8 +1,9 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use jiff::Zoned;
 
-use super::args::{self, Show, Spec, USAGE, usage};
+use super::args::usage;
+pub use super::args::{Show, Spec, USAGE};
 use super::report;
 use super::runner;
 use super::schedule;
@@ -11,47 +12,71 @@ use super::view;
 use crate::durable::store::Wait;
 use summonr_core::error::{Error, Result};
 
-pub fn run(args: &[String], cwd: &Path) -> Result<i32> {
-    let words: Vec<&str> = args.iter().map(String::as_str).collect();
-    if args::wants_help(&words) {
-        return say(USAGE.to_string());
+/// One `summonr cron` command.
+#[derive(Clone, Debug)]
+pub enum Command {
+    /// `cron add NAME ...`: a new job.
+    Add(String, Spec),
+    /// `cron edit NAME ...`: change a job.
+    Edit(String, Spec),
+    /// `cron list`: every job.
+    List,
+    /// `cron show NAME`: one job.
+    Show(String),
+    /// `cron pause NAME`.
+    Pause(String),
+    /// `cron resume NAME`.
+    Resume(String),
+    /// `cron run NAME`: run a job now.
+    Run(String, Show),
+    /// `cron remove NAME`.
+    Remove(String),
+    /// `cron log NAME`: past runs.
+    Log(String, Show),
+    /// `cron token NAME`: a new webhook token.
+    Token(String),
+    /// `cron install`: the OS tick.
+    Install,
+    /// `cron uninstall`.
+    Uninstall,
+    /// `cron status`.
+    Status,
+    /// `cron tick`: the OS starts due jobs through this.
+    Tick,
+    /// `cron exec NAME --slot SLOT [--payload FILE]`: one run of a job.
+    Exec {
+        /// The job name.
+        name: String,
+        /// The scheduled time of the run.
+        slot: i64,
+        /// The webhook body, when a request fired the run.
+        payload: Option<PathBuf>,
+    },
+}
+
+/// Runs one `summonr cron` command; `json` prints `cron list` as JSON.
+pub fn run(command: &Command, json: bool, cwd: &Path) -> Result<i32> {
+    match command {
+        Command::Add(name, spec) => add(name, &spec.rooted(cwd), cwd),
+        Command::Edit(name, spec) => edit(name, &spec.rooted(cwd)),
+        Command::List => list(json),
+        Command::Show(name) => show(name),
+        Command::Pause(name) => set_paused(name, true),
+        Command::Resume(name) => set_paused(name, false),
+        Command::Run(name, show) => run_now(name, *show),
+        Command::Remove(name) => remove(name),
+        Command::Log(name, show) => log(name, *show),
+        Command::Token(name) => token(name),
+        Command::Install => install(),
+        Command::Uninstall => uninstall(),
+        Command::Status => status(),
+        Command::Tick => runner::tick(super::now()).map(|()| 0),
+        Command::Exec {
+            name,
+            slot,
+            payload,
+        } => runner::exec(name, *slot, payload.as_deref(), None),
     }
-    jobs(&words, cwd)
-        .or_else(|| system(&words))
-        .unwrap_or_else(|| {
-            Err(usage(&format!(
-                "unknown cron command `{}`",
-                words.join(" ")
-            )))
-        })
-}
-
-fn jobs(words: &[&str], cwd: &Path) -> Option<Result<i32>> {
-    Some(match words {
-        ["add", name, flags @ ..] => args::spec(flags, cwd).and_then(|spec| add(name, &spec, cwd)),
-        ["edit", name, flags @ ..] => args::spec(flags, cwd).and_then(|spec| edit(name, &spec)),
-        ["list"] => list(false),
-        ["list", "--json"] => list(true),
-        ["show", name] => show(name),
-        ["pause", name] => set_paused(name, true),
-        ["resume", name] => set_paused(name, false),
-        ["run", name, flags @ ..] => args::show(flags, false).and_then(|show| run_now(name, show)),
-        ["remove", name] => remove(name),
-        ["log", name, flags @ ..] => args::show(flags, true).and_then(|show| log(name, show)),
-        ["token", name] => token(name),
-        [..] => return None,
-    })
-}
-
-fn system(words: &[&str]) -> Option<Result<i32>> {
-    Some(match words {
-        ["install"] => install(),
-        ["uninstall"] => uninstall(),
-        ["status"] => status(),
-        ["tick"] => runner::tick(super::now()).map(|()| 0),
-        ["exec", name, "--slot", slot, rest @ ..] => exec(name, slot, rest),
-        [..] => return None,
-    })
 }
 
 fn run_now(name: &str, show: Show) -> Result<i32> {
@@ -89,15 +114,6 @@ fn uninstall() -> Result<i32> {
         || "not installed".to_string(),
         |path| format!("removed {}", path.display()),
     ))
-}
-
-fn exec(name: &str, slot: &str, rest: &[&str]) -> Result<i32> {
-    let slot = args::number(slot)?;
-    match rest {
-        [] => runner::exec(name, slot, None, None),
-        ["--payload", file] => runner::exec(name, slot, Some(Path::new(file)), None),
-        [..] => Err(usage("exec takes NAME --slot N [--payload FILE]")),
-    }
 }
 
 fn say(text: String) -> Result<i32> {

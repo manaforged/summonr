@@ -18,11 +18,12 @@ const STOPPING: &str = "stopping";
 const CRASHED: &str = "error: the turn crashed";
 const FRESH: &str = "new session";
 
+/// The endpoint, model and directory a Telegram bridge runs turns with.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Options {
-    pub endpoint: Option<String>,
-    pub model: Option<String>,
-    pub dir: PathBuf,
+pub struct Options {
+    pub(crate) endpoint: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) dir: PathBuf,
 }
 
 struct Running {

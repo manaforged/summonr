@@ -18,7 +18,7 @@ pub(super) fn refuse(words: &[String]) -> Result<()> {
     summonr_agent::closest_endpoint(word, &names, summonr_agent::EndpointNear::Typo).map_or(
         Ok(()),
         |near| {
-            Err(Error::Config(format!(
+            Err(Error::Setup(format!(
                 "unknown command `{word}`; did you mean `{near}`? To send it as a prompt, use -p."
             )))
         },

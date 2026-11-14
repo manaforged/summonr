@@ -100,24 +100,26 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Doctor if args.logs => diagnostics::print_logs(path),
         Verb::Doctor if args.report => diagnostics::report(path),
         Verb::Doctor => diagnostics::doctor(path),
-        Verb::Mail(words) => in_cwd(&|cwd| summonr_agent::mail::cli::run(words, cwd)),
-        Verb::Cron(words) => in_cwd(&|cwd| summonr_agent::cron::cli::run(words, cwd)),
-        Verb::Gateway(words) => {
-            in_cwd(&|cwd| summonr_agent::gateway::cli::run(words, cwd, &login::read_secret))
+        Verb::Mail(command) => {
+            in_cwd(&|cwd| summonr_agent::mail::cli::run(command, args.json, cwd))
         }
-        Verb::Panel(words) => {
+        Verb::Cron(command) => {
+            in_cwd(&|cwd| summonr_agent::cron::cli::run(command, args.json, cwd))
+        }
+        Verb::Gateway(command) => summonr_agent::gateway::cli::run(command, &login::read_secret),
+        Verb::Panel(command) => {
             let cwd = std::env::current_dir()?;
-            summonr_agent::panel::cli::run(words, &cwd, args.trust).await
+            summonr_agent::panel::cli::run(command, &cwd, args.trust).await
         }
-        Verb::Tool(tool) => tool::run(tool).await,
+        Verb::Tool { name, arguments } => tool::run(name, arguments).await,
         Verb::Acp => acp(args).await,
         Verb::Login => done(login(args).await),
         Verb::Logout => logout(args),
         Verb::Classify => run_classify(args).await,
-        Verb::Endpoints => done(endpoints::list(args.all, args.live).await),
-        Verb::Plans => done(endpoints::usage(args.json).await),
+        Verb::EndpointList => done(endpoints::list(args.all, args.live).await),
+        Verb::EndpointUsage => done(endpoints::usage(args.json).await),
         Verb::Mcp(command) => done(mcp(command, args.json).await),
-        Verb::Sessions => done(match args.grep.as_deref() {
+        Verb::SessionList => done(match args.grep.as_deref() {
             Some(pattern) => grep_sessions(pattern),
             None => print_sessions(),
         }),
@@ -129,9 +131,9 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
                 .and_then(|root| summonr_agent::modules::load(&root))
                 .map(|switches| println!("{}", switches.table())),
         ),
-        Verb::Uninstall => uninstall(args),
+        Verb::PluginRemove => uninstall(args),
         Verb::Update => update().await,
-        Verb::Install => add(args).await,
+        Verb::PluginInstall => add(args).await,
         Verb::Worktrees => done(manage_worktrees(args)),
         Verb::Diff => done(print_diff(args)),
         Verb::Children => done(print_children(args)),

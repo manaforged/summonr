@@ -5,10 +5,14 @@ use flags::{ALIASES, CONFLICTS, FLAGS, Input};
 
 #[path = "cli/commands.rs"]
 mod commands;
+#[path = "cli/cron.rs"]
+mod cron;
 #[path = "cli/flags.rs"]
 mod flags;
 #[path = "cli/help.rs"]
 mod help;
+#[path = "cli/integrations.rs"]
+mod integrations;
 #[path = "cli/mcp.rs"]
 mod mcp;
 #[path = "cli/typo.rs"]
@@ -19,24 +23,24 @@ pub(super) use mcp::McpCommand;
 
 #[derive(Clone, Debug)]
 pub(super) enum Verb {
-    Endpoints,
-    Plans,
-    Sessions,
+    EndpointList,
+    EndpointUsage,
+    SessionList,
     Doctor,
     Classify,
     Export,
     Profile,
     Workflows,
     Modules,
-    Install,
-    Uninstall,
+    PluginInstall,
+    PluginRemove,
     Update,
     Acp,
-    Mail(Vec<String>),
-    Cron(Vec<String>),
-    Panel(Vec<String>),
-    Gateway(Vec<String>),
-    Tool(Vec<String>),
+    Mail(summonr_agent::mail::cli::Command),
+    Cron(summonr_agent::cron::cli::Command),
+    Panel(summonr_agent::panel::cli::Command),
+    Gateway(summonr_agent::gateway::cli::Command),
+    Tool { name: String, arguments: String },
     Mcp(McpCommand),
     Login,
     Logout,
@@ -98,12 +102,13 @@ pub(super) struct Args {
     pub(super) digest: bool,
     pub(super) add_list: bool,
     pub(super) arity: Option<(&'static str, usize)>,
+    taken: usize,
 }
 
 pub(super) fn parse(window: bool) -> Result<Args> {
     let mut args = parse_from(std::env::args().skip(1))?;
     if args.gui && !window {
-        return Err(summonr_agent::Error::Config(
+        return Err(Error::Setup(
             "the window is the Summonr desktop app, `summonr-desktop`".to_string(),
         ));
     }
@@ -202,7 +207,7 @@ impl Args {
 
     fn check_names(&self) -> Result<()> {
         if self.add && (self.endpoint.is_none() || (self.url.is_none() && self.model.is_none())) {
-            return Err(Error::Config(
+            return Err(Error::Setup(
                 "`summonr endpoint add NAME --url URL [--model NAME]`".to_string(),
             ));
         }
@@ -225,7 +230,7 @@ impl Args {
 
     fn check(&self) -> Result<()> {
         if let Some((_, message)) = CONFLICTS.iter().find(|(broken, _)| broken(self)) {
-            return Err(Error::Config((*message).to_string()));
+            return Err(Error::Setup((*message).to_string()));
         }
         if let Some(mode) = [
             ("--goal", self.goal.is_some()),
@@ -235,7 +240,7 @@ impl Args {
         .find_map(|(mode, on)| on.then_some(mode))
             && let Some(extra) = self.prompt.first()
         {
-            return Err(Error::Config(format!(
+            return Err(Error::Setup(format!(
                 "{mode} takes no prompt; put `{extra}` in the objective or the plan"
             )));
         }
@@ -248,10 +253,10 @@ impl Args {
             return Ok(());
         };
         match self.prompt.get(most) {
-            Some(extra) if most == 0 => Err(Error::Config(format!(
+            Some(extra) if most + self.taken == 0 => Err(Error::Setup(format!(
                 "`summonr {verb}` takes no arguments; got `{extra}`"
             ))),
-            Some(extra) => Err(Error::Config(format!(
+            Some(extra) => Err(Error::Setup(format!(
                 "`summonr {verb}` takes one argument; got extra `{extra}`"
             ))),
             None => Ok(()),
@@ -265,8 +270,8 @@ fn misplaced(option: &str) -> Error {
         .iter()
         .map(|verb| format!("`summonr {verb}`"))
         .collect();
-    Error::Config(if verbs.is_empty() {
-        format!("unknown option `{option}`")
+    Error::Setup(if verbs.is_empty() {
+        summonr_agent::table::unknown_option(option)
     } else {
         format!("`{option}` works only after {}", verbs.join(" or "))
     })
@@ -284,7 +289,7 @@ fn unknown(name: &str, tail: &str) -> Error {
     let names = summonr_agent::endpoint_names().unwrap_or_default();
     let hint = summonr_agent::closest_endpoint(name, &names, summonr_agent::EndpointNear::Typo)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
-    Error::Config(format!(
+    Error::Setup(format!(
         "unknown endpoint `{name}`: {hint}`summonr endpoint list` lists them{tail}"
     ))
 }

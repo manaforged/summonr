@@ -1,68 +1,50 @@
 use std::path::Path;
 
 use super::telegram::Bot;
-use super::turn::{self, Options};
+use super::turn;
+pub use super::turn::Options;
 use super::{SECRET, block, store, token};
 use crate::command::table::{self, Row, Table};
 use summonr_core::error::{Error, Result};
 
-const USAGE: &str = "usage:\n  summonr gateway setup telegram\n  summonr gateway telegram [--endpoint E] [--model M] [--dir D]\n  summonr gateway pair CODE\n  summonr gateway unpair USER_ID\n  summonr gateway status\n  summonr gateway webhook [--port N]\n\nThe Telegram bridge long-polls the Bot API; no port opens.";
+/// The `summonr gateway --help` text.
+pub const USAGE: &str = "usage:\n  summonr gateway setup telegram\n  summonr gateway telegram [--endpoint E] [--model M] [--dir D]\n  summonr gateway pair CODE\n  summonr gateway unpair USER_ID\n  summonr gateway status\n  summonr gateway webhook [--port N]\n\nThe Telegram bridge long-polls the Bot API; no port opens.";
 const TOKEN_PROMPT: &str = "Telegram bot token: ";
 const NO_TOKEN: &str = "no Telegram bot token stored: run `summonr gateway setup telegram`";
 
-pub fn run(
-    args: &[String],
-    cwd: &Path,
-    read_secret: &dyn Fn(&str) -> Result<String>,
-) -> Result<i32> {
-    let words: Vec<&str> = args.iter().map(String::as_str).collect();
-    if asks_help(&words) {
-        println!("{USAGE}");
-        return Ok(0);
-    }
-    match words.as_slice() {
-        ["setup", "telegram"] => setup(read_secret),
-        ["telegram", flags @ ..] => bridge(options(flags, cwd)?),
-        ["pair"] => Err(misuse("pair needs the code the bot sent you")),
-        ["pair", code] => pair(code),
-        ["unpair", user] => unpair(user_id(user)?),
-        ["status"] => status(),
-        ["webhook", rest @ ..] => webhook(rest),
-        [..] => Err(misuse(&format!(
-            "unknown gateway command `{}`",
-            words.join(" ")
-        ))),
-    }
+/// One `summonr gateway` command.
+#[derive(Clone, Debug)]
+pub enum Command {
+    /// `gateway setup telegram`: store the bot token.
+    Setup,
+    /// `gateway telegram`: run the bridge.
+    Telegram(Options),
+    /// `gateway pair CODE`.
+    Pair(String),
+    /// `gateway unpair USER_ID`.
+    Unpair(i64),
+    /// `gateway status`.
+    Status,
+    /// `gateway webhook [--port N]`; no port means the configured one.
+    Webhook(Option<u16>),
 }
 
-fn asks_help(words: &[&str]) -> bool {
-    words.is_empty() || words == ["help"] || table::asks_help(words)
-}
-
-fn webhook(words: &[&str]) -> Result<i32> {
-    match words {
-        [] => super::webhook::serve(crate::limits::limits().gateway_port),
-        ["--port"] => Err(misuse("--port needs a value")),
-        ["--port", port] => {
-            super::webhook::serve(table::number(port).map_err(|message| misuse(&message))?)
+/// Runs one `summonr gateway` command.
+pub fn run(command: &Command, read_secret: &dyn Fn(&str) -> Result<String>) -> Result<i32> {
+    match command {
+        Command::Setup => setup(read_secret),
+        Command::Telegram(options) => bridge(options.clone()),
+        Command::Pair(code) => pair(code),
+        Command::Unpair(user) => unpair(*user),
+        Command::Status => status(),
+        Command::Webhook(port) => {
+            super::webhook::serve(port.unwrap_or(crate::limits::limits().gateway_port))
         }
-        [..] => Err(misuse(&format!(
-            "unknown webhook option `{}`",
-            words.join(" ")
-        ))),
     }
 }
 
-fn misuse(what: &str) -> Error {
-    Error::Config(format!("{what}; see `summonr gateway --help`"))
-}
-
-fn user_id(text: &str) -> Result<i64> {
-    text.parse().ok().ok_or_else(|| {
-        Error::Config(
-            "USER_ID is a number; `summonr gateway status` lists paired users".to_string(),
-        )
-    })
+fn misuse(message: String) -> Error {
+    table::misuse("gateway", &message)
 }
 
 type OptionFlag = Row<Options>;
@@ -82,21 +64,24 @@ const OPTIONS: Table<Options> = Table {
             Ok(())
         }),
     ],
-    missing: |flag, _| format!("{flag} needs a value"),
-    unknown: |flag| format!("unknown option `{flag}`"),
-    error: |message| misuse(&message),
+    missing: table::needs_value,
+    unknown: table::unknown_option,
+    error: misuse,
     dash_values: true,
     pairs: true,
 };
 
-fn options(words: &[&str], cwd: &Path) -> Result<Options> {
-    let mut options = Options {
-        dir: cwd.to_path_buf(),
-        ..Options::default()
-    };
-    OPTIONS.walk(&mut options, words.iter().map(ToString::to_string))?;
-    options.dir = cwd.join(&options.dir);
-    Ok(options)
+impl Options {
+    /// Reads the flags of `gateway telegram`; `--dir` is relative to `cwd`.
+    pub fn parse(words: impl IntoIterator<Item = String>, cwd: &Path) -> Result<Self> {
+        let mut options = Self {
+            dir: cwd.to_path_buf(),
+            ..Self::default()
+        };
+        OPTIONS.walk(&mut options, words)?;
+        options.dir = cwd.join(&options.dir);
+        Ok(options)
+    }
 }
 
 fn setup(read_secret: &dyn Fn(&str) -> Result<String>) -> Result<i32> {

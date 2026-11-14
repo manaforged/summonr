@@ -80,12 +80,12 @@ fn plan(cols: u16, rows: u16, facts: &[(&str, String)]) -> Plan {
     let [body_x, body_y, card_x, card_y, card_width] = layout(cols, rows, body_width, body_rows);
     let [width, _] = size.cells().map(|cells| cells * scale);
     let text_x = body_x + width + GAP + scale;
-    let text_y = body_y + body_rows.saturating_sub(fit.text_rows) / 2;
+    let text_y = body_y + body_rows.saturating_sub(fit.text_rows);
     let logo = summonr_agent::splash::logo().len() as u16;
     Plan {
         size,
         scale,
-        will: [body_x, body_y + body_rows.saturating_sub(fit.will_rows) / 2],
+        will: [body_x, body_y + body_rows.saturating_sub(fit.will_rows)],
         word: word.then_some([text_x, text_y]),
         facts: [text_x, if word { text_y + logo + WORD_GAP } else { text_y }],
         card: [card_x, card_y, card_width, (body_rows + 2).min(rows.saturating_sub(card_y))],

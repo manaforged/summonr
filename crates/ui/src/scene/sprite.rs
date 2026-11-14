@@ -26,7 +26,14 @@ pub(crate) enum Size {
 pub(crate) const FRAME_MS: u64 = 45;
 const CYCLE: u64 = 24;
 const BLINK_EVERY: u64 = 4;
-const LIDS: [Lid; 6] = [Lid::Half, Lid::Half, Lid::Shut, Lid::Shut, Lid::Half, Lid::Half];
+const LIDS: [Lid; 6] = [
+    Lid::Half,
+    Lid::Half,
+    Lid::Shut,
+    Lid::Shut,
+    Lid::Half,
+    Lid::Half,
+];
 
 impl Size {
     const fn shape(self) -> &'static Shape {
@@ -49,7 +56,9 @@ pub(crate) fn frame(size: Size, frame: u64, still: bool) -> Vec<Vec<Pixel>> {
     let frame = if still { 0 } else { frame };
     let shape = size.shape();
     let lid = if (frame / CYCLE) % BLINK_EVERY == BLINK_EVERY - 1 {
-        LIDS.get((frame % CYCLE) as usize).copied().unwrap_or(Lid::Open)
+        LIDS.get((frame % CYCLE) as usize)
+            .copied()
+            .unwrap_or(Lid::Open)
     } else {
         Lid::Open
     };
@@ -71,8 +80,11 @@ fn pixel(byte: u8) -> Pixel {
 }
 
 fn drawn(shape: &Shape, lid: Lid) -> Vec<Vec<Pixel>> {
-    let mut grid: Vec<Vec<Pixel>> =
-        shape.grid.iter().map(|row| row.bytes().map(pixel).collect()).collect();
+    let mut grid: Vec<Vec<Pixel>> = shape
+        .grid
+        .iter()
+        .map(|row| row.bytes().map(pixel).collect())
+        .collect();
     let [x, top, height] = shape.eyes;
     let rows = match lid {
         Lid::Open => top..top + height,
@@ -81,7 +93,9 @@ fn drawn(shape: &Shape, lid: Lid) -> Vec<Vec<Pixel>> {
     };
     for column in [x, shape.mirror - x] {
         for row in rows.clone() {
-            if let Some(cell) = grid.get_mut(row as usize).and_then(|line| line.get_mut(column as usize))
+            if let Some(cell) = grid
+                .get_mut(row as usize)
+                .and_then(|line| line.get_mut(column as usize))
                 && *cell != Pixel::Empty
             {
                 *cell = Pixel::Eye;
@@ -174,7 +188,8 @@ fn animate(shape: &Shape, grid: &[Vec<Pixel>], t: u64) -> Vec<Vec<Pixel>> {
         let radius = bubble.radius[0] + (bubble.radius[1] - bubble.radius[0]) * p;
         for y in (cy - radius).floor() as i32..=(cy + radius).ceil() as i32 {
             for x in (cx - radius).floor() as i32..=(cx + radius).ceil() as i32 {
-                if (x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2) <= radius * radius {
+                if (x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2) <= radius * radius
+                {
                     set(&mut mask, x, y);
                 }
             }
@@ -186,7 +201,12 @@ fn animate(shape: &Shape, grid: &[Vec<Pixel>], t: u64) -> Vec<Vec<Pixel>> {
     for _ in 0..2 {
         for y in 0..(shape.body as i32 + oy) {
             for x in 0..width {
-                let near = [on(&mask, x + 1, y), on(&mask, x - 1, y), on(&mask, x, y + 1), on(&mask, x, y - 1)];
+                let near = [
+                    on(&mask, x + 1, y),
+                    on(&mask, x - 1, y),
+                    on(&mask, x, y + 1),
+                    on(&mask, x, y - 1),
+                ];
                 let count = near.iter().filter(|lit| **lit).count();
                 let here = mask[y as usize][x as usize];
                 if !here && count >= 3 {
@@ -282,4 +302,3 @@ fn animate(shape: &Shape, grid: &[Vec<Pixel>], t: u64) -> Vec<Vec<Pixel>> {
     }
     out
 }
-

@@ -6,6 +6,7 @@ fn composed() -> Composed {
     Composed {
         plate: glass([4, 2, 12, 5]),
         shimmer: None,
+        will: None,
     }
 }
 

@@ -293,11 +293,7 @@ fn bloom(col: usize, width: usize, elapsed: u64, settled: Color, tone: Color) ->
     let fade = Easing::SineOut.apply(age.min(FADE_MS) as f32 / FADE_MS as f32);
     let settle =
         Easing::SineInOut.apply(age.saturating_sub(FADE_MS).min(FADE_MS) as f32 / FADE_MS as f32);
-    blend(
-        tone,
-        blend(stage().star_bright, settled, settle),
-        fade,
-    )
+    blend(tone, blend(stage().star_bright, settled, settle), fade)
 }
 
 pub(crate) type Row = (u16, u16, Vec<Cell>);

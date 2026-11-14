@@ -60,6 +60,10 @@ fn open(args: &Args, workspace: &Path, ui: &Ui) -> Result<(Loop<Client>, Info, F
         Requirement::Model,
     )?;
     let (root, _, action) = super::super::session::isolate(args, workspace)?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the desktop process enters its project folder once, when it opens"
+    )]
     std::env::set_current_dir(&root)
         .map_err(|error| Error::Config(format!("Could not enter the project folder: {error}")))?;
     let (loop_, workflow) = assemble(args, &endpoint, &root, action, ui)?;

@@ -62,11 +62,18 @@ pub(super) fn badge(size: f32) -> NodeBuilder {
 
 fn draw(scene: &mut SceneBuilder, area: Rect) {
     use crate::scene::sprite::{Pixel, Size, frame};
-    let size = if area.width < SMALL { Size::Compact } else { Size::Banner };
+    let size = if area.width < SMALL {
+        Size::Compact
+    } else {
+        Size::Banner
+    };
     let pixels = frame(size, 0, true);
     let rows = pixels.len() as f32;
     let cols = pixels.first().map_or(1, Vec::len) as f32;
-    let unit = ((area.width * FILL / cols).min(area.height * FILL / rows) * SNAP).floor().max(1.0) / SNAP;
+    let unit = ((area.width * FILL / cols).min(area.height * FILL / rows) * SNAP)
+        .floor()
+        .max(1.0)
+        / SNAP;
     let left = area.origin.x + (area.width - cols * unit) / 2.0;
     let top = area.origin.y + (area.height - rows * unit) / 2.0;
     let ink = crate::will::will_ink(summonr_agent::prefs::Tint::Auto, false);

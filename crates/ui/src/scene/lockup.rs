@@ -1,5 +1,7 @@
 use super::input::{glass, overlay};
-use super::logo::{COMPOSER_ROWS, Composed, FACT_LABEL, FADE_MS, WORD_GAP, WORD_WIPE_MS, layout, wordmark};
+use super::logo::{
+    COMPOSER_ROWS, Composed, FACT_LABEL, FADE_MS, WORD_GAP, WORD_WIPE_MS, layout, wordmark,
+};
 use super::space::Plate;
 use super::sprite::{FRAME_MS, Pixel, Size};
 use super::*;
@@ -52,14 +54,24 @@ fn fit(cols: u16, rows: u16, facts: &[(&str, String)], size: Size, scale: u16, w
     let room = cols.saturating_sub(width + gap + FACT_LABEL + 6);
     let value_width = longest.min(room);
     let logo = summonr_agent::splash::logo().len() as u16;
-    let word_width = if word { summonr_agent::splash::logo_width() as u16 } else { 0 };
+    let word_width = if word {
+        summonr_agent::splash::logo_width() as u16
+    } else {
+        0
+    };
     let text_width = word_width.max(FACT_LABEL + value_width);
     let text_rows = if word { logo + WORD_GAP } else { 0 } + facts.len() as u16;
     let body = [width + gap + text_width, height.max(text_rows)];
     let fits = body[1] + 2 + COMPOSER_ROWS <= rows
         && body[0] + 6 <= cols
         && (scale == 1 || height * 2 <= rows);
-    Fit { fits, body, will_rows: height, text_rows, value_width }
+    Fit {
+        fits,
+        body,
+        will_rows: height,
+        text_rows,
+        value_width,
+    }
 }
 
 fn plan(cols: u16, rows: u16, facts: &[(&str, String)]) -> Plan {
@@ -87,8 +99,20 @@ fn plan(cols: u16, rows: u16, facts: &[(&str, String)]) -> Plan {
         scale,
         will: [body_x, body_y + body_rows.saturating_sub(fit.will_rows)],
         word: word.then_some([text_x, text_y]),
-        facts: [text_x, if word { text_y + logo + WORD_GAP } else { text_y }],
-        card: [card_x, card_y, card_width, (body_rows + 2).min(rows.saturating_sub(card_y))],
+        facts: [
+            text_x,
+            if word {
+                text_y + logo + WORD_GAP
+            } else {
+                text_y
+            },
+        ],
+        card: [
+            card_x,
+            card_y,
+            card_width,
+            (body_rows + 2).min(rows.saturating_sub(card_y)),
+        ],
         value_width: usize::from(fit.value_width),
     }
 }
@@ -145,7 +169,11 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64, splash: Spl
     if let Some(at) = plan.word {
         wordmark(&mut plate, at, elapsed.saturating_sub(WORD_START_MS), tone);
     }
-    let facts_start = if plan.word.is_some() { WORD_START_MS + WORD_WIPE_MS } else { ENTRANCE_MS };
+    let facts_start = if plan.word.is_some() {
+        WORD_START_MS + WORD_WIPE_MS
+    } else {
+        ENTRANCE_MS
+    };
     let fade = Easing::SineOut
         .apply(elapsed.saturating_sub(facts_start).min(FADE_MS) as f32 / FADE_MS as f32);
     let [x, y] = plan.facts;
@@ -160,12 +188,24 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64, splash: Spl
                     }
                 }
                 let offset = label.chars().count() as u16 + 1;
-                overlay(&mut plate, x + offset, y, value, blend(tone, colours.label, fade));
+                overlay(
+                    &mut plate,
+                    x + offset,
+                    y,
+                    value,
+                    blend(tone, colours.label, fade),
+                );
                 continue;
             }
             overlay(&mut plate, x, y, label, blend(tone, colours.label, fade));
             let value = crate::cells::ellipsize_start(value, plan.value_width);
-            overlay(&mut plate, x + FACT_LABEL, y, &value, blend(tone, colours.value, fade));
+            overlay(
+                &mut plate,
+                x + FACT_LABEL,
+                y,
+                &value,
+                blend(tone, colours.value, fade),
+            );
         }
     }
     let figure = Figure {
@@ -203,7 +243,13 @@ type Painted = ([u16; 2], Option<Color>, Option<Color>);
 
 impl Figure {
     /// Paints the frame for `elapsed` onto `plate`, restoring cells from `still` first, and records them in `lit`.
-    pub(crate) fn apply(&self, plate: &mut Plate, still: &Plate, elapsed: u64, lit: &mut Vec<[u16; 2]>) {
+    pub(crate) fn apply(
+        &self,
+        plate: &mut Plate,
+        still: &Plate,
+        elapsed: u64,
+        lit: &mut Vec<[u16; 2]>,
+    ) {
         let mut cells = self.sprite(elapsed);
         if self.motes && !self.still {
             cells.extend(self.motes(elapsed));
@@ -283,7 +329,14 @@ impl Figure {
         let [width, _] = self.size.cells();
         let width = i32::from(width);
         let colour = self.colour(Pixel::Mid);
-        let spots = [[-3, 3], [-2, 10], [-3, 14], [1, -2], [width - 2, -1], [-1, 18]];
+        let spots = [
+            [-3, 3],
+            [-2, 10],
+            [-3, 14],
+            [1, -2],
+            [width - 2, -1],
+            [-1, 18],
+        ];
         let mut cells = Vec::new();
         for (n, [dx, dy]) in spots.into_iter().enumerate() {
             let x = i32::from(self.at[0]) + dx * scale;
@@ -295,7 +348,11 @@ impl Figure {
                 let half = half + step;
                 for x in x..x + scale {
                     let at = [x as u16, (half / 2) as u16];
-                    cells.push(if half % 2 == 0 { (at, colour, None) } else { (at, None, colour) });
+                    cells.push(if half % 2 == 0 {
+                        (at, colour, None)
+                    } else {
+                        (at, None, colour)
+                    });
                 }
             }
         }

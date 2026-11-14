@@ -54,7 +54,9 @@ pub(crate) fn layer(app: App) -> NodeBuilder {
     let card = card(app.clone());
     fill(container()).children_reactive(move || {
         let splash = splash.get();
-        vec![sigil::reactive::untrack(|| backdrop(app.clone(), splash, card))]
+        vec![sigil::reactive::untrack(|| {
+            backdrop(app.clone(), splash, card)
+        })]
     })
 }
 

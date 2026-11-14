@@ -186,7 +186,9 @@ impl Splash {
 }
 
 impl<'de> serde::Deserialize<'de> for Splash {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
         #[derive(serde::Deserialize)]
         #[serde(untagged)]
         enum Raw {

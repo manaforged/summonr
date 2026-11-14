@@ -18,11 +18,6 @@ pub(crate) const fn drawn(splash: Splash) -> bool {
     !matches!(splash, Splash::Off | Splash::Classic)
 }
 
-/// Whether `splash` frames the lockup and composer in a bordered glass pane.
-pub(crate) const fn paned(splash: Splash) -> bool {
-    !matches!(splash, Splash::Plain | Splash::Motes | Splash::Atmosphere)
-}
-
 /// Milliseconds until the lockup has finished its entrance.
 pub(crate) const fn reveal_ms() -> u64 {
     WORD_START_MS + WORD_WIPE_MS + 2 * FADE_MS
@@ -126,7 +121,7 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64, splash: Spl
         Splash::Sky => glass(plan.card),
         Splash::Atmosphere => {
             let mut blank = Cell::blank();
-            blank.bg = ink(Color { a: 0, ..tone });
+            blank.bg = ink(tone);
             Plate::new(plan.card, blank)
         }
         Splash::Off | Splash::Classic | Splash::Plain | Splash::Motes => {

@@ -22,7 +22,7 @@ mod lockup;
 mod logo;
 mod mark;
 mod sprite;
-pub(crate) use lockup::{ground, paned};
+pub(crate) use lockup::ground;
 pub(crate) use logo::{Line, compose, placed, reveal_ms};
 pub(crate) use mark::Mark;
 pub(crate) use space::Plate;

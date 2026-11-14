@@ -12,8 +12,6 @@ use super::{
 };
 use super::{Source, Store};
 use crate::durable::store;
-#[cfg(not(target_os = "macos"))]
-use summonr_core::error::Error;
 use summonr_core::error::Result;
 
 impl Store {
@@ -76,6 +74,6 @@ pub(super) fn native_forget(name: &str) -> Result<bool> {
     match super::native_entry(name)?.delete_credential() {
         Ok(()) => Ok(true),
         Err(keyring::Error::NoEntry) => Ok(false),
-        Err(error) => Err(Error::Config(format!("credential store: {error}"))),
+        Err(error) => Err(super::seal::store_error(error)),
     }
 }

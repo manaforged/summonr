@@ -134,15 +134,9 @@ pub(super) async fn post(
 }
 
 async fn sent(request: RequestBuilder) -> Result<(u16, String)> {
-    let response = request
-        .send()
-        .await
-        .map_err(|error| crate::unreachable(error.to_string()))?;
+    let response = request.send().await.map_err(crate::unreachable)?;
     let status = response.status().as_u16();
-    let text = response
-        .text()
-        .await
-        .map_err(|error| crate::unreachable(error.to_string()))?;
+    let text = response.text().await.map_err(crate::unreachable)?;
     Ok((status, text))
 }
 

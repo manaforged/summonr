@@ -10,8 +10,10 @@ pub(super) struct Manual {
     pub(super) bare: Option<&'static str>,
     /// Verbs that accept `--json` after their own words.
     pub(super) json: &'static [&'static str],
-    /// Verbs whose words after this many positionals are free text.
-    pub(super) text: &'static [(&'static str, usize)],
+    /// Verb paths whose words after this many more positionals are free text.
+    pub(super) text: &'static [(&'static [&'static str], usize)],
+    /// Whether an option of this noun takes the next word as its value.
+    pub(super) value: fn(&str) -> bool,
     /// Verbs that parse but stay out of the verb list, like `askpass`.
     pub(super) internal: &'static [&'static str],
 }
@@ -23,6 +25,7 @@ static MANUALS: [Manual; 5] = [
         bare: Some("help"),
         json: &["list"],
         text: &[],
+        value: |_| false,
         internal: &["tick", "exec"],
     },
     Manual {
@@ -31,6 +34,7 @@ static MANUALS: [Manual; 5] = [
         bare: Some("help"),
         json: &[],
         text: &[],
+        value: |_| false,
         internal: &[],
     },
     Manual {
@@ -38,7 +42,8 @@ static MANUALS: [Manual; 5] = [
         usage: Some(summonr_agent::mail::cli::USAGE),
         bare: Some("agents"),
         json: &["agents", "send"],
-        text: &[("send", 1), ("board", 2)],
+        text: &[(&["send"], 1), (&["board", "set"], 1)],
+        value: super::integrations::send_value,
         internal: &[],
     },
     Manual {
@@ -47,6 +52,7 @@ static MANUALS: [Manual; 5] = [
         bare: None,
         json: &[],
         text: &[],
+        value: |_| false,
         internal: &[],
     },
     Manual {
@@ -55,6 +61,7 @@ static MANUALS: [Manual; 5] = [
         bare: None,
         json: &["list", "get"],
         text: &[],
+        value: |_| false,
         internal: &[],
     },
 ];
@@ -79,19 +86,22 @@ impl Manual {
     }
 
     fn before_text(&self, words: &[&str]) -> usize {
-        let mut plain = words
+        let mut value = false;
+        let (index, plain): (Vec<usize>, Vec<&str>) = words
             .iter()
+            .copied()
             .enumerate()
-            .filter(|(_, word)| !word.starts_with('-'));
-        let count = plain.next().and_then(|(_, verb)| {
-            self.text
-                .iter()
-                .find(|(name, _)| name == verb)
-                .map(|(_, count)| *count)
-        });
-        count
-            .and_then(|count| plain.nth(count.saturating_sub(1)))
-            .map_or(words.len(), |(index, _)| index + 1)
+            .filter(|(_, word)| {
+                let skip = value || word.starts_with('-');
+                value = !value && (self.value)(word);
+                !skip
+            })
+            .unzip();
+        self.text
+            .iter()
+            .find(|(path, _)| plain.starts_with(path))
+            .and_then(|(path, count)| index.get(path.len() + count - 1))
+            .map_or(words.len(), |at| at + 1)
     }
 
     /// Ends a row of this noun: `--json` where `verb` takes it, any other option is an error.

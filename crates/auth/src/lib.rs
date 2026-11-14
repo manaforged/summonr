@@ -38,8 +38,8 @@ fn refused(text: impl Into<String>) -> Error {
     Error::provider(ProviderFailureKind::Authentication, text)
 }
 
-fn unreachable(text: impl Into<String>) -> Error {
-    Error::provider(ProviderFailureKind::Transport, text)
+fn unreachable(error: impl std::fmt::Display) -> Error {
+    Error::provider(ProviderFailureKind::Transport, error.to_string())
 }
 
 fn needs_login(name: &str, detail: &str) -> Error {

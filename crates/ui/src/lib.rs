@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use summonr_agent::provider::Client;
 use summonr_agent::runtime::Loop;
-use summonr_core::error::Result;
+use summonr_core::error::{Error, ErrorKind, Result};
 
 mod app;
 mod canvas;
@@ -62,6 +62,10 @@ pub fn run(
 }
 
 const PRODUCT: &str = "summonr";
+
+fn tool_error(error: impl std::error::Error + Send + Sync + 'static) -> Error {
+    Error::caused(ErrorKind::Tool, error)
+}
 
 #[derive(Clone, Debug)]
 enum ToolState {

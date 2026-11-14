@@ -111,7 +111,7 @@ fn run(
         stdin.as_deref().map(str::as_bytes),
         deadline,
     )
-    .map_err(|error| Error::Config(format!("credential store: {error}")))?;
+    .map_err(store_error)?;
     let Some(output) = finished else {
         return Err(Error::Config(LOCKED.to_string()));
     };
@@ -136,8 +136,11 @@ pub(super) fn lookup(document: &DocumentMut, name: &str) -> Option<String> {
 }
 
 pub(super) fn parse(text: &str) -> Result<DocumentMut> {
-    text.parse::<DocumentMut>()
-        .map_err(|error| Error::Config(format!("credential store: {error}")))
+    text.parse::<DocumentMut>().map_err(store_error)
+}
+
+pub(super) fn store_error(error: impl std::fmt::Display) -> Error {
+    Error::Config(format!("credential store: {error}"))
 }
 
 #[cfg(unix)]

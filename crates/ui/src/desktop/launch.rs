@@ -19,7 +19,7 @@ use summonr_agent::hub::{Factory, Started, start};
 use summonr_agent::provider::Client;
 use summonr_agent::runtime::Loop;
 
-use summonr_core::error::{Error, ErrorKind, Result};
+use summonr_core::error::{Error, Result};
 
 const TITLE: &str = crate::PRODUCT;
 const SIZE: (u32, u32) = (1280, 800);
@@ -277,5 +277,5 @@ fn outputs(app: &App) {
 }
 
 fn reveal(path: &Path) -> Result<()> {
-    summonr_auth::open::external(path).map_err(|error| Error::caused(ErrorKind::Tool, error))
+    summonr_auth::open::external(path).map_err(crate::tool_error)
 }

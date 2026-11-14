@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 use super::ops::{EditOp, lines};
 
@@ -59,7 +59,9 @@ pub(super) fn apply_many(original: &str, ops: &[EditOp], sequence: bool) -> Resu
 fn numbered(index: usize, text: &str, op: &EditOp) -> Result<Patch> {
     op.patch(text)
         .map_err(|error| match op.context(error, text) {
-            Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
+            error if error.kind() == ErrorKind::Tool => {
+                Error::Tool(format!("edit {}: {}", index + 1, error.detail()))
+            }
             other => other,
         })
 }

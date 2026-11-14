@@ -140,7 +140,7 @@ impl Store {
             Backend::Native => {
                 native_entry(name)?
                     .set_password(secret)
-                    .map_err(|error| Error::Config(format!("credential store: {error}")))?;
+                    .map_err(store_error)?;
                 Ok(Source::Keychain)
             }
         }
@@ -251,8 +251,7 @@ fn backend(choice: &str) -> Result<Backend> {
 
 #[cfg(not(target_os = "macos"))]
 fn native_entry(name: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(SERVICE, name)
-        .map_err(|error| Error::Config(format!("credential store: {error}")))
+    keyring::Entry::new(SERVICE, name).map_err(store_error)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -260,7 +259,7 @@ fn native_get(name: &str) -> Result<Option<String>> {
     match native_entry(name)?.get_password() {
         Ok(secret) if !secret.trim().is_empty() => Ok(Some(secret)),
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(Error::Config(format!("credential store: {error}"))),
+        Err(error) => Err(store_error(error)),
     }
 }
 

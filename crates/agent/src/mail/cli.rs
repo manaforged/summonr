@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::*;
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 /// The `summonr mail --help` text.
 pub const USAGE: &str = "usage:\n  summonr mail                  who is on this machine\n  summonr mail agents [--json]  same roster; --json prints each session's state, tool, detail, parent and since\n  summonr mail send [--json] [--reply-to ID] <name|id|all> <text>\n  summonr mail inbox <id> [--clear]\n  summonr mail board [get <key>|set <key> <text>]\n\nAny agent CLI can use these: mail is files under ~/.summonr/mail, no server.";
@@ -48,9 +48,8 @@ pub fn run(command: &Command, json: bool, cwd: &Path) -> Result<i32> {
 
 fn answer(dir: &Path, cwd: &Path, command: &Command, json: bool) -> Result<String> {
     match command {
-        Command::Agents if json => {
-            serde_json::to_string(&live(dir)).map_err(|error| Error::Config(error.to_string()))
-        }
+        Command::Agents if json => serde_json::to_string(&live(dir))
+            .map_err(|error| Error::caused(ErrorKind::Config, error)),
         Command::Agents => Ok(roster(&live(dir), "")),
         Command::Send { to, text, reply_to } => send(dir, to, text, reply_to.as_deref(), json),
         Command::Inbox { id, clear: false } => read_inbox(dir, id).map(|mail| inbox_text(&mail)),

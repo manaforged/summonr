@@ -26,10 +26,7 @@ fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a str, &'a str)>) -> Vec<(Stri
         headers.push((key, value.to_string()));
     }
     if !headers.iter().any(|(key, _)| key == "user-agent") {
-        headers.push((
-            "user-agent".to_string(),
-            concat!("summonr/", env!("CARGO_PKG_VERSION")).to_string(),
-        ));
+        headers.push(("user-agent".to_string(), summonr_auth::AGENT.to_string()));
     }
     headers
 }

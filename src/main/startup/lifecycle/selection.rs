@@ -1,4 +1,5 @@
 use summonr_agent::{Client, Endpoint, Error, Requirement, Result};
+use summonr_core::error::ErrorKind;
 
 use super::{Ui, use_tui};
 use crate::entry::cli::Args;
@@ -27,19 +28,24 @@ pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoin
 }
 
 async fn served(name: Option<&str>, model: Option<&str>, error: Error) -> Error {
-    let Error::Config(text) = error else {
+    if error.kind() != ErrorKind::Config {
+        return error;
+    }
+    let Ok(bare) = summonr_agent::resolve_endpoint(name, model, Requirement::Config) else {
         return error;
     };
-    let Ok(bare) = summonr_agent::resolve_endpoint(name, model, Requirement::Config) else {
-        return Error::Config(text);
-    };
     if !bare.model.is_empty() {
-        return Error::Config(text);
+        return error;
     }
     match Client::discover(&bare).await {
         Ok(models) => {
             let ids: Vec<String> = models.into_iter().map(|row| row.id).collect();
-            Error::Config(format!("{text}; {} serves {}", bare.name, ids.join(", ")))
+            Error::Config(format!(
+                "{}; {} serves {}",
+                error.detail(),
+                bare.name,
+                ids.join(", ")
+            ))
         }
         Err(unreachable) => unreachable,
     }

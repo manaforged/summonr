@@ -5,7 +5,7 @@ use base64::Engine;
 use crate::durable::store;
 use crate::tools::budget;
 use crate::tools::{ToolOutput, ToolRegistry};
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 const SNIFF_CHARS: usize = 24;
 const SPILL_PREFIX: &str = "output-";
@@ -20,7 +20,9 @@ impl ToolRegistry {
                 self.fit_images(&mut output);
                 Ok(output)
             }
-            Err(Error::Tool(text)) => Err(Error::Tool(self.bounded(&text))),
+            Err(error) if error.kind() == ErrorKind::Tool => {
+                Err(Error::Tool(self.bounded(&error.detail())))
+            }
             Err(error) => Err(error),
         }
     }

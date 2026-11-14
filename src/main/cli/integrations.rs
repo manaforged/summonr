@@ -1,7 +1,7 @@
 use summonr_agent::gateway::cli::{Command as Gateway, Options};
 use summonr_agent::mail::cli::Command as Mail;
 use summonr_agent::panel::cli::Command as Panel;
-use summonr_agent::table::{self, Row, Table};
+use summonr_agent::table::{self, Arity, Row, Table};
 use summonr_agent::{Error, Result};
 
 use super::commands::Command;
@@ -112,6 +112,11 @@ const SEND: Table<SendFlags> = Table {
     dash_values: false,
     pairs: false,
 };
+
+pub(super) fn send_value(word: &str) -> bool {
+    SEND.find(word, &SendFlags::default())
+        .is_some_and(|row| matches!(row.arity, Arity::Value(..)))
+}
 
 fn send(args: &mut Args, input: &mut Input) -> Result<()> {
     let mut flags = SendFlags::default();

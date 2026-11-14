@@ -1,5 +1,6 @@
 use super::walk::Step;
 use super::*;
+use summonr_core::error::ErrorKind;
 
 pub(super) enum Block {
     Outside(String),
@@ -148,10 +149,9 @@ pub(crate) fn write_denied(path: &str) -> String {
 }
 
 pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
-    match error {
-        Error::Denied(message) | Error::Tool(message) => grant_from_message(message),
-        _ => None,
-    }
+    matches!(error.kind(), ErrorKind::Denied | ErrorKind::Tool)
+        .then(|| grant_from_message(&error.detail()))
+        .flatten()
 }
 
 fn grant_from_message(message: &str) -> Option<Grant> {

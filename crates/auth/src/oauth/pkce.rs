@@ -218,10 +218,7 @@ async fn bind(wanted: Option<&str>) -> Result<TcpListener> {
 }
 
 fn redirect(wanted: Option<&str>, listener: &TcpListener) -> Result<String> {
-    let port = listener
-        .local_addr()
-        .map_err(|error| crate::unreachable(error.to_string()))?
-        .port();
+    let port = listener.local_addr().map_err(crate::unreachable)?.port();
     let Some(raw) = wanted else {
         return Ok(format!("http://127.0.0.1:{port}/callback"));
     };
@@ -238,10 +235,7 @@ fn redirect(wanted: Option<&str>, listener: &TcpListener) -> Result<String> {
 
 async fn caught(listener: &TcpListener, state: &str) -> Result<Callback> {
     loop {
-        let (mut stream, _) = listener
-            .accept()
-            .await
-            .map_err(|error| crate::unreachable(error.to_string()))?;
+        let (mut stream, _) = listener.accept().await.map_err(crate::unreachable)?;
         let Some(asked) = head(&mut stream).await? else {
             answer(&mut stream, "Waiting for the sign-in redirect.").await;
             continue;
@@ -280,10 +274,7 @@ async fn caught(listener: &TcpListener, state: &str) -> Result<Callback> {
 
 async fn head(stream: &mut TcpStream) -> Result<Option<Url>> {
     let mut raw = vec![0u8; HEAD_CEILING];
-    let read = stream
-        .read(&mut raw)
-        .await
-        .map_err(|error| crate::unreachable(error.to_string()))?;
+    let read = stream.read(&mut raw).await.map_err(crate::unreachable)?;
     let text = String::from_utf8_lossy(&raw[..read]);
     let Some(path) = text.split_whitespace().nth(1) else {
         return Ok(None);

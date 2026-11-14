@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::hashline::{resolve_span, tagged_span};
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 use summonr_core::text::squash;
 
 use super::edit::Patch;
@@ -129,15 +129,16 @@ impl EditOp {
     }
 
     pub(super) fn context(&self, error: Error, text: &str) -> Error {
-        let Error::Tool(message) = error else {
+        if error.kind() != ErrorKind::Tool {
             return error;
-        };
+        }
         let Some(Ok((line, _))) = text_of(&self.tag).map(|tag| resolve_span(text, tag, None))
         else {
-            return Error::Tool(message);
+            return error;
         };
         Error::Tool(format!(
-            "{message}\nCurrent lines:\n{}",
+            "{}\nCurrent lines:\n{}",
+            error.detail(),
             tagged_span(
                 &text.lines().collect::<Vec<_>>(),
                 line.saturating_sub(2),

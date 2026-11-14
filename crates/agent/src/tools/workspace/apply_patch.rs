@@ -1,4 +1,4 @@
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 use super::edit::{Patch, apply_patches, restore, terminators};
 use super::ops::replace_text_patch;
@@ -122,7 +122,9 @@ fn stage_update(
     let mut text = raw.replace("\r\n", "\n");
     for hunk in hunks {
         let patch = hunk_patch(&text, hunk).map_err(|error| match error {
-            Error::Tool(message) => Error::Tool(format!("{path}: {message}")),
+            error if error.kind() == ErrorKind::Tool => {
+                Error::Tool(format!("{path}: {}", error.detail()))
+            }
             other => other,
         })?;
         text = apply_patches(&text, vec![patch])?.0;

@@ -140,7 +140,7 @@ impl Http {
             let token = auth
                 .token(&self.client)
                 .await
-                .map_err(|error| Error::Tool(error.detail()))?;
+                .map_err(|error| error.relabel(summonr_core::error::ErrorKind::Tool))?;
             request = request.bearer_auth(&token);
         }
         let sent = request.json(body).stream().send().await;

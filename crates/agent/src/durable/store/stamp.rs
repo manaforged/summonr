@@ -24,7 +24,7 @@ pub(crate) fn stamp(path: &Path) -> Stamp {
 pub(crate) fn settled(stamp: Stamp, taken: SystemTime) -> bool {
     stamp.is_none_or(|(modified, _)| {
         modified
-            .checked_add(crate::limits::limits().stamp_settle())
+            .checked_add(crate::limits::stamp_settle())
             .is_some_and(|settles| settles <= taken)
     })
 }

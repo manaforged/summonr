@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use super::edit::{edit, edit_external, editor};
 use super::*;
 
-const PRODUCT: &str = "Summonr";
+const DISPLAY_NAME: &str = "Summonr";
 
 pub(crate) fn run(
     loop_: Loop<Client>,
@@ -219,7 +219,7 @@ impl App {
                     .to_string()
             })
             .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| PRODUCT.to_string())
+            .unwrap_or_else(|| DISPLAY_NAME.to_string())
     }
 }
 
@@ -286,7 +286,7 @@ impl Pump {
         }
         if self.busy == Some(true) && !busy && !focused() && notify.turns() {
             drop(bell(Some(&format!(
-                "{PRODUCT} · {}: {}",
+                "{DISPLAY_NAME} · {}: {}",
                 app.place(),
                 app.ending()
             ))));

@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 
+use summonr_core::error::ErrorKind;
+
 use super::{Factory, Live, Open, Status, seen};
 use crate::hub::{Cmd, Fact, Info, Intent, Msg, Ui};
 use crate::provider::Client;
@@ -200,7 +202,9 @@ impl Hub {
         };
         match (self.place(pane, open), held) {
             (Ok(()), _) => {}
-            (Err(crate::Error::Held), Some(id)) => drop(ui.send(Msg::Fact(Fact::Held(id)))),
+            (Err(error), Some(id)) if error.kind() == ErrorKind::Held => {
+                drop(ui.send(Msg::Fact(Fact::Held(id))));
+            }
             (Err(error), _) => drop(ui.send(Msg::Fact(Fact::Failed(error.to_string())))),
         }
     }

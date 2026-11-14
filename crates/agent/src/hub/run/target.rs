@@ -1,3 +1,7 @@
+use std::time::Instant;
+
+use summonr_core::error::ErrorKind;
+
 use super::{Hub, Open, Status};
 use crate::endpoint::Friend;
 use crate::hub::{Cmd, Fact, Msg};
@@ -39,7 +43,7 @@ impl Hub {
         });
         match asked {
             Ok(path) => {
-                let until = std::time::Instant::now() + crate::limits::limits().session_takeover();
+                let until = Instant::now() + crate::limits::limits().session_takeover();
                 self.taking = Some(super::Taking {
                     pane,
                     id,
@@ -67,11 +71,11 @@ impl Hub {
             return;
         };
         match self.place(taking.pane, Open::Resume(taking.id.clone())) {
-            Err(crate::Error::Held) if std::time::Instant::now() < taking.until => {
+            Err(error) if error.kind() == ErrorKind::Held && Instant::now() < taking.until => {
                 self.taking = Some(taking);
                 return;
             }
-            Err(crate::Error::Held) => {
+            Err(error) if error.kind() == ErrorKind::Held => {
                 self.tell(taking.pane, GAVE_UP.to_owned());
             }
             Err(error) => self.tell(taking.pane, error.to_string()),

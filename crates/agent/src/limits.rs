@@ -77,7 +77,7 @@ pub(crate) enum Reach {
 #[cfg(not(test))]
 fn load() -> Limits {
     let built_in = Limits::built_in();
-    match crate::config::path().and_then(|path| crate::config::parse(&path)) {
+    match crate::config::file() {
         Ok(file) => match &file.limits {
             Some(with) => built_in.overlay(with),
             None => built_in,
@@ -100,9 +100,16 @@ fn load() -> Limits {
     }
 }
 
+static LOADED: OnceLock<Limits> = OnceLock::new();
+
 pub fn limits() -> &'static Limits {
-    static LOADED: OnceLock<Limits> = OnceLock::new();
     LOADED.get_or_init(load)
+}
+
+pub(crate) fn stamp_settle() -> Duration {
+    LOADED
+        .get()
+        .map_or_else(|| Limits::built_in().stamp_settle(), Limits::stamp_settle)
 }
 
 pub fn log_retain() -> Duration {

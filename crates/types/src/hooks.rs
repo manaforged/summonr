@@ -9,7 +9,7 @@ mod config;
 #[path = "hooks_kinds.rs"]
 mod kinds;
 
-pub use kinds::{Compaction, End, Permission, Start};
+pub use kinds::{Compaction, End, Failure, Notice, Permission, Start};
 
 /// The built-in tool that a Claude Code or summonr tool name names.
 #[must_use]
@@ -24,25 +24,35 @@ pub enum HookEvent {
     SessionStart,
     Prompt,
     PreTool,
+    PermissionRequest,
     PostTool,
     ToolFailure,
+    Notification,
+    SubagentStart,
+    SubagentStop,
     PreCompact,
     Compact,
     Stop,
+    StopFailure,
     SessionEnd,
 }
 
 impl HookEvent {
     /// Every hook event, in order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 14] = [
         Self::SessionStart,
         Self::Prompt,
         Self::PreTool,
+        Self::PermissionRequest,
         Self::PostTool,
         Self::ToolFailure,
+        Self::Notification,
+        Self::SubagentStart,
+        Self::SubagentStop,
         Self::PreCompact,
         Self::Compact,
         Self::Stop,
+        Self::StopFailure,
         Self::SessionEnd,
     ];
     /// The event's key in the `[hooks]` config table.
@@ -52,11 +62,16 @@ impl HookEvent {
             Self::SessionStart => "session_start",
             Self::Prompt => "user_prompt",
             Self::PreTool => "pre_tool",
+            Self::PermissionRequest => "permission_request",
             Self::PostTool => "post_tool",
             Self::ToolFailure => "post_tool_failure",
+            Self::Notification => "notification",
+            Self::SubagentStart => "subagent_start",
+            Self::SubagentStop => "subagent_stop",
             Self::PreCompact => "pre_compact",
             Self::Compact => "compact",
             Self::Stop => "stop",
+            Self::StopFailure => "stop_failure",
             Self::SessionEnd => "session_end",
         }
     }
@@ -67,11 +82,16 @@ impl HookEvent {
             Self::SessionStart => "SessionStart",
             Self::Prompt => "UserPromptSubmit",
             Self::PreTool => "PreToolUse",
+            Self::PermissionRequest => "PermissionRequest",
             Self::PostTool => "PostToolUse",
             Self::ToolFailure => "PostToolUseFailure",
+            Self::Notification => "Notification",
+            Self::SubagentStart => "SubagentStart",
+            Self::SubagentStop => "SubagentStop",
             Self::PreCompact => "PreCompact",
             Self::Compact => "PostCompact",
             Self::Stop => "Stop",
+            Self::StopFailure => "StopFailure",
             Self::SessionEnd => "SessionEnd",
         }
     }
@@ -205,7 +225,9 @@ impl Hook {
                 self.tool_name(tool)
             });
             body["tool_input"] = arguments;
-            body["tool_use_id"] = payload.get("id").cloned().unwrap_or(Value::Null);
+            if let Some(id) = payload.get("id") {
+                body["tool_use_id"] = id.clone();
+            }
         }
         if let Some(output) = payload.get("output") {
             if call.event == HookEvent::ToolFailure {
@@ -219,7 +241,7 @@ impl Hook {
     }
 }
 
-const FIELDS: [(&str, &str); 9] = [
+const FIELDS: [(&str, &str); 17] = [
     ("source", "source"),
     ("model", "model"),
     ("prompt", "prompt"),
@@ -229,6 +251,14 @@ const FIELDS: [(&str, &str); 9] = [
     ("custom_instructions", "custom_instructions"),
     ("summary", "compact_summary"),
     ("reason", "reason"),
+    ("agent_id", "agent_id"),
+    ("agent_type", "agent_type"),
+    ("agent_transcript", "agent_transcript_path"),
+    ("notification_type", "notification_type"),
+    ("message", "message"),
+    ("title", "title"),
+    ("error", "error"),
+    ("error_details", "error_details"),
 ];
 
 fn seconds(value: f64) -> Option<Duration> {
@@ -243,10 +273,18 @@ fn mcp_name(tool: &str) -> String {
     }
 }
 
-/// The configured hooks by event.
+/// The child agent a session's hooks run in: its id and its agent name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Subagent {
+    pub id: String,
+    pub name: String,
+}
+
+/// The configured hooks by event, and the child agent they run in.
 #[derive(Clone, Debug, Default)]
 pub struct Hooks {
     lists: [Vec<Hook>; HookEvent::ALL.len()],
+    subagent: Option<Subagent>,
 }
 
 impl Hooks {
@@ -258,6 +296,15 @@ impl Hooks {
     /// Adds `hook` to `event`.
     pub fn push(&mut self, event: HookEvent, hook: Hook) {
         self.lists[event.slot()].push(hook);
+    }
+    /// Marks these hooks as child agent `id` of agent type `name`, so its stop runs `subagent_stop`.
+    pub fn set_subagent(&mut self, id: String, name: String) {
+        self.subagent = Some(Subagent { id, name });
+    }
+    /// The child agent these hooks run in, if any.
+    #[must_use]
+    pub const fn subagent(&self) -> Option<&Subagent> {
+        self.subagent.as_ref()
     }
     /// The config keys of the events that have hooks.
     #[must_use]

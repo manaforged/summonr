@@ -64,11 +64,12 @@ fn install_reports_the_researchr_mode() {
         &format!("/researchr:research {spec}"),
         workspace.path(),
         None,
+        None,
     )
     .expect("expand the research command")
     .expect("the research command expands");
     assert!(expanded.contains(spec), "{expanded}");
-    let rendered = command.render("spec.toml", workspace.path());
+    let rendered = command.render("spec.toml", workspace.path(), None);
     assert!(rendered.contains("researchr climb"), "{rendered}");
     assert!(rendered.contains("spec.toml"), "{rendered}");
     let data = [

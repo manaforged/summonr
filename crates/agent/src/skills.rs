@@ -213,7 +213,12 @@ pub(crate) fn catalog(workspace: &Path, set: Option<&Set>) -> Option<String> {
     Some(out)
 }
 
-pub(crate) fn load(workspace: &Path, set: Option<&Set>, name: &str) -> Result<String> {
+pub(crate) fn load(
+    workspace: &Path,
+    set: Option<&Set>,
+    name: &str,
+    session: Option<&str>,
+) -> Result<String> {
     let name = name.trim();
     if !reference(name) {
         return Err(Error::Tool(
@@ -245,7 +250,7 @@ pub(crate) fn load(workspace: &Path, set: Option<&Set>, name: &str) -> Result<St
             std::fs::read_to_string(&skill.file)
                 .ok()
                 .filter(|text| !text.trim().is_empty())
-                .map(|text| skill.content(&text, workspace))
+                .map(|text| skill.content(&text, workspace, session))
         })
         .ok_or_else(|| Error::Tool(format!("skill `{name}` is not installed")))
 }
@@ -257,8 +262,13 @@ pub(crate) struct Typed {
 }
 
 impl Typed {
-    /// The skill body with `arguments` and the path placeholders filled.
-    pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> Result<String> {
+    /// The skill body with `arguments`, the path placeholders, and the session id filled.
+    pub(crate) fn render(
+        &self,
+        arguments: &str,
+        workspace: &Path,
+        session: Option<&str>,
+    ) -> Result<String> {
         let name = &self.skill.name;
         let text = std::fs::read_to_string(&self.skill.file)
             .map_err(|error| Error::Tool(format!("skill `{name}`: {error}")))?;
@@ -267,7 +277,7 @@ impl Typed {
             return Err(Error::Tool(format!("skill `{name}` is not installed")));
         }
         let filled = fill(body, arguments, &self.skill.meta.arguments);
-        Ok(self.skill.content(&filled, workspace))
+        Ok(self.skill.content(&filled, workspace, session))
     }
 }
 

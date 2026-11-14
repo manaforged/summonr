@@ -130,10 +130,6 @@ impl ToolRegistry {
         !read_only && self.background && self.session_id().is_some()
     }
 
-    fn session_id(&self) -> Option<String> {
-        self.session.lock().ok().and_then(|session| session.clone())
-    }
-
     fn job_record(&self, id: &str, pid: u32, command: &str) -> Result<jobs::Record> {
         jobs::stamp(id, pid, command, &self.workspace, true, self.session_id())
     }

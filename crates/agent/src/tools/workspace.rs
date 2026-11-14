@@ -266,6 +266,7 @@ impl ToolRegistry {
             &self.workspace,
             self.skill_set.as_ref(),
             object_string(args, "name")?,
+            self.session_id().as_deref(),
         )
     }
 }

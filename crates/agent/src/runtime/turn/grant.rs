@@ -31,20 +31,27 @@ impl<P: Provider> Loop<P> {
 
     pub(in crate::runtime) async fn approve(
         &mut self,
+        call: &ToolCall,
         detail: String,
         persist: bool,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<GrantAnswer> {
+    ) -> Result<(GrantAnswer, Option<String>)> {
+        if let Some(decided) = self.permission_request(call, events, emit).await? {
+            return Ok(decided);
+        }
         let Some(shared) = self.steer_shared.clone() else {
-            return Ok(GrantAnswer::Deny);
+            return Ok((GrantAnswer::Deny, None));
         };
         let status: String = detail.chars().take(160).collect();
+        let notice = crate::hooks::Notice::PermissionPrompt;
         let (dialog, input) = self
-            .dialog(&shared, &status, events, emit, |dialog| Event::Approval {
-                detail: Some(detail),
-                persist,
-                dialog,
+            .dialog(&shared, (notice, status.as_str()), events, emit, |dialog| {
+                Event::Approval {
+                    detail: Some(detail),
+                    persist,
+                    dialog,
+                }
             })
             .await?;
         let decision = match input {
@@ -69,7 +76,7 @@ impl<P: Provider> Loop<P> {
                 dialog,
             },
         )?;
-        Ok(decision)
+        Ok((decision, None))
     }
 
     pub(super) async fn with_grant(
@@ -120,16 +127,14 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Result<bool>> {
-        if self.steer_shared.is_none() {
-            return Ok(Ok(false));
-        }
         let persist = matches!(grant, Grant::Write(_));
         let question = grant.prompt();
         asked.push(grant.clone());
-        let standing = match self.approve(question, persist, events, emit).await? {
-            GrantAnswer::Deny => return Ok(Ok(false)),
-            GrantAnswer::Allow => false,
-            GrantAnswer::Always => true,
+        let standing = match self.approve(call, question, persist, events, emit).await? {
+            (GrantAnswer::Deny, Some(reason)) => return Ok(Err(Error::Denied(reason))),
+            (GrantAnswer::Deny, None) => return Ok(Ok(false)),
+            (GrantAnswer::Allow, _) => false,
+            (GrantAnswer::Always, _) => true,
         };
         Ok(self
             .apply_grant(&grant, call, standing, events, emit)?

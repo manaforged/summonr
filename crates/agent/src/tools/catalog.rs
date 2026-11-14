@@ -64,7 +64,7 @@ impl ToolRegistry {
     }
 
     pub(in crate::tools) async fn browse(&self, arguments: &str) -> Result<String> {
-        let session = self.session.lock().ok().and_then(|held| held.clone());
+        let session = self.session_id();
         let browser = self
             .browser
             .as_ref()

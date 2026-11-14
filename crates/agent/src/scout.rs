@@ -11,9 +11,12 @@ pub(crate) async fn brief<P: Provider>(
     loop_: &mut Loop<P>,
     objective: &str,
     usage: &mut crate::provider::Usage,
+    events: &mut Vec<crate::Event>,
+    emit: &mut impl FnMut(&crate::Event),
 ) -> crate::Result<String> {
+    let user = format!("Objective:\n{objective}");
     let (text, scout_usage) = loop_
-        .aside(Role::Scout, SYSTEM, &format!("Objective:\n{objective}"))
+        .aside(Role::Scout, SYSTEM, &user, events, emit)
         .await?;
     usage.add(&scout_usage);
     Ok(text)

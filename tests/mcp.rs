@@ -133,6 +133,14 @@ fn main() {
         plugins::a_hook_matcher_limits_the_tools_it_runs_for,
         #[cfg(unix)]
         plugins::a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_grep,
+        #[cfg(unix)]
+        plugins::pre_tool_context_reaches_the_model_next_to_the_result,
+        #[cfg(unix)]
+        plugins::a_pre_tool_hook_rewrites_a_scout_call,
+        #[cfg(unix)]
+        plugins::subagent_hooks_open_and_hold_a_child,
+        #[cfg(unix)]
+        plugins::a_provider_error_runs_stop_failure_instead_of_stop,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,

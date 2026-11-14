@@ -210,7 +210,7 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let objective = self.session.objective()?;
-        let brief = scout::brief(self, &objective, usage).await;
+        let brief = scout::brief(self, &objective, usage, events, emit).await;
         self.sync_usage(emit);
         let brief = match brief {
             Ok(brief) => brief,

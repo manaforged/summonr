@@ -46,9 +46,15 @@ impl Found {
         self.name == name || self.alias.as_deref() == Some(name)
     }
 
-    /// The file's text with the plugin, project, and skill folder placeholders filled.
-    pub(super) fn content(&self, text: &str, workspace: &Path) -> String {
-        crate::plugins::commands::content(text, self.plugin.as_ref(), self.file.parent(), workspace)
+    /// The file's text with the plugin, project, skill folder, and session placeholders filled.
+    pub(super) fn content(&self, text: &str, workspace: &Path, session: Option<&str>) -> String {
+        crate::plugins::commands::content(
+            text,
+            self.plugin.as_ref(),
+            self.file.parent(),
+            workspace,
+            session,
+        )
     }
 }
 

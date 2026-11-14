@@ -62,6 +62,18 @@ fn plugin_with(session: &Session, hooks: &Value, env: &Value, manifest: &str) ->
 }
 
 #[cfg(unix)]
+fn claude_hooks(entries: &[(&str, &str)]) -> String {
+    let mut config = String::from("[hooks]\n");
+    for (key, script) in entries {
+        let command = serde_json::to_string(script).unwrap();
+        config.push_str(&format!(
+            "{key} = {{ command = {command}, dialect = \"claude\" }}\n"
+        ));
+    }
+    config
+}
+
+#[cfg(unix)]
 fn install(session: &Session, dir: &Path) -> String {
     let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
     assert!(ok, "{text}");
@@ -193,7 +205,10 @@ pub(crate) fn a_legacy_bundle_installs_and_an_unreachable_server_fails_it() {
     );
     let (installed, text) = session.cli(&["install", &bundle.display().to_string()]);
     assert!(!installed, "{text}");
-    assert!(text.contains("plugin_demo_bundled: not reachable:"), "{text}");
+    assert!(
+        text.contains("plugin_demo_bundled: not reachable:"),
+        "{text}"
+    );
     assert!(text.contains("kept in"), "{text}");
     assert!(session.home.path().join("plugins/demo").is_dir(), "{text}");
     let (_, listed) = session.cli(&["mcp", "list"]);
@@ -282,10 +297,7 @@ pub(crate) fn a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home() {
         "input=$(cat); printf %s \"$SUMMONR_HOME\" > '{}'; echo \"$input\" | grep -q '\"tool_name\":\"Bash\"' && echo \"$input\" | grep -q 'rm -rf' && {{ echo blocked by claude hook >&2; exit 2; }}; exit 0",
         trail.display()
     );
-    let config = format!(
-        "[hooks]\npre_tool = {{ command = {}, dialect = \"claude\" }}\n",
-        serde_json::to_string(&script).unwrap()
-    );
+    let config = claude_hooks(&[("pre_tool", &script)]);
     let model = Model::start(vec![
         Step::Call("run_command", json!({"command": "rm -rf scratch"})),
         Step::Text("ok"),
@@ -360,4 +372,136 @@ pub(crate) fn a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_g
     assert!(results[1].contains("Grep"), "{results:?}");
     let printed = crate::support::read(&session.file("stderr"));
     assert!(printed.contains("→ search *.txt in docs"), "{printed}");
+}
+
+#[cfg(unix)]
+pub(crate) fn pre_tool_context_reaches_the_model_next_to_the_result() {
+    let session = Session::new();
+    let script = r#"printf '%s' '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "the build is red"}}'"#;
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "echo ran"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, &claude_hooks(&[("pre_tool", script)]), &[]);
+    let results = model.tool_results();
+    assert!(
+        results[0].contains("ran") && results[0].contains("[pre_tool hook: the build is red]"),
+        "{results:?}"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn a_pre_tool_hook_rewrites_a_scout_call() {
+    let session = Session::new();
+    let script = r#"printf '%s' '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": {"path": "rewritten.txt"}}}'"#;
+    let config = format!(
+        "[workflows.scouted]\nscout = \"replay\"\n{}",
+        claude_hooks(&[("pre_tool", script)])
+    );
+    write(&session.work.path().join("asked.txt"), "asked-notes\n");
+    write(
+        &session.work.path().join("rewritten.txt"),
+        "rewritten-notes\n",
+    );
+    let model = Model::start(vec![
+        Step::Call("read", json!({"path": "asked.txt"})),
+        Step::Text("brief"),
+        Step::Text("done"),
+        Step::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    write(
+        &session.work.path().join(".summonr/check.toml"),
+        "check = 'exit 0'\n",
+    );
+    session.run(
+        &model,
+        &config,
+        &["-w", "scouted", "--goal", "read the notes"],
+    );
+    let scout = model.requests()[1]["messages"][3]["content"].to_string();
+    assert!(
+        scout.contains("rewritten-notes") && !scout.contains("asked-notes"),
+        "{scout}"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn subagent_hooks_open_and_hold_a_child() {
+    let session = Session::new();
+    let started = session.file("subagent-start.json");
+    let stops = session.file("subagent-stop.jsonl");
+    let stopped = session.file("stop.jsonl");
+    let start = format!(
+        r#"cat > '{}'; printf '%s' '{{"hookSpecificOutput": {{"hookEventName": "SubagentStart", "additionalContext": "the codename is heron"}}}}'"#,
+        started.display()
+    );
+    let stop = format!(
+        r#"input=$(cat); printf '%s\n' "$input" >> '{}'; printf '%s' "$input" | grep -q '"stop_hook_active":false' && {{ echo check again >&2; exit 2; }}; exit 0"#,
+        stops.display()
+    );
+    let lead = format!("printf '%s\\n' \"$(cat)\" >> '{}'", stopped.display());
+    let config = claude_hooks(&[
+        ("subagent_start", &start),
+        ("subagent_stop", &stop),
+        ("stop", &lead),
+    ]);
+    let model = Model::start(vec![
+        Step::Call(
+            "task",
+            json!({"access": "research", "assignment": "read the README"}),
+        ),
+        Step::Text("child first"),
+        Step::Text("child done"),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, &config, &[]);
+    let requests = model.requests();
+    assert!(
+        requests[1].to_string().contains("the codename is heron"),
+        "{}",
+        requests[1]
+    );
+    assert!(
+        requests[2].to_string().contains("check again"),
+        "{}",
+        requests[2]
+    );
+    let input: Value = serde_json::from_str(&std::fs::read_to_string(&started).unwrap()).unwrap();
+    assert_eq!(input["hook_event_name"], json!("SubagentStart"), "{input}");
+    assert_eq!(input["agent_type"], json!("research"), "{input}");
+    assert!(
+        input["agent_id"].as_str().is_some_and(|id| !id.is_empty()),
+        "{input}"
+    );
+    let held = crate::support::read(&stops);
+    assert_eq!(held.lines().count(), 2, "{held}");
+    assert!(held.contains("agent_transcript_path"), "{held}");
+    let lead = crate::support::read(&stopped);
+    assert_eq!(lead.lines().count(), 1, "{lead}");
+    assert!(lead.contains("\"hook_event_name\":\"Stop\""), "{lead}");
+}
+
+#[cfg(unix)]
+pub(crate) fn a_provider_error_runs_stop_failure_instead_of_stop() {
+    let session = Session::new();
+    let failed = session.file("stop-failure.json");
+    let stopped = session.file("stopped");
+    let config = claude_hooks(&[
+        ("stop_failure", &format!("cat > '{}'", failed.display())),
+        ("stop", &format!("touch '{}'", stopped.display())),
+    ]);
+    let model = Model::start(vec![Step::Fail(
+        401,
+        "0",
+        r#"{"error":{"message":"bad key","type":"authentication_error"}}"#,
+    )]);
+    session.run(&model, &config, &[]);
+    let input: Value = serde_json::from_str(&std::fs::read_to_string(&failed).unwrap()).unwrap();
+    assert_eq!(input["hook_event_name"], json!("StopFailure"), "{input}");
+    assert_eq!(input["error"], json!("authentication_failed"), "{input}");
+    assert_eq!(input["error_details"], json!("HTTP 401"), "{input}");
+    assert!(
+        !stopped.exists(),
+        "the stop hook ran after a provider error"
+    );
 }

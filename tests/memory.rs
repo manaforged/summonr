@@ -202,7 +202,9 @@ fn sessions_grep_finds_text_from_a_past_session() {
     assert_eq!(text.trim(), "no matches");
     let alone = summonr(home.path(), work.path(), port, &["--grep", "walrus"]);
     assert!(
-        alone.contains("--grep works with `summonr session list`; use `summonr session search TEXT`"),
+        alone.contains(
+            "--grep works with `summonr session list`; use `summonr session search TEXT`"
+        ),
         "{alone}"
     );
 }

@@ -205,7 +205,15 @@ impl<P: Provider> Loop<P> {
         let cap = crate::limits::limits().stop_hook_streak;
         let mut streak = 0;
         loop {
-            let (latest, finished) = Box::pin(self.run_timed(events, emit)).await?;
+            let (latest, finished) = match Box::pin(self.run_timed(events, emit)).await {
+                Ok(ran) => ran,
+                Err(error) => {
+                    if let Some(failure) = error.provider_failure() {
+                        Box::pin(self.stop_failure(failure)).await;
+                    }
+                    return Err(error);
+                }
+            };
             if latest.rounds > 1 {
                 streak = 0;
             }

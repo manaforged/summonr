@@ -64,8 +64,13 @@ impl<P: Provider> Loop<P> {
 
     fn expand_command(&self, input: UserInput) -> Result<UserInput> {
         let previous = self.session.objective().ok();
-        let Some(text) =
-            crate::plugins::commands::expand(&input.text, &self.workspace, previous.as_deref())?
+        let session = self.session_id();
+        let Some(text) = crate::plugins::commands::expand(
+            &input.text,
+            &self.workspace,
+            previous.as_deref(),
+            Some(session.as_str()),
+        )?
         else {
             return Ok(input);
         };

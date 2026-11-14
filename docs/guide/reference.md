@@ -938,7 +938,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 | Command | `<name>.md` under `.summonr/commands/`, `.claude/commands/`, `~/.summonr/commands/`, or `~/.claude/commands/` | `/<name> args`, or `/project:<name>` and `/user:<name>` when a plugin command has the same name. The body is the prompt; `$ARGUMENTS` is everything after the name, `$0`, `$1`, ... and `$ARGUMENTS[N]` are its words counted from 0, and arguments no placeholder takes are appended as `ARGUMENTS: <args>`. A project file wins over a user file with the same name. |
 | Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/`; a plugin skill is `/<plugin>:<name>` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
-| Hook | `[hooks]` `session_start`, `user_prompt`, `pre_tool`, `post_tool`, `post_tool_failure`, `pre_compact`, `compact`, `stop`, `session_end` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call, `user_prompt` a prompt, and `stop` may keep the turn going (stdin is JSON). |
+| Hook | `[hooks]` `session_start`, `user_prompt`, `pre_tool`, `permission_request`, `post_tool`, `post_tool_failure`, `notification`, `subagent_start`, `subagent_stop`, `pre_compact`, `compact`, `stop`, `stop_failure`, `session_end` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call, `user_prompt` a prompt, `permission_request` may answer an approval, and `stop` and `subagent_stop` may keep the turn going (stdin is JSON). |
 | Plugin | `summonr plugin install PATH` (Claude Code layout) | Its skills, MCP tools (`plugin_<plugin>_<server>__tool`), hooks, and `bin/` |
 | CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy and the danger prompt apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
 
@@ -965,43 +965,56 @@ stop = [{ command = "./scripts/notify.sh" }, { command = "claude-hook.sh", diale
 | --- | --- | --- | --- | --- |
 | `session_start` | `SessionStart` | Before the first turn of a session, and after a compaction | `startup`, `resume`, `fork`, `compact` | No |
 | `user_prompt` | `UserPromptSubmit` | Before a typed prompt reaches the model | none | Yes: the prompt does not run |
-| `pre_tool` | `PreToolUse` | Before a tool call | tool name | Yes: the call does not run |
+| `pre_tool` | `PreToolUse` | Before a tool call, in the lead, in a child, and in a scout | tool name | Yes: the call does not run |
+| `permission_request` | `PermissionRequest` | Before an approval prompt, also where no one can answer it | tool name | Yes: its decision answers the prompt |
 | `post_tool` | `PostToolUse` | After a tool call; a `claude` hook only after a call that succeeded | tool name | No |
 | `post_tool_failure` | `PostToolUseFailure` | After a tool call that failed | tool name | No |
+| `notification` | `Notification` | When an approval prompt or an MCP form opens | `permission_prompt`, `elicitation_dialog` | No |
+| `subagent_start` | `SubagentStart` | Before a child agent's first turn | agent type | No |
+| `subagent_stop` | `SubagentStop` | When a child agent's turn ends, in place of `stop` | agent type | Yes: the child goes on |
 | `pre_compact` | `PreCompact` | Before the compaction summary is built | `manual`, `auto` | Yes: compaction is skipped |
 | `compact` | `PostCompact` | After the compaction summary replaces the history | `manual`, `auto` | No |
-| `stop` | `Stop` | When a turn ends | none | Yes: the turn goes on |
+| `stop` | `Stop` | When a lead session's turn ends | none | Yes: the turn goes on |
+| `stop_failure` | `StopFailure` | When a provider error ends a lead session's turn, in place of `stop` | error type | No |
 | `session_end` | `SessionEnd` | When the host ends the session | `clear`, `resume`, `prompt_input_exit`, `other` | No |
 
-A `summonr` hook reads this JSON on stdin. Every event also carries `event` (the key), `session`, `workspace`, and `transcript` (the session journal):
+A `summonr` hook reads this JSON on stdin. Every event also carries `event` (the key), `session`, `workspace`, and `transcript` (the session journal). In a child agent every event also carries `agent_id` (the child's session id) and `agent_type` (the `agent` the task named, else `implement` or `research`):
 
 | Key | Fields |
 | --- | --- |
 | `session_start` | `source`, `model` |
 | `user_prompt` | `prompt` |
 | `pre_tool` | `id`, `tool`, `arguments` |
+| `permission_request` | `tool`, `arguments` |
 | `post_tool`, `post_tool_failure` | `id`, `tool`, `arguments`, `success`, `output` |
+| `notification` | `notification_type`, `message` (the prompt text) |
+| `subagent_start` | only the common fields |
+| `subagent_stop` | `text`, `aborted`, `stop_hook_active`, `agent_transcript` (the child's journal) |
 | `pre_compact` | `trigger`, `custom_instructions` (always `null`) |
 | `compact` | `summary`, `trigger` |
 | `stop` | `text`, `aborted`, `stop_hook_active` |
+| `stop_failure` | `error`, `error_details` (`HTTP <status>`, or `null`), `text` (the provider's error message) |
 | `session_end` | `reason` |
 
-Exit 0 allows. Any other exit blocks a `pre_tool` call, a `user_prompt` prompt, or a `pre_compact` compaction, and stderr is the reason; after a `pre_tool` block the rest of the list does not run. Exit 2 from a `stop` hook keeps the turn going with stderr as the next message to the model. For the other events a nonzero exit is a note.
+Exit 0 allows. Any other exit blocks a `pre_tool` call, a `user_prompt` prompt, or a `pre_compact` compaction, and stderr is the reason; after a `pre_tool` block the rest of the list does not run. Exit 2 from a `stop` or `subagent_stop` hook keeps the turn going with stderr as the next message to the model. Exit 2 from `permission_request`, `notification`, or `stop_failure` is ignored. For the other events a nonzero exit is a note.
 
-A `claude` hook gets Claude Code's stdin JSON: `session_id`, `transcript_path`, `cwd`, `permission_mode` (`default` with approval on, `auto` with it off), and `hook_event_name`. Tool events add `tool_name`, `tool_input`, and `tool_use_id`; `PostToolUse` adds `tool_response` as `{ output, success }`, and `PostToolUseFailure` adds `error`. `SessionStart` adds `source` and `model`, `UserPromptSubmit` adds `prompt`, `Stop` adds `stop_hook_active` and `last_assistant_message`, `PreCompact` adds `trigger` and `custom_instructions`, `PostCompact` adds `trigger` and `compact_summary`, and `SessionEnd` adds `reason`. Exit 2 blocks the events that can block, with stderr as the reason. On `PostToolUse` and `PostToolUseFailure`, exit 2 sends stderr to the model next to the result. Any other nonzero exit is a note, unless stdout is a JSON object, which then decides alone. A hook that does not start or runs past its timeout is a note. Plugin hooks use this dialect.
+`stop_failure` takes `error` as the matcher: `authentication_failed` (a 401 or 403, or no key), `rate_limit` (a 429 or a plan usage limit), `invalid_request` (a 400 or 413, or a context overflow), `model_not_found` (a 404), `overloaded` (a 529), `server_error` (another 5xx), or `unknown` (a transport error or a reply that does not parse). Its output and exit code are ignored.
+
+A `claude` hook gets Claude Code's stdin JSON: `session_id`, `transcript_path`, `cwd`, `permission_mode` (`default` with approval on, `auto` with it off), and `hook_event_name`. Tool events add `tool_name`, `tool_input`, and `tool_use_id`; `PostToolUse` adds `tool_response` as `{ output, success }`, and `PostToolUseFailure` adds `error`. `PermissionRequest` adds `tool_name` and `tool_input` with no `tool_use_id`. `Notification` adds `notification_type` and `message`. `SubagentStart` adds `agent_id` and `agent_type`, which every event in a child also gets. `SubagentStop` adds `stop_hook_active`, `last_assistant_message`, and `agent_transcript_path`. `StopFailure` adds `error`, `error_details`, and `last_assistant_message` (the error text). `SessionStart` adds `source` and `model`, `UserPromptSubmit` adds `prompt`, `Stop` adds `stop_hook_active` and `last_assistant_message`, `PreCompact` adds `trigger` and `custom_instructions`, `PostCompact` adds `trigger` and `compact_summary`, and `SessionEnd` adds `reason`. Exit 2 blocks the events that can block, with stderr as the reason. On `PostToolUse` and `PostToolUseFailure`, exit 2 sends stderr to the model next to the result. Any other nonzero exit is a note, unless stdout is a JSON object, which then decides alone. A hook that does not start or runs past its timeout is a note. Plugin hooks use this dialect.
 
 Both dialects read one JSON object on stdout:
 
 | Field | Effect |
 | --- | --- |
-| `continue: false`, `stopReason` | Stops the prompt (`SessionStart`, `UserPromptSubmit`) or ends the turn (`Stop`). On tool events it is a note. |
-| `systemMessage` | A note for the user. |
-| `decision: "block"`, `reason` | Blocks `UserPromptSubmit`, `PreCompact`, and `Stop` (the reason goes to the model and the turn goes on); on `PostToolUse` the reason goes next to the result. |
-| `hookSpecificOutput.additionalContext` | Text for the model: with the prompt (`SessionStart`, `UserPromptSubmit`), in the summary (`SessionStart` after a compaction), next to the result (`PostToolUse`, `PostToolUseFailure`), or as the next message (`Stop`). On `PreToolUse` it goes in the block reason, or is a note when the call runs. |
+| `continue: false`, `stopReason` | Stops the prompt (`SessionStart`, `UserPromptSubmit`) or ends the turn (`Stop`, `SubagentStop`). On tool events it is a note. `Notification` and `StopFailure` ignore it. |
+| `systemMessage` | A note for the user. `Notification` and `StopFailure` ignore it. |
+| `decision: "block"`, `reason` | Blocks `UserPromptSubmit`, `PreCompact`, `Stop`, and `SubagentStop` (the reason goes to the model and the turn goes on); on `PostToolUse` the reason goes next to the result. |
+| `hookSpecificOutput.additionalContext` | Text for the model: with the prompt (`SessionStart`, `UserPromptSubmit`), with a child's first prompt (`SubagentStart`), in the summary (`SessionStart` after a compaction), next to the result (`PreToolUse` when the call runs, `PostToolUse`, `PostToolUseFailure`), or as the next message (`Stop`, `SubagentStop`). On a blocked `PreToolUse` call it goes in the block reason. |
+| `hookSpecificOutput.decision` | `PermissionRequest` only. `behavior: "allow"` grants the approval for this call without a prompt; `behavior: "deny"` refuses it, and `message` goes to the model. With no `decision`, the prompt shows as usual, and where no one can answer it, the call is refused. `updatedInput` is a note; the call runs with its own arguments. `updatedPermissions` and `interrupt` are ignored. |
 | `hookSpecificOutput.permissionDecision` | `PreToolUse` only. `deny` (or the older `decision: "block"`) blocks the call with `permissionDecisionReason`. `ask` asks you with that reason, the way an approval asks; without anyone to answer, the call is denied. `allow` lets the call go on to policy, which still decides. `defer` is a note. |
 | `hookSpecificOutput.updatedInput` | `PreToolUse` only: replaces the call's arguments before it runs. Ignored for a call routed through `mcp`. |
 
-Plain stdout from `SessionStart` and `UserPromptSubmit` goes to the model as context, and from `PreCompact` it adds to the summary instructions. A `stop` hook can keep the turn going at most 8 times in a row; a turn that calls a tool resets the count. summonr does not run `if`, `async`, `onFailure`, or non-command handler types.
+Plain stdout from `SessionStart` and `UserPromptSubmit` goes to the model as context, and from `PreCompact` it adds to the summary instructions. A `stop` or `subagent_stop` hook can keep the turn going at most 8 times in a row; a turn that calls a tool resets the count. A child agent runs `subagent_stop` and not `stop`. `notification` runs when the prompt opens; summonr does not wait for you to be away from the keyboard, and has no `idle_prompt` notification. summonr does not run `if`, `async`, `onFailure`, or non-command handler types.
 
 Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR` in its environment. A plugin hook also gets `CLAUDE_PLUGIN_ROOT` and `SUMMONR_PLUGIN_ROOT`, and `CLAUDE_PLUGIN_DATA` and `SUMMONR_PLUGIN_DATA`.
 

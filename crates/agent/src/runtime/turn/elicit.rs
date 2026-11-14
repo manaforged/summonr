@@ -13,8 +13,9 @@ impl<P: Provider> Loop<P> {
         };
         let message = form.message.clone();
         let opened = Some(form.clone());
+        let status = (crate::hooks::Notice::ElicitationDialog, message.as_str());
         let (dialog, input) = self
-            .dialog(&shared, &message, events, emit, |dialog| Event::Elicit {
+            .dialog(&shared, status, events, emit, |dialog| Event::Elicit {
                 form: opened,
                 dialog,
             })
@@ -39,7 +40,7 @@ impl<P: Provider> Loop<P> {
     pub(super) async fn dialog(
         &mut self,
         shared: &Steering,
-        status: &str,
+        (notice, status): (crate::hooks::Notice, &str),
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         open: impl FnOnce(u64) -> Event,
@@ -47,6 +48,7 @@ impl<P: Provider> Loop<P> {
         let dialog = shared.open_dialog();
         let _blocked = self.herdr.blocked(status);
         self.push_event(events, emit, open(dialog))?;
+        self.notify(notice, status).await;
         let interrupts = self.input_interrupts();
         let grant_wait = crate::limits::limits().grant_wait();
         let input = tokio::select! {

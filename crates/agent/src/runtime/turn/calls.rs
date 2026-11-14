@@ -1,3 +1,4 @@
+use super::super::hooks::Screened;
 use super::*;
 use crate::tools::Builtin;
 
@@ -34,10 +35,10 @@ impl<P: Provider> Loop<P> {
 
     async fn execute_next_group(
         &mut self,
-        planned: Call,
+        planned: Screened,
         call: ToolCall,
         pending: &mut std::iter::Peekable<
-            std::iter::Zip<std::vec::IntoIter<Call>, std::vec::IntoIter<ToolCall>>,
+            std::iter::Zip<std::vec::IntoIter<Screened>, std::vec::IntoIter<ToolCall>>,
         >,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -72,7 +73,7 @@ impl<P: Provider> Loop<P> {
 
     async fn finish_batch(
         &mut self,
-        batch: Vec<((Call, ToolCall), Ran)>,
+        batch: Vec<((Screened, ToolCall), Ran)>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
@@ -149,7 +150,7 @@ impl<P: Provider> Loop<P> {
 
     async fn run_serial(
         &mut self,
-        planned: Vec<Call>,
+        planned: Vec<Screened>,
         calls: Vec<ToolCall>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -283,7 +284,7 @@ impl<P: Provider> Loop<P> {
 
     pub(in crate::runtime) async fn finish_call(
         &mut self,
-        planned: Call,
+        (planned, context): Screened,
         call: ToolCall,
         result: (Result<ToolOutput>, u64),
         events: &mut Vec<Event>,
@@ -300,7 +301,7 @@ impl<P: Provider> Loop<P> {
             ),
             Err(error) => (false, false, error.to_string(), Vec::new(), None),
         };
-        let mut text = self.tool_text(&call, success, text).await;
+        let mut text = self.tool_text(&call, success, text, context).await;
         if let Some(nudge) = super::repeat::nudge(self.session.history(), &call.function, &text) {
             text.push_str(&nudge);
             self.push_event(

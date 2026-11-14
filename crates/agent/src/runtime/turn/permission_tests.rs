@@ -1,4 +1,5 @@
 use super::*;
+use crate::hooks::{Dialect, Hook, HookEvent};
 use crate::provider::{Client, ToolFunction, ToolKind};
 
 fn session(workspace: &Path, home: &Path) -> Loop<Client> {
@@ -29,7 +30,28 @@ fn command(text: &str) -> ToolCall {
     }
 }
 
+pub(super) fn hooked(loop_: &mut Loop<Client>, event: HookEvent, dialect: Dialect, command: &str) {
+    loop_.hooks.push(
+        event,
+        Hook {
+            command: command.to_string(),
+            dialect,
+            matcher: None,
+            root: None,
+            timeout: None,
+        },
+    );
+}
+
 async fn delete_outside(
+    steering: Option<Arc<Steering>>,
+    answers: &[&str],
+) -> (bool, String, Vec<Event>) {
+    delete_hooked(&[], steering, answers).await
+}
+
+async fn delete_hooked(
+    hooks: &[(HookEvent, Dialect, &str)],
     steering: Option<Arc<Steering>>,
     answers: &[&str],
 ) -> (bool, String, Vec<Event>) {
@@ -37,6 +59,9 @@ async fn delete_outside(
     let home = tempfile::tempdir().unwrap();
     let target = workspace.path().to_path_buf();
     let mut loop_ = session(workspace.path(), home.path()).with_unrestricted_commands();
+    for (event, dialect, command) in hooks {
+        hooked(&mut loop_, *event, *dialect, command);
+    }
     let mut reply: Box<dyn FnMut(&Event)> = match steering {
         Some(steering) => {
             loop_.steer_with(Arc::clone(&steering));
@@ -56,9 +81,9 @@ async fn delete_outside(
             &mut Usage::default(),
         )
         .await
-        .unwrap()
         .unwrap();
-    (target.exists(), output.text, events)
+    let text = output.map_or_else(|error| error.to_string(), |output| output.text);
+    (target.exists(), text, events)
 }
 
 fn user() -> Arc<Steering> {
@@ -169,8 +194,86 @@ async fn a_repeated_failure_reaches_the_model_unchanged() {
                 &call,
                 false,
                 "exit 2 make: *** No rule to make target".to_string(),
+                None,
             )
             .await;
         assert_eq!(text, "exit 2 make: *** No rule to make target");
     }
+}
+
+#[cfg(unix)]
+const ALLOW: &str = r#"printf '%s' '{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}'"#;
+
+fn asked(events: &[Event]) -> bool {
+    events.iter().any(|event| {
+        matches!(
+            event,
+            Event::Approval {
+                detail: Some(_),
+                ..
+            }
+        )
+    })
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_permission_request_hook_that_allows_answers_without_a_prompt() {
+    let hooks = [(HookEvent::PermissionRequest, Dialect::Claude, ALLOW)];
+    let (exists, text, events) = delete_hooked(&hooks, Some(user()), &[]).await;
+    assert!(!exists, "{text}");
+    assert!(!asked(&events), "{events:?}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_permission_request_hook_runs_where_no_one_can_answer() {
+    let hooks = [(HookEvent::PermissionRequest, Dialect::Claude, ALLOW)];
+    let (exists, text, _) = delete_hooked(&hooks, None, &[]).await;
+    assert!(!exists, "{text}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_permission_request_hook_that_denies_tells_the_model_why() {
+    let deny = r#"printf '%s' '{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "not on fridays"}}}'"#;
+    let hooks = [(HookEvent::PermissionRequest, Dialect::Claude, deny)];
+    let (exists, text, events) = delete_hooked(&hooks, Some(user()), &["y"]).await;
+    assert!(exists, "{text}");
+    assert!(text.contains("not on fridays"), "{text}");
+    assert!(!asked(&events), "{events:?}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_permission_request_hook_that_exits_two_leaves_the_prompt_open() {
+    let hooks = [(
+        HookEvent::PermissionRequest,
+        Dialect::Claude,
+        "echo no >&2; exit 2",
+    )];
+    let (exists, text, events) = delete_hooked(&hooks, Some(user()), &["y"]).await;
+    assert!(!exists, "{text}");
+    assert!(asked(&events), "{events:?}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn the_approval_prompt_sends_a_permission_prompt_notification() {
+    let seen = tempfile::NamedTempFile::new().unwrap();
+    let record = format!("cat > '{}'", seen.path().display());
+    let hooks = [(HookEvent::Notification, Dialect::Claude, record.as_str())];
+    let (exists, text, events) = delete_hooked(&hooks, Some(user()), &["n"]).await;
+    assert!(exists, "{text}");
+    assert!(asked(&events), "{events:?}");
+    let input: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(seen.path()).unwrap()).unwrap();
+    assert_eq!(input["hook_event_name"], "Notification", "{input}");
+    assert_eq!(input["notification_type"], "permission_prompt", "{input}");
+    assert!(
+        input["message"]
+            .as_str()
+            .is_some_and(|text| text.contains(DELETE)),
+        "{input}"
+    );
 }

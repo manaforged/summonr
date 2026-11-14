@@ -1,3 +1,4 @@
+use super::hooks::{Screen, blocked};
 use super::turn::{Missed, Reply};
 use super::*;
 use crate::workflow::Role;
@@ -19,6 +20,8 @@ impl<P: Provider> Loop<P> {
         role: Role,
         system: &str,
         user: &str,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
     ) -> Result<(String, Usage)> {
         let advertised = self.advertised_tools();
         let read_only = self.tools.is_read_only();
@@ -28,7 +31,7 @@ impl<P: Provider> Loop<P> {
             read_only,
         };
         held.owner
-            .aside_rounds(role, system, user, &advertised)
+            .aside_rounds(role, system, user, &advertised, events, emit)
             .await
     }
 
@@ -59,6 +62,8 @@ impl<P: Provider> Loop<P> {
         system: &str,
         user: &str,
         advertised: &mail::Advertised,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
     ) -> Result<(String, Usage)> {
         let mut messages = vec![
             Message::system(system.to_string()),
@@ -85,16 +90,16 @@ impl<P: Provider> Loop<P> {
             if calls.is_empty() {
                 return Ok((text, usage));
             }
-            for call in calls {
-                let ran = match self.pre_tool(&call).await.blocked {
-                    Some(reason) => Err(super::hooks::blocked(&reason)),
-                    None => self.tools.execute_outcome(&call).await,
+            for mut call in calls {
+                let (ran, context) = match self.gate(&mut call, events, emit).await? {
+                    Screen::Blocked(reason) => (Err(blocked(&reason)), None),
+                    Screen::Run(context) => (self.tools.execute_outcome(&call).await, context),
                 };
                 let (success, output) = match ran {
                     Ok(output) => (output.success, output.text),
                     Err(error) => (false, error.to_string()),
                 };
-                let text = self.tool_text(&call, success, output).await;
+                let text = self.tool_text(&call, success, output, context).await;
                 messages.push(Message {
                     failed: !success,
                     ..Message::tool(call.id, text)

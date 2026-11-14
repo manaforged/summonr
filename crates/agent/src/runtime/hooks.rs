@@ -2,9 +2,16 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::durable::id::Call;
-use crate::hooks::{Dialect, Hook, HookEvent, Permission, Verdict};
+use crate::hooks::{Dialect, Hook, HookEvent, Notice, Permission, Verdict};
 
 mod life;
+
+pub(super) type Screened = (Call, Option<String>);
+
+pub(super) enum Screen {
+    Run(Option<String>),
+    Blocked(String),
+}
 
 impl<P: Provider> Loop<P> {
     pub(super) async fn hook(
@@ -40,6 +47,10 @@ impl<P: Provider> Loop<P> {
             object.insert("session".to_string(), json!(session));
             object.insert("workspace".to_string(), json!(self.workspace));
             object.insert("transcript".to_string(), json!(transcript));
+            if let Some(agent) = self.hooks.subagent() {
+                object.insert("agent_id".to_string(), json!(agent.id));
+                object.insert("agent_type".to_string(), json!(agent.name));
+            }
         }
         let permission = if self.is_approval() {
             Permission::Ask
@@ -83,12 +94,23 @@ impl<P: Provider> Loop<P> {
         call: &ToolCall,
         success: bool,
         text: String,
+        context: Option<String>,
     ) -> String {
         let mut text = crate::secret::shield::scrub(&text, &self.workspace);
+        if let Some(note) = self.post_tool(call, success, &text).await {
+            text = format!("{text}\n[post_tool hook: {note}]");
+        }
+        if let Some(context) = context {
+            text = format!("{text}\n[pre_tool hook: {context}]");
+        }
+        text
+    }
+
+    async fn post_tool(&self, call: &ToolCall, success: bool, text: &str) -> Option<String> {
         if self.hooks.of(HookEvent::PostTool).is_empty()
             && self.hooks.of(HookEvent::ToolFailure).is_empty()
         {
-            return text;
+            return None;
         }
         let (tool, input) = seen(call);
         let payload = json!({
@@ -109,20 +131,23 @@ impl<P: Provider> Loop<P> {
                     .await,
             );
         }
-        if let Some(note) = heard.note() {
-            text = format!("{text}\n[post_tool hook: {note}]");
-        }
-        text
+        heard.note()
     }
 
-    pub(super) async fn pre_tool(&self, call: &ToolCall) -> Verdict {
+    pub(super) async fn gate(
+        &mut self,
+        call: &mut ToolCall,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Screen> {
         let (tool, input) = seen(call);
         let payload = json!({
             "id": call.id,
             "tool": tool,
             "arguments": input,
         });
-        self.hook(HookEvent::PreTool, Some(&tool), payload).await
+        let heard = self.hook(HookEvent::PreTool, Some(&tool), payload).await;
+        self.resolve_pre_tool(heard, call, events, emit).await
     }
 
     pub(super) async fn screen(
@@ -131,24 +156,23 @@ impl<P: Provider> Loop<P> {
         calls: Vec<ToolCall>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<(Vec<Call>, Vec<ToolCall>)> {
+    ) -> Result<(Vec<Screened>, Vec<ToolCall>)> {
         if self.hooks.of(HookEvent::PreTool).is_empty() {
-            return Ok((planned, calls));
+            return Ok((
+                planned.into_iter().map(|call| (call, None)).collect(),
+                calls,
+            ));
         }
         let mut kept = (Vec::new(), Vec::new());
         for (planned, mut call) in planned.into_iter().zip(calls) {
-            let heard = self.pre_tool(&call).await;
-            match self
-                .resolve_pre_tool(heard, &mut call, events, emit)
-                .await?
-            {
-                Some(reason) => {
+            match self.gate(&mut call, events, emit).await? {
+                Screen::Blocked(reason) => {
                     let blocked = Err(blocked(&reason));
-                    self.finish_call(planned, call, (blocked, 0), events, emit)
+                    self.finish_call((planned, None), call, (blocked, 0), events, emit)
                         .await?;
                 }
-                None => {
-                    kept.0.push(planned);
+                Screen::Run(context) => {
+                    kept.0.push((planned, context));
                     kept.1.push(call);
                 }
             }
@@ -162,7 +186,7 @@ impl<P: Provider> Loop<P> {
         call: &mut ToolCall,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<Option<String>> {
+    ) -> Result<Screen> {
         self.hook_notes(
             HookEvent::PreTool,
             heard.notes.iter().chain(&heard.halted),
@@ -174,20 +198,24 @@ impl<P: Provider> Loop<P> {
         {
             let label = crate::mcp::call_label(&call.function.name, &call.function.arguments);
             let detail = format!("a pre_tool hook asks before {label}: {reason}");
-            if self.approve(detail, false, events, emit).await? == GrantAnswer::Deny {
-                heard.blocked = Some(if reason.is_empty() {
-                    "the user declined the call".to_string()
-                } else {
-                    reason
-                });
+            let (answer, why) = self.approve(call, detail, false, events, emit).await?;
+            if answer == GrantAnswer::Deny {
+                heard.blocked = Some(why.unwrap_or_else(|| {
+                    if reason.is_empty() {
+                        "the user declined the call".to_string()
+                    } else {
+                        reason
+                    }
+                }));
             }
         }
         if heard.blocked.is_some() {
-            return Ok(Some(heard.feedback().join("; ")));
+            return Ok(Screen::Blocked(heard.feedback().join("; ")));
         }
         self.hook_notes(HookEvent::PreTool, &heard.context, events, emit)?;
+        let context = (!heard.context.is_empty()).then(|| heard.context.join("; "));
         let Some(input) = heard.input else {
-            return Ok(None);
+            return Ok(Screen::Run(context));
         };
         let text = if crate::mcp::effective(&call.function.name, &call.function.arguments).is_some()
         {
@@ -197,7 +225,40 @@ impl<P: Provider> Loop<P> {
             format!("rewrote the {} call's input", call.function.name)
         };
         self.push_event(events, emit, note_event(HookEvent::PreTool, &text))?;
-        Ok(None)
+        Ok(Screen::Run(context))
+    }
+
+    pub(super) async fn permission_request(
+        &mut self,
+        call: &ToolCall,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<(GrantAnswer, Option<String>)>> {
+        let event = HookEvent::PermissionRequest;
+        if self.hooks.of(event).is_empty() {
+            return Ok(None);
+        }
+        let (tool, input) = seen(call);
+        let payload = json!({ "tool": tool, "arguments": input });
+        let heard = self.hook(event, Some(&tool), payload).await;
+        self.hook_notes(event, heard.notes.iter().chain(&heard.halted), events, emit)?;
+        if let Some(reason) = heard.blocked {
+            let reason = format!("the {} hook denied this call: {reason}", event.key());
+            return Ok(Some((GrantAnswer::Deny, Some(reason))));
+        }
+        if heard.allowed && heard.input.is_some() {
+            let text = "updatedInput is not applied on an approval; the call runs as asked";
+            self.push_event(events, emit, note_event(event, text))?;
+        }
+        Ok(heard.allowed.then_some((GrantAnswer::Allow, None)))
+    }
+
+    pub(super) async fn notify(&self, notice: Notice, message: &str) {
+        let payload = json!({ "notification_type": notice.name(), "message": message });
+        drop(
+            self.hook(HookEvent::Notification, Some(notice.name()), payload)
+                .await,
+        );
     }
 }
 

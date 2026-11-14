@@ -226,6 +226,10 @@ impl ToolRegistry {
         }
     }
 
+    pub(crate) fn session_id(&self) -> Option<String> {
+        self.session.lock().ok().and_then(|held| held.clone())
+    }
+
     pub(crate) fn set_task_list(&mut self, on: bool) {
         self.task_list = on;
     }

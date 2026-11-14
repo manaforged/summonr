@@ -16,7 +16,7 @@ mod hooks;
 pub(crate) mod lsp;
 pub mod manage;
 
-pub(crate) use expand::{USER_CONFIG, Vars, expand};
+pub(crate) use expand::{USER_CONFIG, Vars, expand, hook_env};
 pub(crate) use manage::off::{unknown_off, warn_unknown_off};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";

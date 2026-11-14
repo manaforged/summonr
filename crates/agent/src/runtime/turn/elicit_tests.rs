@@ -137,3 +137,33 @@ async fn an_answer_to_a_closed_dialog_never_answers_the_next_one() {
     let waited = tokio::time::timeout(std::time::Duration::from_millis(50), steering.next()).await;
     assert!(waited.is_err(), "{waited:?}");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_open_form_sends_an_elicitation_dialog_notification() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let seen = workspace.path().join("notice.json");
+    let mut loop_ = session(workspace.path(), home.path());
+    let record = format!("cat > '{}'", seen.display());
+    super::super::permission_tests::hooked(
+        &mut loop_,
+        crate::hooks::HookEvent::Notification,
+        crate::hooks::Dialect::Claude,
+        &record,
+    );
+    let steering = Arc::new(Steering::default());
+    loop_.steer_with(Arc::clone(&steering));
+    let reply = json!({"action": "decline"}).to_string();
+    let mut respond = steering.replying(&[&reply]);
+    let mut events = Vec::new();
+    let answer = loop_
+        .elicit(form(), &mut events, &mut respond)
+        .await
+        .unwrap();
+    assert_eq!(answer.action, FormAction::Decline);
+    let input: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&seen).unwrap()).unwrap();
+    assert_eq!(input["notification_type"], "elicitation_dialog", "{input}");
+    assert_eq!(input["message"], "Who?", "{input}");
+}

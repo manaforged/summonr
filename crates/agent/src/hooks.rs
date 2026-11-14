@@ -8,7 +8,8 @@ mod judge;
 pub(crate) use judge::Verdict;
 use judge::{Outcome, failed, judge};
 pub(crate) use summonr_types::hooks::{
-    Call, Compaction, Dialect, End, Hook, HookEvent, Hooks, Matcher, Permission, Start, builtin,
+    Call, Compaction, Dialect, End, Failure, Hook, HookEvent, Hooks, Matcher, Notice, Permission,
+    Start, builtin,
 };
 
 #[must_use]
@@ -26,10 +27,6 @@ pub(crate) fn with_plugins(mut hooks: Hooks, plugins: &[crate::plugins::Plugin])
 
 async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome, String> {
     let program = summonr_core::shell::program().map_err(|error| error.to_string())?;
-    let root = hook.root.as_ref();
-    let data = root
-        .and_then(|root| root.file_name())
-        .and_then(|name| crate::plugins::data_dir(&name.to_string_lossy()).ok());
     let spec = Spec {
         cwd: Some(workspace.to_path_buf()),
         base: Env::Clean,
@@ -38,16 +35,8 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
             summonr_core::shell::arguments(&hook.command, workspace),
         )
     }
-    .envs([("CLAUDE_PROJECT_DIR", workspace.as_os_str())])
-    .envs(summonr_core::dirs::summonr_home().map(|home| (summonr_core::dirs::HOME_ENV, home)))
-    .envs(
-        root.into_iter()
-            .flat_map(|root| [("CLAUDE_PLUGIN_ROOT", root), ("SUMMONR_PLUGIN_ROOT", root)]),
-    )
-    .envs(
-        data.iter()
-            .flat_map(|data| [("CLAUDE_PLUGIN_DATA", data), ("SUMMONR_PLUGIN_DATA", data)]),
-    );
+    .envs(crate::plugins::hook_env(workspace, hook.root.as_deref()))
+    .envs(summonr_core::dirs::summonr_home().map(|home| (summonr_core::dirs::HOME_ENV, home)));
     let Process {
         mut child,
         mut stdin,

@@ -1,5 +1,6 @@
 use super::*;
-use crate::hooks::{End, Start};
+use crate::hooks::{End, Failure, Start};
+use summonr_core::error::ProviderFailure;
 
 impl<P: Provider> Loop<P> {
     pub(in crate::runtime) async fn admit(
@@ -9,15 +10,9 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         let mut heard = Verdict::default();
-        if self.turn_started == 0 && self.session.depth() == 0 {
+        if self.turn_started == 0 {
             self.turn_started = summonr_core::clock::now();
-            let start = self.start();
-            let payload = json!({ "source": start.name(), "model": self.model });
-            let mut started = self
-                .hook(HookEvent::SessionStart, Some(start.name()), payload)
-                .await;
-            started.blocked = None;
-            heard.merge(started);
+            heard.merge(self.opened().await);
         }
         if typed {
             let prompt = input
@@ -42,6 +37,32 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
+    pub(in crate::runtime) fn set_subagent(&mut self, agent: &str) {
+        let id = self.session_id();
+        self.hooks.set_subagent(id, agent.to_string());
+    }
+
+    async fn opened(&self) -> Verdict {
+        if let Some(agent) = self.hooks.subagent() {
+            let mut started = self
+                .hook(HookEvent::SubagentStart, Some(&agent.name), json!({}))
+                .await;
+            started.blocked = None;
+            started.halted = None;
+            return started;
+        }
+        if self.session.depth() > 0 {
+            return Verdict::default();
+        }
+        let start = self.start();
+        let payload = json!({ "source": start.name(), "model": self.model });
+        let mut started = self
+            .hook(HookEvent::SessionStart, Some(start.name()), payload)
+            .await;
+        started.blocked = None;
+        started
+    }
+
     fn start(&self) -> Start {
         if self.session.turns() == 0 {
             Start::Startup
@@ -58,17 +79,41 @@ impl<P: Provider> Loop<P> {
         active: bool,
         emit: &mut impl FnMut(&Event),
     ) -> Option<String> {
-        let payload = json!({
+        let mut payload = json!({
             "text": turn.text,
             "aborted": turn.aborted,
             "stop_hook_active": active,
         });
-        let heard = self.hook(HookEvent::Stop, None, payload).await;
+        let agent = self.hooks.subagent();
+        let event = if agent.is_some() {
+            payload["agent_transcript"] = json!(self.session.path());
+            HookEvent::SubagentStop
+        } else {
+            HookEvent::Stop
+        };
+        let subject = agent.map(|agent| agent.name.as_str());
+        let heard = self.hook(event, subject, payload).await;
         for note in heard.notes.iter().chain(&heard.halted) {
-            emit(&note_event(HookEvent::Stop, note));
+            emit(&note_event(event, note));
         }
         let feedback = heard.feedback();
         (heard.halted.is_none() && !feedback.is_empty()).then(|| feedback.join("\n\n"))
+    }
+
+    pub(in crate::runtime) async fn stop_failure(&self, failure: &ProviderFailure) {
+        if self.hooks.subagent().is_some() {
+            return;
+        }
+        let error = Failure::of(failure);
+        let payload = json!({
+            "error": error.name(),
+            "error_details": failure.status().map(|status| format!("HTTP {status}")),
+            "text": failure.message(),
+        });
+        drop(
+            self.hook(HookEvent::StopFailure, Some(error.name()), payload)
+                .await,
+        );
     }
 
     /// Runs the `session_end` hooks for `reason` and returns their notes for the user.

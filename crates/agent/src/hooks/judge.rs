@@ -17,6 +17,7 @@ pub(crate) struct Verdict {
     pub(crate) halted: Option<String>,
     pub(crate) ask: Option<String>,
     pub(crate) input: Option<Value>,
+    pub(crate) allowed: bool,
 }
 
 impl Verdict {
@@ -30,6 +31,7 @@ impl Verdict {
         self.halted = self.halted.take().or(other.halted);
         self.ask = self.ask.take().or(other.ask);
         self.input = other.input.or_else(|| self.input.take());
+        self.allowed |= other.allowed;
     }
 
     pub(crate) fn feedback(&self) -> Vec<&str> {
@@ -65,6 +67,32 @@ struct Specific {
     permission_decision_reason: Option<String>,
     updated_input: Option<Value>,
     additional_context: Option<String>,
+    decision: Option<Request>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Request {
+    behavior: Option<Decision>,
+    updated_input: Option<Value>,
+    message: Option<String>,
+}
+
+impl Request {
+    fn apply(self, verdict: &mut Verdict) {
+        match self.behavior {
+            Some(Decision::Allow | Decision::Approve) => {
+                verdict.allowed = true;
+                verdict.input = self.updated_input.or_else(|| verdict.input.take());
+            }
+            Some(Decision::Deny | Decision::Block) => {
+                verdict.blocked = Some(self.message.unwrap_or_else(|| {
+                    format!("denied by a {} hook", HookEvent::PermissionRequest.claude())
+                }));
+            }
+            Some(Decision::Ask | Decision::Defer) | None => {}
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -107,11 +135,17 @@ impl Output {
             verdict.input = specific.updated_input;
         }
         verdict.context.extend(specific.additional_context);
+        if let Some(request) = specific
+            .decision
+            .filter(|_| event == HookEvent::PermissionRequest)
+        {
+            request.apply(verdict);
+        }
     }
 }
 
 enum Stdout {
-    Json(Output),
+    Json(Box<Output>),
     Invalid(String),
     Plain(String),
 }
@@ -122,19 +156,33 @@ impl Stdout {
         if !(text.starts_with('{') && text.ends_with('}')) {
             return Self::Plain(text.to_string());
         }
-        serde_json::from_str(text).map_or_else(|error| Self::Invalid(error.to_string()), Self::Json)
+        serde_json::from_str(text).map_or_else(
+            |error| Self::Invalid(error.to_string()),
+            |output| Self::Json(Box::new(output)),
+        )
     }
 }
 
 const fn blocks(event: HookEvent) -> bool {
     matches!(
         event,
-        HookEvent::PreTool | HookEvent::Prompt | HookEvent::Stop | HookEvent::PreCompact
+        HookEvent::PreTool
+            | HookEvent::Prompt
+            | HookEvent::Stop
+            | HookEvent::SubagentStop
+            | HookEvent::PreCompact
     )
 }
 
 const fn gates(event: HookEvent) -> bool {
-    blocks(event) && !matches!(event, HookEvent::Stop)
+    blocks(event) && !matches!(event, HookEvent::Stop | HookEvent::SubagentStop)
+}
+
+const fn ignores_exit(event: HookEvent) -> bool {
+    matches!(
+        event,
+        HookEvent::PermissionRequest | HookEvent::Notification | HookEvent::StopFailure
+    )
 }
 
 const fn reads_stdout(event: HookEvent) -> bool {
@@ -147,7 +195,11 @@ const fn reads_stdout(event: HookEvent) -> bool {
 const fn keeps_control(event: HookEvent) -> bool {
     !matches!(
         event,
-        HookEvent::SessionEnd | HookEvent::PreCompact | HookEvent::Compact
+        HookEvent::SessionEnd
+            | HookEvent::PreCompact
+            | HookEvent::Compact
+            | HookEvent::Notification
+            | HookEvent::StopFailure
     )
 }
 
@@ -174,6 +226,7 @@ pub(super) fn judge(dialect: Dialect, event: HookEvent, outcome: &Outcome) -> Ve
     };
     match outcome.code {
         Some(0) => {}
+        Some(2) if ignores_exit(event) => {}
         Some(2) if blocks(event) => verdict.blocked = verdict.blocked.take().or(Some(reason)),
         Some(2) if matches!(event, HookEvent::PostTool | HookEvent::ToolFailure) => {
             verdict.context.push(reason);

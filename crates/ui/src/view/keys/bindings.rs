@@ -11,6 +11,7 @@ pub(crate) enum KeyCommand {
     Pane(Pane),
     Always,
     Retry,
+    Splash,
     Interrupt,
     Quit,
     ToggleRecent,
@@ -148,6 +149,7 @@ pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
     let mut rows = vec![
         (shift("y"), When::Persist, Do::Always),
         (Key::F5.into(), When::Free, Do::Retry),
+        (Key::F8.into(), When::Always, Do::Splash),
         (ctrl("c"), When::Unrecorded, Do::Interrupt),
         (ctrl("d"), When::Idle, Do::Quit),
         (text("t"), When::DiffPane, Do::ToggleRecent),

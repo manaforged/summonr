@@ -594,6 +594,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `alt+p` | in `/model`, adds or removes the selected model from favorites | |
 | `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
+| `F8` | cycle the splash mode | |
 | `←` `→` | in `/model`, `/login`, and `/usage`, switch between the Models, Providers, and Usage tabs; `ctrl+←` `ctrl+→` also work, and `↑` `↓` change the range in Usage | |
 | `shift+enter` `alt+enter` | newline; macOS Terminal sends `alt+enter` for Shift+Return | same |
 | `ctrl+j` | newline (default; editable in options) | |

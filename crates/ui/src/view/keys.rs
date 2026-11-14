@@ -40,6 +40,7 @@ impl App {
             KeyCommand::Pane(pane) => self.toggle_pane(pane),
             KeyCommand::Always => self.approval_answer(GrantAnswer::Always),
             KeyCommand::Retry => self.retry(),
+            KeyCommand::Splash => self.cycle_splash(),
             KeyCommand::Interrupt => self.interrupt(),
             KeyCommand::Quit => self.quit.set(true),
             KeyCommand::ToggleRecent => self.toggle_recent(),

@@ -37,7 +37,7 @@ pub(super) enum Verb {
     Update,
     Acp,
     Mail(summonr_agent::mail::cli::Command),
-    Cron(summonr_agent::cron::cli::Command),
+    Cron(Box<summonr_agent::cron::cli::Command>),
     Panel(summonr_agent::panel::cli::Command),
     Gateway(summonr_agent::gateway::cli::Command),
     Tool { name: String, arguments: String },

@@ -40,7 +40,7 @@ pub(super) const ROWS: [Command; 15] = [
 ];
 
 fn cron(args: &mut Args, command: Cron) -> Result<()> {
-    verb(args, Verb::Cron(command))
+    verb(args, Verb::Cron(Box::new(command)))
 }
 
 fn named(args: &mut Args, input: &mut Input, command: fn(String) -> Cron) -> Result<()> {

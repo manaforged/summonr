@@ -49,7 +49,7 @@ fn replay_streams_the_journal_without_reading_the_tree_sidecar() {
         )
         .expect("select plan");
     let sidecar = crate::durable::log::work_path(driver.path()).with_extension("tree.json");
-    let _ = std::fs::remove_file(&sidecar);
+    drop(std::fs::remove_file(&sidecar));
     std::fs::create_dir(&sidecar).expect("poison tree sidecar");
     let (ui, mut inbox) = unbounded_channel();
     history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui, false);

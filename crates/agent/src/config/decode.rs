@@ -25,7 +25,7 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
         });
         invalid(
             path,
-            &format!(
+            format!(
                 "line {line}: {}; fix that line, or move the file aside to start fresh",
                 error.message().trim().replace('\n', "; ")
             ),
@@ -37,9 +37,9 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     for key in RETIRED {
         table.remove(*key);
     }
-    table.try_into().map_err(|error: toml::de::Error| {
-        invalid(path, &error.message().trim().replace('\n', "; "))
-    })
+    table
+        .try_into()
+        .map_err(|error: toml::de::Error| invalid(path, error.message().trim().replace('\n', "; ")))
 }
 
 pub(super) fn warn_unknown(path: &Path, file: &File) {
@@ -98,7 +98,7 @@ pub(super) fn validate(path: &Path, file: &File) -> Result<()> {
     {
         return Err(invalid(
             path,
-            &format!(
+            format!(
                 "`fps` must be a whole number from {} to {}",
                 crate::prefs::FPS_MIN,
                 crate::prefs::FPS_MAX
@@ -110,7 +110,7 @@ pub(super) fn validate(path: &Path, file: &File) -> Result<()> {
     {
         return Err(invalid(
             path,
-            &format!("secrets must be \"file\" or \"keychain\", not `{other}`"),
+            format!("secrets must be \"file\" or \"keychain\", not `{other}`"),
         ));
     }
     if file.lsp.module.is_some() && file.lsp.command.is_some() {

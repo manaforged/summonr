@@ -68,7 +68,7 @@ impl Site {
             .worker_threads(1)
             .enable_all()
             .build()
-            .unwrap()
+            .map_err(|error| error.to_string())?
             .block_on(self.tools().execute_outcome(&call))
             .map_err(|error| error.to_string())
     }

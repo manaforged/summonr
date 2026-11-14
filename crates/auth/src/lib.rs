@@ -49,11 +49,13 @@ fn needs_login(name: &str, detail: &str) -> Error {
 /// The future that resolves to the text a person pasted back, if any.
 pub type Answer = std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>;
 
+type Link = Box<dyn FnMut(&str, &str) + Send>;
+
 /// How a sign-in shows lines to a person and asks for pasted text.
 pub struct Prompt {
     say: Box<dyn FnMut(&str) + Send>,
     ask: Box<dyn FnMut(String) -> Answer + Send>,
-    link: Option<Box<dyn FnMut(&str, &str) + Send>>,
+    link: Option<Link>,
 }
 
 impl Prompt {

@@ -49,6 +49,7 @@ impl<P: Provider> Loop<P> {
             .dialog(&shared, (notice, status.as_str()), events, emit, |dialog| {
                 Event::Approval {
                     detail: Some(detail),
+                    id: Some(call.id.clone()),
                     persist,
                     dialog,
                 }
@@ -72,6 +73,7 @@ impl<P: Provider> Loop<P> {
             emit,
             Event::Approval {
                 detail: None,
+                id: Some(call.id.clone()),
                 persist: false,
                 dialog,
             },

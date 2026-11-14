@@ -35,10 +35,14 @@ impl Editor {
     }
 
     fn with_flags(home: &std::path::Path, model: &Model, flags: &[&str]) -> Self {
+        Self::with_config(home, model, flags, "")
+    }
+
+    fn with_config(home: &std::path::Path, model: &Model, flags: &[&str], extra: &str) -> Self {
         std::fs::write(
             home.join("config.toml"),
             format!(
-                "[endpoint.local]\nbase_url = \"http://127.0.0.1:{}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n",
+                "[endpoint.local]\nbase_url = \"http://127.0.0.1:{}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n{extra}",
                 model.port
             ),
         )
@@ -187,6 +191,61 @@ fn an_editor_rejects_an_asked_command_and_it_does_not_run() {
         "rejected command ran: {:?}",
         model.tool_results()
     );
+}
+
+#[cfg(unix)]
+const ASK_HOOK: &str = r#"[hooks]
+pre_tool = """printf '%s' '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "check"}}'"""
+"#;
+
+#[cfg(unix)]
+#[test]
+fn each_permission_request_names_its_own_tool_call_in_a_batch() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(vec![
+        Step::Calls(vec![
+            ("read", json!({"path": "config.toml"})),
+            ("read", json!({"path": "policy.toml"})),
+        ]),
+        Step::Text("done"),
+    ]);
+    let mut editor = Editor::with_config(home.path(), &model, &[], ASK_HOOK);
+    let session = editor.session(home.path());
+    editor.prompt(&session, "read both");
+    let mut asked_for = Vec::new();
+    for _ in 0..2 {
+        let request = editor.until("session/request_permission", asked);
+        asked_for.push((
+            request["params"]["toolCall"]["toolCallId"].clone(),
+            request["params"]["toolCall"]["title"].clone(),
+        ));
+        let answer = json!({"jsonrpc": "2.0", "id": request["id"], "result": {
+            "outcome": {"outcome": "selected", "optionId": "allow_once"},
+        }});
+        editor.send(&answer);
+    }
+    reply(&mut editor);
+    let announced: Vec<(Value, Value)> = editor
+        .seen
+        .iter()
+        .filter(|frame| frame["params"]["update"]["sessionUpdate"] == "tool_call")
+        .map(|frame| {
+            let update = &frame["params"]["update"];
+            (
+                update["toolCallId"].clone(),
+                update["rawInput"]["path"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(announced.len(), 2, "{announced:?}");
+    for ((call, title), (id, path)) in asked_for.iter().zip(&announced) {
+        assert_eq!(call, id, "asked {title} for the wrong call");
+        let path = path.as_str().expect("read path");
+        assert!(
+            title.as_str().is_some_and(|title| title.contains(path)),
+            "{title} does not name {path}"
+        );
+    }
 }
 
 fn reply(editor: &mut Editor) -> Value {

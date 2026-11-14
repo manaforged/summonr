@@ -153,6 +153,7 @@ fn steering_waits_in_the_queue_while_an_approval_is_open() {
         app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
+            id: None,
             persist: false,
             dialog: 1,
         })));
@@ -184,6 +185,7 @@ fn enter_on_an_empty_composer_never_answers_a_pending_approval() {
         }));
         app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
+            id: None,
             persist: false,
             dialog: 1,
         })));

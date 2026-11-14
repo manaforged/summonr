@@ -88,6 +88,7 @@ impl App {
                 detail,
                 persist,
                 dialog,
+                ..
             })) => {
                 self.approval.set(detail.clone().map(|detail| Asked {
                     detail,

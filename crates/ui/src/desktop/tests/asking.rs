@@ -9,6 +9,7 @@ fn asked(persist: bool) -> impl FnOnce(&super::super::App) {
     move |app| {
         app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
             detail: Some("write src/main.rs".to_owned()),
+            id: None,
             persist,
             dialog: 7,
         })));

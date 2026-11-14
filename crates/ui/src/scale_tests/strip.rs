@@ -99,6 +99,7 @@ fn status_fallbacks_and_long_labels_keep_waiting_visible() {
         let waiting = |app: &super::super::app::App| {
             app.update(Msg::Fact(Fact::Event(Event::Approval {
                 detail: Some("git diff --check".to_owned()),
+                id: None,
                 persist: false,
                 dialog: 1,
             })));

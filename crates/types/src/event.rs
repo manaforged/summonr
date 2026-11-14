@@ -117,6 +117,8 @@ pub enum Event {
     },
     Approval {
         detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         persist: bool,
         #[serde(default)]

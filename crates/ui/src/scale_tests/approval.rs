@@ -21,6 +21,7 @@ fn pending_after_n(draft: &str, setup: impl FnOnce(&App)) -> bool {
         app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
         app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
+            id: None,
             persist: true,
             dialog: 1,
         })));
@@ -81,6 +82,7 @@ fn approval_screen(persist: bool) -> String {
     super::frame_with(busy_info(), 100, 30, super::State::Busy, |app| {
         app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
             detail: Some("rm -rf build".to_owned()),
+            id: None,
             persist,
             dialog: 1,
         })));

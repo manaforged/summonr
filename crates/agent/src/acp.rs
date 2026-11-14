@@ -66,7 +66,6 @@ struct Seat {
 struct Updates {
     out: UnboundedSender<String>,
     session: String,
-    open: Vec<String>,
     window: Option<u32>,
 }
 
@@ -251,10 +250,9 @@ where
         };
         let window = agent.context_window();
         let outcome = {
-            let mut updates = Updates {
+            let updates = Updates {
                 out: out.clone(),
                 session: session.clone(),
-                open: Vec::new(),
                 window,
             };
             let turn = agent.turn_with(text, move |event| updates.emit(event));
@@ -296,15 +294,14 @@ where
 }
 
 impl Updates {
-    fn emit(&mut self, event: &Event) {
+    fn emit(&self, event: &Event) {
         match event {
-            Event::ToolCall { id, .. } => self.open.push(id.clone()),
-            Event::ToolResult { id, .. } => self.open.retain(|open| open != id),
             Event::Approval {
                 detail: Some(detail),
+                id,
                 persist,
                 dialog,
-            } => return self.ask(detail, *persist, *dialog),
+            } => return self.ask(detail, id.as_deref(), *persist, *dialog),
             Event::Usage {
                 prompt_tokens,
                 completion_tokens,
@@ -320,13 +317,13 @@ impl Updates {
         emit(&self.out, &self.session, event);
     }
 
-    fn ask(&self, detail: &str, persist: bool, dialog: u64) {
+    fn ask(&self, detail: &str, call: Option<&str>, persist: bool, dialog: u64) {
         let options = CHOICES
             .iter()
             .filter(|choice| persist || choice.answer != GrantAnswer::Always)
             .map(|choice| json!({"optionId": choice.id, "name": choice.name, "kind": choice.kind}))
             .collect::<Vec<_>>();
-        let call = self.open.last().map_or("", String::as_str);
+        let call = call.unwrap_or_default();
         let params = json!({
             "sessionId": self.session,
             "toolCall": {"toolCallId": call, "title": detail},

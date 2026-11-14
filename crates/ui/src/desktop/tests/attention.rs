@@ -7,6 +7,7 @@ use summonr_agent::prefs::Notify;
 fn asked(detail: &str) -> Msg {
     Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
         detail: Some(detail.to_owned()),
+        id: None,
         persist: false,
         dialog: 0,
     }))

@@ -12,6 +12,8 @@ const TITLE_REQUEST: &str = "Name this coding session";
 
 pub(crate) enum Step {
     Call(&'static str, Value),
+    #[allow(dead_code, reason = "only the acp target scripts a batch of calls")]
+    Calls(Vec<(&'static str, Value)>),
     Text(&'static str),
     After(Duration, Box<Step>),
     #[allow(dead_code, reason = "not every test target scripts a failed reply")]
@@ -151,12 +153,15 @@ fn frames(index: usize, step: Step) -> String {
             return frames(index, *step);
         }
         Step::Call(name, arguments) => (
-            json!({"role": "assistant", "tool_calls": [{
-                "index": 0,
-                "id": format!("call_{index}"),
-                "type": "function",
-                "function": {"name": name, "arguments": arguments.to_string()},
-            }]}),
+            json!({"role": "assistant", "tool_calls": [called(0, format!("call_{index}"), name, &arguments)]}),
+            "tool_calls",
+        ),
+        Step::Calls(calls) => (
+            json!({"role": "assistant", "tool_calls": calls
+                .iter()
+                .enumerate()
+                .map(|(at, (name, arguments))| called(at, format!("call_{index}_{at}"), name, arguments))
+                .collect::<Vec<_>>()}),
             "tool_calls",
         ),
         Step::Text(text) => (json!({"role": "assistant", "content": text}), "stop"),
@@ -173,6 +178,15 @@ fn frames(index: usize, step: Step) -> String {
         .collect();
     out.push_str("data: [DONE]\n\n");
     out
+}
+
+fn called(at: usize, id: String, name: &str, arguments: &Value) -> Value {
+    json!({
+        "index": at,
+        "id": id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments.to_string()},
+    })
 }
 
 fn reply(stream: &mut TcpStream, kind: &str, body: &str) {

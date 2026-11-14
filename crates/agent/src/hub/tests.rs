@@ -5,6 +5,7 @@ use crate::tools::Event;
 fn approval(detail: Option<&str>) -> Msg {
     Msg::Fact(Fact::Event(Event::Approval {
         detail: detail.map(str::to_string),
+        id: None,
         persist: false,
         dialog: 1,
     }))

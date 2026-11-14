@@ -124,7 +124,7 @@ fn a_function_tool_opts_out_of_strict_mode() {
         function: FunctionDefinition {
             name: "read".to_string(),
             description: "read".to_string(),
-            parameters: json!({"type": "object"}),
+            parameters: serde_json::value::to_raw_value(&json!({"type": "object"})).unwrap(),
         },
     }];
     let mut call = ask(&messages, None);

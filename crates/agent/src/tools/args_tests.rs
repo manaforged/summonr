@@ -15,7 +15,7 @@ fn every_tool_schema_root_is_a_plain_object() {
         ]}),
     );
     for definition in tools.definitions().into_iter().chain([server.clone()]) {
-        let root = &definition.function.parameters;
+        let root = definition.function.schema();
         assert_eq!(root["type"], "object", "{}", definition.function.name);
         for union in ["anyOf", "oneOf", "allOf"] {
             assert!(
@@ -26,7 +26,7 @@ fn every_tool_schema_root_is_a_plain_object() {
         }
     }
     assert_eq!(
-        server.function.parameters["properties"]["id"]["type"],
+        server.function.schema()["properties"]["id"]["type"],
         "string"
     );
 }
@@ -42,7 +42,7 @@ fn a_field_every_branch_requires_stays_required() {
         ]}),
     );
     assert_eq!(
-        folded.function.parameters["required"],
+        folded.function.schema()["required"],
         serde_json::json!(["path"])
     );
 }

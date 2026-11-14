@@ -302,7 +302,8 @@ fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
         function: crate::provider::FunctionDefinition {
             name: "read".to_string(),
             description: "Read".to_string(),
-            parameters: serde_json::json!({"type": "object"}),
+            parameters: serde_json::value::to_raw_value(&serde_json::json!({"type": "object"}))
+                .unwrap(),
         },
     }];
     let request = CompletionRequest::new(

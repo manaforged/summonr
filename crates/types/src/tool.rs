@@ -1,4 +1,5 @@
 use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
@@ -11,7 +12,7 @@ pub fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition 
         function: FunctionDefinition {
             name: name.to_string(),
             description: description.to_string(),
-            parameters: object_root(parameters),
+            parameters: raw(&object_root(parameters)),
         },
     }
 }
@@ -61,6 +62,10 @@ fn object_root(parameters: Value) -> Value {
     Value::Object(root)
 }
 
+fn raw(schema: &Value) -> Box<RawValue> {
+    serde_json::value::to_raw_value(schema).unwrap_or_default()
+}
+
 fn required(schema: &Value) -> BTreeSet<String> {
     schema
         .get("required")
@@ -85,7 +90,20 @@ pub struct ToolDefinition {
 pub struct FunctionDefinition {
     pub name: String,
     pub description: String,
-    pub parameters: Value,
+    pub parameters: Box<RawValue>,
+}
+
+impl FunctionDefinition {
+    /// The parameters schema as a JSON value.
+    #[must_use]
+    pub fn schema(&self) -> Value {
+        serde_json::from_str(self.parameters.get()).unwrap_or_default()
+    }
+
+    /// Replaces the parameters schema with `schema`.
+    pub fn set_schema(&mut self, schema: &Value) {
+        self.parameters = raw(schema);
+    }
 }
 
 /// The approval a tool call needs before it runs.

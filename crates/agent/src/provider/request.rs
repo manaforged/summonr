@@ -134,13 +134,6 @@ impl<'a> CompletionRequest<'a> {
         self
     }
 
-    fn tools_bytes(&self) -> std::borrow::Cow<'a, [u8]> {
-        self.tools_json.map_or_else(
-            || std::borrow::Cow::Owned(serde_json::to_vec(self.tools).unwrap_or_default()),
-            |encoded| std::borrow::Cow::Borrowed(encoded.declared.as_slice()),
-        )
-    }
-
     pub(crate) fn shape_hash(&self) -> String {
         let effort = self.effort.map_or("", |effort| effort.as_str());
         summonr_core::text::fnv64(format!("{}\n{effort}", self.prefix_hash()).as_bytes())
@@ -155,41 +148,69 @@ impl<'a> CompletionRequest<'a> {
                 .first()
                 .map(|message| message.content.as_str())
         });
-        let tools = self.tools_bytes();
-        let mut bytes = Vec::with_capacity(tools.len() + self.model.len() + 64);
-        bytes.push(b'[');
-        let written = serde_json::to_writer(&mut bytes, &self.model).is_ok() && {
-            bytes.push(b',');
-            serde_json::to_writer(&mut bytes, &system).is_ok()
-        };
-        if !written {
-            return summonr_core::text::fnv64(&[]);
-        }
-        bytes.push(b',');
-        bytes.extend_from_slice(&tools);
-        bytes.push(b']');
-        summonr_core::text::fnv64(&bytes)
+        tally(&self.model, system, self.tools)
+            .map_or_else(|_| summonr_core::text::fnv64(&[]), |tally| tally.hash.hex())
     }
+}
+
+#[derive(Default)]
+struct Tally {
+    hash: summonr_core::text::Fnv64,
+    len: usize,
+}
+
+impl std::io::Write for Tally {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        std::hash::Hasher::write(&mut self.hash, bytes);
+        self.len += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn tally(model: &str, system: Option<&str>, tools: &[ToolDefinition]) -> std::io::Result<Tally> {
+    use std::io::Write;
+    let mut tally = Tally::default();
+    tally.write_all(b"[")?;
+    serde_json::to_writer(&mut tally, model)?;
+    tally.write_all(b",")?;
+    serde_json::to_writer(&mut tally, &system)?;
+    tally.write_all(b",")?;
+    serde_json::to_writer(&mut tally, tools)?;
+    tally.write_all(b"]")?;
+    Ok(tally)
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ToolsJson {
-    declared: Vec<u8>,
-    pub(crate) sorted: Vec<u8>,
+    len: usize,
+    sorted: std::sync::OnceLock<Vec<u8>>,
 }
 
 impl ToolsJson {
     #[must_use]
     pub(crate) fn encode(tools: &[ToolDefinition]) -> Self {
-        let declared = serde_json::to_vec(tools).unwrap_or_default();
-        let sorted = serde_json::to_value(tools)
-            .and_then(|value| serde_json::to_vec(&value))
-            .unwrap_or_default();
-        Self { declared, sorted }
+        let mut tally = Tally::default();
+        let len = serde_json::to_writer(&mut tally, tools).map_or(0, |()| tally.len);
+        Self {
+            len,
+            sorted: std::sync::OnceLock::new(),
+        }
     }
 
     #[must_use]
     pub(crate) fn len(&self) -> usize {
-        self.declared.len()
+        self.len
+    }
+
+    pub(crate) fn sorted(&self, tools: &[ToolDefinition]) -> &[u8] {
+        self.sorted.get_or_init(|| {
+            serde_json::to_value(tools)
+                .and_then(|value| serde_json::to_vec(&value))
+                .unwrap_or_default()
+        })
     }
 }

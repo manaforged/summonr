@@ -78,7 +78,7 @@ impl ToolRegistry {
             .tool
             .iter()
             .filter(|spec| self.allows(spec.advertise))
-            .filter_map(|spec| spec.definition.clone())
+            .filter_map(|spec| spec.definition.as_ref())
             .filter(|definition| self.permits(&definition.function.name))
             .map(shaped_tool)
             .collect()
@@ -173,7 +173,7 @@ fn fill_text(text: &str) -> String {
     out
 }
 
-fn fill_schema(value: &mut Value) {
+fn fill_schema(value: &mut Value) -> bool {
     match value {
         Value::Object(map) => {
             if map.len() == 1
@@ -182,25 +182,32 @@ fn fill_schema(value: &mut Value) {
                     .and_then(|token| serde_json::from_value::<Fill>(token.clone()).ok())
             {
                 *value = Value::from(fill.value());
-                return;
+                return true;
             }
-            map.values_mut().for_each(fill_schema);
+            map.values_mut()
+                .fold(false, |filled, item| fill_schema(item) | filled)
         }
-        Value::Array(items) => items.iter_mut().for_each(fill_schema),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        Value::Array(items) => items
+            .iter_mut()
+            .fold(false, |filled, item| fill_schema(item) | filled),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => false,
     }
 }
 
-fn shaped_tool(mut definition: ToolDefinition) -> ToolDefinition {
-    fill_schema(&mut definition.function.parameters);
-    definition.function.description = fill_text(&definition.function.description);
-    definition
+fn shaped_tool(definition: &ToolDefinition) -> ToolDefinition {
+    let mut shaped = definition.clone();
+    let mut schema = shaped.function.schema();
+    if fill_schema(&mut schema) {
+        shaped.function.set_schema(&schema);
+    }
+    shaped.function.description = fill_text(&shaped.function.description);
+    shaped
 }
 
 pub(crate) fn shaped(definitions: Vec<ToolDefinition>, patch: bool) -> Vec<ToolDefinition> {
     let mut shaped = definitions;
     if patch {
-        shaped.push(shaped_tool(catalog().apply_patch.clone()));
+        shaped.push(shaped_tool(&catalog().apply_patch));
     }
     shaped
 }

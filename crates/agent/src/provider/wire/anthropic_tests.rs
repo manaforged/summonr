@@ -126,7 +126,10 @@ fn a_tool_is_declared_with_its_schema_under_input_schema() {
         function: FunctionDefinition {
             name: "get_weather".to_string(),
             description: "Get weather".to_string(),
-            parameters: json!({"type": "object", "properties": {}}),
+            parameters: serde_json::value::to_raw_value(
+                &json!({"type": "object", "properties": {}}),
+            )
+            .unwrap(),
         },
     }];
     let mut call = ask(&messages);

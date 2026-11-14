@@ -129,7 +129,7 @@ fn the_schema_stays_small_and_old_argument_names_still_work() {
             crate::tools::Builtin::live(&tool.function.name) == Some(crate::tools::Builtin::Search)
         })
         .unwrap();
-    let properties = definition.function.parameters["properties"]
+    let properties = definition.function.schema()["properties"]
         .as_object()
         .unwrap()
         .len();

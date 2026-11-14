@@ -90,7 +90,7 @@ pub fn split(path: &str, patch: &str) -> Vec<Hunk> {
             }
             let newline = if hunk.body.ends_with('\n') { "" } else { "\n" };
             Hunk {
-                id: format!("{:016x}", hash.finish()),
+                id: hash.hex(),
                 header: hunk.header.to_string(),
                 patch: format!("{head}{}{newline}", hunk.body),
             }

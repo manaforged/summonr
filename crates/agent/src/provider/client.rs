@@ -218,7 +218,7 @@ impl Client {
         let tools = request
             .tools_json
             .filter(|_| wired.raw_tools)
-            .map(|encoded| encoded.sorted.as_slice());
+            .map(|encoded| encoded.sorted(request.tools));
         let mut body = Body::new(wired.head, wired.slot, wired.messages, tools);
         self.extend_body(&mut body, request);
         Ok(body)

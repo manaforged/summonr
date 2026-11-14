@@ -228,7 +228,10 @@ fn a_tool_schema_goes_as_json_schema() {
         function: crate::provider::FunctionDefinition {
             name: "read".to_string(),
             description: "read a file".to_string(),
-            parameters: serde_json::json!({"type": "object", "additionalProperties": false}),
+            parameters: serde_json::value::to_raw_value(
+                &serde_json::json!({"type": "object", "additionalProperties": false}),
+            )
+            .unwrap(),
         },
     }];
     let mut call = ask(&messages);

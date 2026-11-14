@@ -49,6 +49,14 @@ impl Default for Fnv64 {
     }
 }
 
+impl Fnv64 {
+    /// The hash as 16 hex digits.
+    #[must_use]
+    pub fn hex(self) -> String {
+        format!("{:016x}", self.finish())
+    }
+}
+
 impl Hasher for Fnv64 {
     fn finish(&self) -> u64 {
         self.0
@@ -66,7 +74,7 @@ impl Hasher for Fnv64 {
 pub fn fnv64(bytes: &[u8]) -> String {
     let mut hasher = Fnv64::default();
     hasher.write(bytes);
-    format!("{:016x}", hasher.finish())
+    hasher.hex()
 }
 
 /// `text` with each of `secrets` replaced by `[secret]`.

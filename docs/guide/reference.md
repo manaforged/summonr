@@ -179,7 +179,7 @@ git diff | summonr kimi -p
 | `plugin marketplace remove NAME` | Remove a marketplace and uninstall the plugins installed from it. `rm` also works. |
 | `update` | Replace this binary with the latest release: download the archive for this platform, check its SHA-256 against the release's `.sha256` file, run the new binary once, then swap it in. A build from source prints the `cargo install` command instead. |
 | `doctor [--logs\|--report]` | Report crashed runs; `--logs` lists the run logs; `--report` prints the last crashed or failed run, with the home folder shown as `~`, to paste into an issue. |
-| `acp` | Serve the Agent Client Protocol on stdio. Each session offers an `effort` config option; prompts report `usage_update`; a token budget stops with `max_tokens`. `session/load` replays the stored conversation as `session/update` notifications before it answers. `session/resume` and client `mcpServers` are not supported yet. |
+| `acp` | Serve the Agent Client Protocol on stdio. Each session offers an `effort` config option; prompts report `usage_update`; a token budget stops with `max_tokens`. `session/load` replays the stored conversation as `session/update` notifications before it answers. Client `mcpServers` stdio entries run for that session only, on top of the configured servers, and are never saved; `http` and `sse` entries are refused. `session/resume` is not supported yet. |
 | `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
 | `tool run NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. |
 | `classify --set NAME [STATE]` | Answer a named question set about STATE, read from arguments or stdin. |

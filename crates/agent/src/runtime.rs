@@ -155,6 +155,7 @@ pub struct Loop<P> {
     pending_hooks: hooks::Pending,
     compact_tokens: Option<u32>,
     mcp_wanted: bool,
+    mcp_session: Vec<(String, summonr_types::mcp::Entry)>,
     mcp_board: crate::mcp::Board,
     inbox: VecDeque<Mail>,
     steer_shared: Option<Arc<turn::Steering>>,

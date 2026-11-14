@@ -14,6 +14,7 @@ pub(crate) enum Scope {
     Project,
     User,
     Plugin,
+    Session,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

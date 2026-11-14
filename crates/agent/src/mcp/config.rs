@@ -88,22 +88,26 @@ fn server(mut entry: Entry, name: String, origin: Origin, workspace: &Path) -> R
         .unwrap_or_else(|| limits.mcp_call());
     let plugin = match origin.scope {
         Scope::Plugin => Plugin::open(origin.dir.clone()),
-        Scope::Local | Scope::Project | Scope::User => None,
+        Scope::Local | Scope::Project | Scope::User | Scope::Session => None,
     };
     let paths = Vars {
         plugin: plugin.as_ref(),
         workspace: plugin.as_ref().map(|_| workspace),
         ..Vars::default()
     };
+    let scope = origin.scope;
     let helper = entry.headers_helper.take().map(|command| Helper {
         command: expand(&command, &paths),
         origin,
     });
     let user_config = std::mem::take(&mut entry.user_config);
-    let vars = Vars {
-        user_config: Some(&user_config),
-        env: Some(Unset::Kept),
-        ..paths
+    let vars = match scope {
+        Scope::Session => Vars::default(),
+        Scope::Local | Scope::Project | Scope::User | Scope::Plugin => Vars {
+            user_config: Some(&user_config),
+            env: Some(Unset::Kept),
+            ..paths
+        },
     };
     let Some(launch) = launch(entry, &vars) else {
         return Ok(Built::Bare);
@@ -144,7 +148,7 @@ fn refused(entry: &Entry, scope: Scope) -> Option<String> {
         {
             Some("headersHelper cannot use ${user_config.KEY}; put it in headers".to_string())
         }
-        Scope::Plugin | Scope::Local | Scope::Project | Scope::User => None,
+        Scope::Plugin | Scope::Local | Scope::Project | Scope::User | Scope::Session => None,
     }
 }
 
@@ -207,12 +211,19 @@ pub(crate) struct Found {
     pub skipped: Vec<(String, String)>,
 }
 
-pub(crate) fn servers(workspace: &Path) -> Result<Found> {
+pub(crate) fn servers(workspace: &Path, session: Vec<(String, Entry)>) -> Result<Found> {
     let super::scope::Resolved {
-        entries,
+        mut entries,
         waiting,
         skipped,
     } = super::scope::resolve(workspace)?;
+    for (name, entry) in session {
+        let origin = Origin {
+            scope: Scope::Session,
+            dir: workspace.to_path_buf(),
+        };
+        entries.insert(name, Sourced { entry, origin });
+    }
     let mut found = Found {
         servers: Vec::new(),
         waiting,

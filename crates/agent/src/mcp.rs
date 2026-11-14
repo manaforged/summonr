@@ -97,8 +97,8 @@ impl Hub {
         }
     }
 
-    pub(crate) async fn connect(workspace: PathBuf) -> Self {
-        let (found, failed) = match config::servers(&workspace) {
+    pub(crate) async fn connect(workspace: PathBuf, session: Vec<(String, config::Entry)>) -> Self {
+        let (found, failed) = match config::servers(&workspace, session) {
             Ok(found) => (found, None),
             Err(error) => (
                 config::Found {

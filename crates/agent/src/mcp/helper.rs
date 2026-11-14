@@ -21,7 +21,7 @@ pub(super) async fn headers(
         .envs([(SERVER_NAME, name), (SERVER_URL, url)]);
     match origin.scope {
         Scope::Plugin => spec = spec.envs([(PLUGIN_ROOT, origin.dir.as_os_str())]),
-        Scope::Project => {}
+        Scope::Project | Scope::Session => {}
         Scope::Local | Scope::User => spec.base = Env::Inherit,
     }
     let what = format!("mcp {name} headersHelper");

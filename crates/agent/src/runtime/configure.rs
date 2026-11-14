@@ -135,6 +135,7 @@ impl<P: Provider> Loop<P> {
             hooks: crate::hooks::with_plugins(config.hooks.clone(), &crate::plugins::enabled()),
             pending_hooks: super::hooks::Pending::default(),
             mcp_wanted: false,
+            mcp_session: Vec::new(),
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),
             steer_shared: None,

@@ -11,7 +11,7 @@ use crate::supervise::Slot;
 use summonr_core::error::Result;
 
 pub async fn probe(workspace: &Path, name: &str) -> Result<Option<usize>> {
-    let Some(server) = config::servers(workspace)?
+    let Some(server) = config::servers(workspace, Vec::new())?
         .servers
         .into_iter()
         .find(|server| server.name == name)

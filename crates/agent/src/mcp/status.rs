@@ -85,7 +85,7 @@ impl ServerStatus {
 
 pub fn status(workspace: &Path, board: Option<&Board>) -> Result<Vec<ServerStatus>> {
     let hub = board.and_then(|board| board.lock().ok()?.upgrade());
-    let found = config::servers(workspace)?;
+    let found = config::servers(workspace, Vec::new())?;
     let live = supervise::live();
     let file = crate::config::tilde(&crate::config::path()?);
     let mut rows: Vec<ServerStatus> = found

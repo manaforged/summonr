@@ -24,7 +24,7 @@ pub struct Offer {
 /// Each configured server's MCP `instructions`, as one prompt section.
 #[must_use]
 pub fn instructions(workspace: &Path) -> Option<String> {
-    let found = config::servers(workspace).ok()?;
+    let found = config::servers(workspace, Vec::new()).ok()?;
     let limit = crate::limits::limits().mcp_instructions_bytes;
     let sections: Vec<String> = found
         .servers
@@ -48,7 +48,7 @@ pub fn instructions(workspace: &Path) -> Option<String> {
 
 #[must_use]
 pub fn offers(workspace: &Path) -> Vec<Offer> {
-    let Ok(found) = config::servers(workspace) else {
+    let Ok(found) = config::servers(workspace, Vec::new()) else {
         return Vec::new();
     };
     found

@@ -98,27 +98,50 @@ pub(super) fn usage(out: &UnboundedSender<String>, session: &str, window: Option
     drop(out.send(frame_line(&update(session, content))));
 }
 
-pub(super) fn servers(params: &Value) -> std::result::Result<Vec<String>, (i64, String)> {
-    let mut names = Vec::new();
+pub(super) fn servers(
+    params: &Value,
+) -> std::result::Result<Vec<(String, summonr_types::mcp::Entry)>, (i64, String)> {
+    let mut found = Vec::new();
     for server in params
         .get("mcpServers")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
     {
+        let stdio = server.get("type").is_none();
         let name = server.get("name").and_then(Value::as_str);
-        let stdio = server.get("type").is_none() && server.get("command").is_some();
-        match name.filter(|_| stdio) {
-            Some(name) => names.push(name.to_string()),
-            None => {
-                return Err((
-                    super::codes::INVALID,
-                    format!("mcpServers takes stdio servers with a name and command, not {server}"),
-                ));
-            }
-        }
+        let command = server.get("command").and_then(Value::as_str);
+        let (Some(name), Some(command), true) = (name, command, stdio) else {
+            return Err((
+                super::codes::INVALID,
+                format!("mcpServers takes stdio servers with a name and command, not {server}"),
+            ));
+        };
+        let strings = |key: &str| {
+            server
+                .get(key)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        };
+        let entry = summonr_types::mcp::Entry {
+            transport: Some(summonr_types::mcp::Transport::Stdio),
+            command: Some(command.to_string()),
+            args: strings("args")
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect(),
+            env: strings("env")
+                .filter_map(|pair| {
+                    let key = pair.get("name")?.as_str()?;
+                    Some((key.to_string(), pair.get("value")?.as_str()?.to_string()))
+                })
+                .collect(),
+            ..summonr_types::mcp::Entry::default()
+        };
+        found.push((name.to_string(), entry));
     }
-    Ok(names)
+    Ok(found)
 }
 
 pub(super) fn update(session: &str, content: Value) -> Value {

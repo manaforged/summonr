@@ -437,3 +437,104 @@ fn loading_an_unknown_session_is_resource_not_found() {
     let reply = editor.load(2, "nope", home.path());
     assert_eq!(reply["error"]["code"], -32002, "{reply}");
 }
+
+const PROBE: &str = r##"while IFS= read -r line; do
+  id=$(printf %s "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  [ -n "$id" ] || continue
+  case "$line" in
+    *'"method":"initialize"'*) result='{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"probe","version":"1"}}' ;;
+    *'"method":"tools/list"'*) result='{"tools":[{"name":"ping","description":"Reply with pong","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}' ;;
+    *'"method":"tools/call"'*) result="{\"content\":[{\"type\":\"text\",\"text\":\"pong ${#TOKEN}\"}]}" ;;
+    *) result='{}' ;;
+  esac
+  printf '{"jsonrpc":"2.0","id":%s,"result":%s}\n' "$id" "$result"
+done"##;
+
+const TOKEN: &str = "acp-only-7f3a9c";
+
+fn files(dir: &std::path::Path) -> Vec<(std::path::PathBuf, String)> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files(&path));
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            found.push((path, String::from_utf8_lossy(&bytes).into_owned()));
+        }
+    }
+    found
+}
+
+#[cfg(unix)]
+#[test]
+fn a_client_stdio_mcp_server_serves_the_session_and_is_never_saved() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(vec![
+        Step::Call("probe__ping", json!({})),
+        Step::Text("done"),
+    ]);
+    let mut editor = Editor::open(home.path(), &model);
+    editor.initialize();
+    let probe = json!({"name": "probe", "command": "/bin/sh", "args": ["-c", PROBE], "env": [{"name": "TOKEN", "value": TOKEN}]});
+    let opened = editor.call(
+        2,
+        "session/new",
+        json!({"cwd": home.path(), "mcpServers": [probe]}),
+    );
+    let session = opened["result"]["sessionId"]
+        .as_str()
+        .unwrap_or_else(|| panic!("session/new failed: {opened}"))
+        .to_string();
+    editor.prompt(&session, "ping the probe");
+    let reply = loop {
+        let frame = editor.until("prompt reply or permission", |frame| {
+            asked(frame) || frame["id"] == 3
+        });
+        if !asked(&frame) {
+            break frame;
+        }
+        let answer = json!({"jsonrpc": "2.0", "id": frame["id"], "result": {"outcome": {"outcome": "cancelled"}}});
+        editor.send(&answer);
+    };
+    assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
+    let update = |kind: &str| {
+        editor
+            .seen
+            .iter()
+            .find(|frame| frame["params"]["update"]["sessionUpdate"] == kind)
+            .map(|frame| frame["params"]["update"].clone())
+            .unwrap_or_else(|| panic!("no {kind} in {:#?}", editor.seen))
+    };
+    assert_eq!(update("tool_call")["title"], "probe__ping");
+    let result = update("tool_call_update");
+    assert_eq!(result["status"], "completed", "{result}");
+    let expected = format!("pong {}", TOKEN.len());
+    assert!(result.to_string().contains(&expected), "{result}");
+    assert!(
+        model
+            .tool_results()
+            .iter()
+            .any(|text| text.contains(&expected)),
+        "{:?}",
+        model.tool_results()
+    );
+    editor.quit();
+    for (path, text) in files(home.path()) {
+        assert!(
+            !text.contains(TOKEN),
+            "{} holds the env value",
+            path.display()
+        );
+    }
+    for (path, text) in files(&home.path().join("sessions")) {
+        assert!(
+            !text.contains("IFS= read"),
+            "{} holds the launch",
+            path.display()
+        );
+    }
+    for name in ["config.toml", "policy.toml", "credentials.toml"] {
+        let text = std::fs::read_to_string(home.path().join(name)).unwrap_or_default();
+        assert!(!text.contains("probe"), "{name} names the server: {text}");
+    }
+}

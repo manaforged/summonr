@@ -16,6 +16,16 @@ impl<P: Provider> Loop<P> {
         self.mcp_wanted = self.session.depth() == 0 && self.mcp.is_none();
     }
 
+    /// Adds MCP servers for this session only, on top of the configured ones and winning on a name clash.
+    pub fn add_mcp(&mut self, servers: Vec<(String, summonr_types::mcp::Entry)>) {
+        if servers.is_empty() {
+            return;
+        }
+        self.mcp_session.extend(servers);
+        self.mcp = None;
+        self.switch_mcp(true);
+    }
+
     pub(super) async fn settle_mcp(
         &mut self,
         events: &mut Vec<Event>,
@@ -24,7 +34,7 @@ impl<P: Provider> Loop<P> {
         if !std::mem::take(&mut self.mcp_wanted) || self.catalog_frozen {
             return Ok(());
         }
-        let hub = crate::mcp::Hub::connect(self.workspace.clone()).await;
+        let hub = crate::mcp::Hub::connect(self.workspace.clone(), self.mcp_session.clone()).await;
         for text in hub.notes.clone() {
             self.push_event(events, emit, Event::Note { text })?;
         }

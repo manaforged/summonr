@@ -145,15 +145,6 @@ where
             .map(PathBuf::from)
             .ok_or_else(|| (codes::INVALID, format!("{method} needs cwd")))?;
         let servers = update::servers(params)?;
-        if !servers.is_empty() {
-            return Err((
-                codes::INVALID,
-                format!(
-                    "{method} mcpServers ({}) are not supported yet",
-                    servers.join(", ")
-                ),
-            ));
-        }
         let replay = resume.is_some();
         let endpoint = self
             .endpoint
@@ -168,6 +159,7 @@ where
             eprintln!("summonr: {note}");
         }
         session.set_fallbacks(fallbacks);
+        session.add_mcp(servers);
         let steering = Arc::new(Steering::approvals_only());
         session.steer_with(Arc::clone(&steering));
         session.begin().await;

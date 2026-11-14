@@ -49,37 +49,37 @@ pub(super) fn replay_transcript(
 }
 
 fn journal(path: &Path, replace: bool) -> Vec<Msg> {
-    let lines = log::records(path, 0).collect::<std::io::Result<Vec<Line>>>();
     let mut out = Vec::new();
     if replace {
         out.push(Msg::Intent(Intent::Reset));
     }
-    match lines {
-        Ok(lines) => {
-            for line in lines {
-                restore_line(line, &mut out);
+    let mut last_work = None;
+    for record in log::records(path, 0) {
+        let line = match record {
+            Ok(line) => line,
+            Err(error) => {
+                out.truncate(usize::from(replace));
+                out.push(Msg::Fact(Fact::System(format!(
+                    "cannot load conversation: {error}"
+                ))));
+                return out;
             }
-        }
-        Err(error) => {
-            out.push(Msg::Fact(Fact::System(format!(
-                "cannot load conversation: {error}"
-            ))));
-            return out;
-        }
+        };
+        restore_line(line, &mut last_work, &mut out);
     }
-    if let Some(work) = Work::at(path) {
+    if let Some(progress) = Work::progress_from(path, last_work) {
         out.push(Msg::Fact(Fact::Event(Event::Work {
             progress: crate::WorkProgress {
                 reason: None,
-                ..work.progress()
+                ..progress
             },
         })));
     }
     out
 }
 
-fn restore_line(line: Line, out: &mut Vec<Msg>) {
-    match &line {
+fn restore_line(line: Line, last_work: &mut Option<Work>, out: &mut Vec<Msg>) {
+    match line {
         Line::User {
             text,
             source,
@@ -87,33 +87,33 @@ fn restore_line(line: Line, out: &mut Vec<Msg>) {
             start,
             ..
         } => {
-            let text = user_text(text, source.as_deref()).to_string();
-            let message = if *start || source.is_some() {
+            let text = user_text(&text, source.as_deref()).to_string();
+            let message = if start || source.is_some() {
                 Msg::Intent(Intent::User(text))
             } else {
                 Msg::Fact(Fact::Injected(text))
             };
             out.push(message);
             for image in images {
-                out.push(Msg::Intent(Intent::Image(image.clone())));
+                out.push(Msg::Intent(Intent::Image(image)));
             }
-            return;
         }
         Line::Receipt {
             text,
             receipt: None,
-        } => {
-            out.push(Msg::Fact(Fact::Receipt(text.clone())));
-        }
+        } => out.push(Msg::Fact(Fact::Receipt(text))),
         Line::Clear => out.push(Msg::Fact(Fact::Cleared)),
-        _ => {}
-    }
-    for event in line.events() {
-        out.push(Msg::Fact(Fact::Event(event)));
-    }
-    if matches!(line, Line::Interrupted { .. }) {
-        out.push(Msg::Fact(Fact::System(
-            "Partial answer · interrupted".to_string(),
-        )));
+        Line::Work { work } => *last_work = Some(*work),
+        line => {
+            let interrupted = matches!(line, Line::Interrupted { .. });
+            for event in line.into_events(crate::durable::projection::AssistantEvents::Include) {
+                out.push(Msg::Fact(Fact::Event(event)));
+            }
+            if interrupted {
+                out.push(Msg::Fact(Fact::System(
+                    "Partial answer · interrupted".to_string(),
+                )));
+            }
+        }
     }
 }

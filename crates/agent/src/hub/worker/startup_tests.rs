@@ -34,6 +34,37 @@ fn task_progress_replays_the_current_numbered_plan() {
     assert_eq!(progress.ledger[0], "[/] First task");
 }
 
+#[test]
+fn replay_streams_the_journal_without_reading_the_tree_sidecar() {
+    let home = tempfile::tempdir().expect("session home");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut driver = SessionDriver::open(home.path(), workspace.path(), "m", "system", None)
+        .expect("session driver");
+    driver
+        .prepare_external_work(
+            "## Steps\n1. First task\n2. Second task\n",
+            crate::WorkKind::Steps,
+            &[],
+        )
+        .expect("select plan");
+    let sidecar = crate::durable::log::work_path(driver.path()).with_extension("tree.json");
+    let _ = std::fs::remove_file(&sidecar);
+    std::fs::create_dir(&sidecar).expect("poison tree sidecar");
+    let (ui, mut inbox) = unbounded_channel();
+    history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui, false);
+    let progress = std::iter::from_fn(|| inbox.try_recv().ok())
+        .flat_map(|message| match message {
+            Msg::Fact(Fact::Transcript(lines)) => lines,
+            message => vec![message],
+        })
+        .find_map(|message| match message {
+            Msg::Fact(Fact::Event(crate::Event::Work { progress })) => Some(progress),
+            _ => None,
+        })
+        .expect("replay must build progress without reading work.tree.json");
+    assert_eq!(progress.total, 2);
+}
+
 #[tokio::test]
 async fn a_release_request_stops_the_session_and_frees_its_journal() {
     let home = tempfile::tempdir().expect("session home");

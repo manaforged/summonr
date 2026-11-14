@@ -326,14 +326,10 @@ impl Work {
         session: &Path,
         logged: Option<Self>,
     ) -> io::Result<Result<Self, Option<String>>> {
-        let mut work = match logged {
-            Some(work) => work,
-            None => match legacy(&log::work_path(session))? {
-                Ok(work) => work,
-                Err(notice) => return Ok(Err(notice)),
-            },
+        let mut work = match Self::restore_work(session, logged)? {
+            Ok(work) => work,
+            Err(notice) => return Ok(Err(notice)),
         };
-        work.repair_steps();
         let Some(trees) = read_trees(&trees_path(session))? else {
             return Ok(Ok(work));
         };

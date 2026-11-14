@@ -99,3 +99,27 @@ pub(super) fn restore<'de, D: serde::Deserializer<'de>>(from: D) -> Result<WorkK
         Persisted::Goal {} => WorkKind::Goal,
     })
 }
+
+impl Work {
+    pub(super) fn restore_work(
+        session: &Path,
+        logged: Option<Self>,
+    ) -> io::Result<Result<Self, Option<String>>> {
+        let mut work = match logged {
+            Some(work) => work,
+            None => match legacy(&log::work_path(session))? {
+                Ok(work) => work,
+                Err(notice) => return Ok(Err(notice)),
+            },
+        };
+        work.repair_steps();
+        Ok(Ok(work))
+    }
+
+    pub(crate) fn progress_from(session: &Path, logged: Option<Self>) -> Option<WorkProgress> {
+        Self::restore_work(session, logged)
+            .ok()?
+            .ok()
+            .map(|work| work.progress())
+    }
+}

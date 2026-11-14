@@ -315,10 +315,7 @@ impl Pump {
             Activity::Idle
         };
         if self.activity != Some(activity) {
-            drop(sigil::terminal::activity(
-                summonr_agent::herdr::AGENT,
-                Some(activity),
-            ));
+            drop(sigil::terminal::activity(crate::PRODUCT, Some(activity)));
             self.activity = Some(activity);
         }
     }

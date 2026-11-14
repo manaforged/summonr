@@ -1,6 +1,0 @@
-{
-  "name": "researchr",
-  "description": "Research mode: run many native workers on one measured goal in delta lanes, record findings, and audit messages and reasoning in SQLite.",
-  "version": "0.2.0",
-  "author": { "name": "Manaforge" }
-}

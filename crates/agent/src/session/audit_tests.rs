@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
 
 use crate::durable::log::{self, Line, Log, Usage};
 use crate::durable::store::Durability;
@@ -11,7 +10,7 @@ const COORDINATOR: &str = "000000000000000018d2297ad34281e1";
 const WORKER: &str = "000000000000000018d2297ad34281e2";
 
 #[test]
-fn native_messages_and_provider_records_reach_the_sqlite_audit_log() {
+fn native_messages_and_provider_records_reach_the_audit_export() {
     let home = tempfile::tempdir().expect("audit home");
     journal(home.path(), COORDINATOR);
     journal(home.path(), WORKER);
@@ -28,88 +27,173 @@ fn native_messages_and_provider_records_reach_the_sqlite_audit_log() {
         .send("coordinator", "evidence ready", Some(&request))
         .expect("reply");
     assert_eq!(coordinator.poll().expect("coordinator inbox").len(), 1);
-    let db = home.path().join("audit.sqlite");
-    for id in [COORDINATOR, WORKER] {
-        let export = exported(home.path(), id);
-        succeeded(cli(&db).arg("import").arg("--file").arg(&export));
-        let replay = succeeded(cli(&db).arg("import").arg("--file").arg(&export));
-        assert_eq!(replay["inserted"], 0);
-    }
-    let saved = query(&db, &request, &reply);
-    verify(&saved, &request);
-}
-
-fn verify(saved: &Value, request: &str) {
+    let records: Vec<Value> = [COORDINATOR, WORKER]
+        .into_iter()
+        .flat_map(|id| replayable(home.path(), id))
+        .collect();
+    assert_eq!(records.len(), 10);
+    let stage = |session: &str, kind: &str, from: &str, to: &str, reply_to: Value, text: &str| {
+        json!([session, kind, session, from, to, reply_to, text])
+    };
     assert_eq!(
-        saved["request"],
-        json!([[COORDINATOR, WORKER, null, "measure candidate", 3, 3]])
-    );
-    assert_eq!(
-        saved["reply"],
-        json!([[WORKER, COORDINATOR, request, "evidence ready", 3, 3]])
-    );
-    assert_eq!(
-        saved["responses"],
-        json!([
-            [
+        stages(&records, &request),
+        [
+            stage(
                 COORDINATOR,
-                "fixture-model",
-                "provider summary",
-                11,
-                7,
-                3,
-                5
-            ],
-            [WORKER, "fixture-model", "provider summary", 11, 7, 3, 5],
-        ])
+                "send_attempted",
+                COORDINATOR,
+                WORKER,
+                Value::Null,
+                "measure candidate"
+            ),
+            stage(
+                COORDINATOR,
+                "delivered",
+                COORDINATOR,
+                WORKER,
+                Value::Null,
+                "measure candidate"
+            ),
+            stage(
+                WORKER,
+                "dequeued",
+                COORDINATOR,
+                WORKER,
+                Value::Null,
+                "measure candidate"
+            ),
+        ]
     );
     assert_eq!(
-        saved["actors"],
-        json!([
-            [COORDINATOR, "delivered"],
-            [WORKER, "dequeued"],
-            [COORDINATOR, "send_attempted"],
-        ])
+        stages(&records, &reply),
+        [
+            stage(
+                WORKER,
+                "send_attempted",
+                WORKER,
+                COORDINATOR,
+                json!(request),
+                "evidence ready"
+            ),
+            stage(
+                WORKER,
+                "delivered",
+                WORKER,
+                COORDINATOR,
+                json!(request),
+                "evidence ready"
+            ),
+            stage(
+                COORDINATOR,
+                "dequeued",
+                WORKER,
+                COORDINATOR,
+                json!(request),
+                "evidence ready"
+            ),
+        ]
     );
     assert_eq!(
-        saved["opaque"],
-        json!([["provider-only"], ["provider-only"]])
+        responses(&records),
+        [COORDINATOR, WORKER].map(|id| json!([
+            id,
+            "fixture-model",
+            "provider summary",
+            11,
+            7,
+            3,
+            5,
+            "provider-only"
+        ]))
     );
-    assert_eq!(saved["events"], 12);
 }
 
 #[test]
-fn an_incomplete_native_export_cannot_be_reported_as_a_complete_import() {
+fn only_a_complete_export_ends_with_the_trailer_that_counts_its_records() {
     let home = tempfile::tempdir().expect("audit home");
     journal(home.path(), WORKER);
-    let db = home.path().join("audit.sqlite");
-    let export = exported(home.path(), WORKER);
-    let mut lines: Vec<String> = std::fs::read_to_string(&export)
-        .expect("export")
-        .lines()
-        .map(str::to_string)
-        .collect();
-    lines.pop().expect("completion manifest");
-    std::fs::write(&export, format!("{}\n", lines.join("\n"))).expect("interrupted export");
-    let failed = cli(&db)
-        .arg("import")
-        .arg("--file")
-        .arg(&export)
-        .output()
-        .expect("import process");
-    assert!(!failed.status.success());
-    let error: Value = serde_json::from_slice(&failed.stderr).expect("structured import failure");
+    let bytes = std::fs::read(exported(home.path(), WORKER)).expect("export");
+    assert_eq!(complete(&bytes).len(), 2);
+    let mut interrupted = lines(&bytes);
+    interrupted.pop().expect("completion manifest");
     assert!(
-        error["error"]
-            .as_str()
-            .expect("diagnostic")
-            .contains("trailer missing"),
-        "{error}"
+        interrupted
+            .iter()
+            .all(|record| record["record"]["kind"] != "complete_prefix"),
+        "{interrupted:?}"
     );
-    let complete = exported(home.path(), WORKER);
-    let recovered = succeeded(cli(&db).arg("import").arg("--file").arg(complete));
-    assert_eq!(recovered["complete_export"], true);
-    assert_eq!(query(&db, "unused", "unused")["events"], 3);
+}
+
+fn replayable(home: &Path, id: &str) -> Vec<Value> {
+    let first = std::fs::read(exported(home, id)).expect("export");
+    let again = std::fs::read(exported(home, id)).expect("replayed export");
+    assert_eq!(first, again, "an export replays byte for byte");
+    complete(&first)
+}
+
+fn lines(bytes: &[u8]) -> Vec<Value> {
+    std::str::from_utf8(bytes)
+        .expect("export UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("export JSON"))
+        .collect()
+}
+
+fn complete(bytes: &[u8]) -> Vec<Value> {
+    let mut records = lines(bytes);
+    let trailer = records.pop().expect("completion manifest");
+    assert_eq!(trailer["source"], "export", "{trailer}");
+    assert_eq!(trailer["record"]["kind"], "complete_prefix", "{trailer}");
+    assert_eq!(trailer["record"]["records"], records.len(), "{trailer}");
+    records
+}
+
+const LIFECYCLE: [&str; 3] = ["send_attempted", "delivered", "dequeued"];
+
+fn stages(records: &[Value], id: &str) -> Vec<Value> {
+    let mut mail: Vec<&Value> = records
+        .iter()
+        .filter(|record| record["source"] == "mail" && record["record"]["mail"]["id"] == id)
+        .collect();
+    mail.sort_by_key(|record| {
+        LIFECYCLE
+            .iter()
+            .position(|kind| record["record"]["kind"] == *kind)
+    });
+    mail.into_iter()
+        .map(|record| {
+            let (body, mail) = (&record["record"], &record["record"]["mail"]);
+            json!([
+                record["session"],
+                body["kind"],
+                body["actor"],
+                mail["from"],
+                mail["to"],
+                mail["reply_to"],
+                mail["text"]
+            ])
+        })
+        .collect()
+}
+
+fn responses(records: &[Value]) -> Vec<Value> {
+    records
+        .iter()
+        .filter(|record| record["source"] == "session" && record["record"]["kind"] == "assistant")
+        .map(|record| {
+            let (body, usage) = (&record["record"], &record["record"]["usage"]);
+            json!([
+                record["session"],
+                body["model"],
+                body["reasoning"],
+                usage["input"],
+                usage["output"],
+                usage["reasoning"],
+                usage["cached"],
+                body["continuation"]["signatures"][0]
+            ])
+        })
+        .collect()
 }
 
 fn journal(home: &Path, id: &str) {
@@ -164,53 +248,4 @@ fn exported(home: &Path, id: &str) -> PathBuf {
     crate::export_json(&source, &mut bytes).expect("native audit export");
     std::fs::write(&destination, bytes).expect("export snapshot");
     destination
-}
-
-fn cli(db: &Path) -> Command {
-    let mut command = Command::new(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/researchr/bin/researchr"),
-    );
-    command.arg("--db").arg(db);
-    command
-}
-
-fn succeeded(command: &mut Command) -> Value {
-    let output = command.output().expect("plugin command");
-    decoded(output)
-}
-
-fn decoded(output: Output) -> Value {
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8(output.stderr).expect("UTF-8 diagnostic")
-    );
-    serde_json::from_slice(&output.stdout).expect("command JSON")
-}
-
-fn query(db: &Path, request: &str, reply: &str) -> Value {
-    let script = r#"
-import json, sqlite3, sys
-with sqlite3.connect(sys.argv[1]) as db:
-    sql = 'select sender,recipient,reply_to,text,count(*),count(distinct stage) from message where id=? group by sender,recipient,reply_to,text'
-    result = {
-        'request': db.execute(sql, (sys.argv[2],)).fetchall(),
-        'reply': db.execute(sql, (sys.argv[3],)).fetchall(),
-        'actors': db.execute('select actor,stage from message where id=? order by stage', (sys.argv[2],)).fetchall(),
-        'responses': db.execute("select session,model,reasoning,json_extract(usage,'$.input'),json_extract(usage,'$.output'),json_extract(usage,'$.reasoning'),json_extract(usage,'$.cached') from response order by session").fetchall(),
-        'opaque': db.execute("select json_extract(body,'$.record.continuation.signatures[0]') from event where source='session' and kind='assistant' order by session").fetchall(),
-        'events': db.execute('select count(*) from event').fetchone()[0],
-    }
-print(json.dumps(result))
-"#;
-    decoded(
-        Command::new("python3")
-            .arg("-c")
-            .arg(script)
-            .arg(db)
-            .arg(request)
-            .arg(reply)
-            .output()
-            .expect("SQLite query"),
-    )
 }

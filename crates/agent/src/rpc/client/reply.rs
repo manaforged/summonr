@@ -154,6 +154,7 @@ impl Client {
             | Ask::SessionNew
             | Ask::SessionPrompt
             | Ask::SessionCancel
+            | Ask::SessionSetConfigOption
             | Ask::ToolsList
             | Ask::ToolsCall
             | Ask::Unsupported => crate::rpc::answer(asked, Err(crate::rpc::unsupported(method))),

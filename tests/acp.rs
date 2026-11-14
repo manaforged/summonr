@@ -31,6 +31,10 @@ impl Drop for Editor {
 
 impl Editor {
     fn open(home: &std::path::Path, model: &Model) -> Self {
+        Self::with_flags(home, model, &[])
+    }
+
+    fn with_flags(home: &std::path::Path, model: &Model, flags: &[&str]) -> Self {
         std::fs::write(
             home.join("config.toml"),
             format!(
@@ -41,7 +45,9 @@ impl Editor {
         .unwrap();
         std::fs::write(home.join("policy.toml"), "ask = [\"echo granted\"]\n").unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_summonr"))
-            .args(["-e", "local", "acp"])
+            .args(["-e", "local"])
+            .args(flags)
+            .arg("acp")
             .current_dir(home)
             .env_clear()
             .env("HOME", home)
@@ -89,11 +95,18 @@ impl Editor {
         }
     }
 
+    fn call(&mut self, id: u64, method: &str, params: Value) -> Value {
+        self.send(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}));
+        self.until(method, |frame| frame["id"] == id)
+    }
+
+    fn initialize(&mut self) -> Value {
+        self.call(1, "initialize", json!({"protocolVersion": 1}))
+    }
+
     fn session(&mut self, cwd: &std::path::Path) -> String {
-        self.send(&json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": 1}}));
-        self.until("initialize reply", |frame| frame["id"] == 1);
-        self.send(&json!({"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": {"cwd": cwd, "mcpServers": []}}));
-        let reply = self.until("session/new reply", |frame| frame["id"] == 2);
+        self.initialize();
+        let reply = self.call(2, "session/new", json!({"cwd": cwd, "mcpServers": []}));
         reply["result"]["sessionId"]
             .as_str()
             .unwrap_or_else(|| panic!("session/new failed: {reply}"))
@@ -174,4 +187,123 @@ fn an_editor_rejects_an_asked_command_and_it_does_not_run() {
         "rejected command ran: {:?}",
         model.tool_results()
     );
+}
+
+fn reply(editor: &mut Editor) -> Value {
+    editor.until("session/prompt reply", |frame| frame["id"] == 3)
+}
+
+#[test]
+fn a_spent_token_budget_stops_with_max_tokens() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(guarded_command());
+    let mut editor = Editor::with_flags(home.path(), &model, &["--max-tokens", "1"]);
+    let session = editor.session(home.path());
+    editor.prompt(&session, "push it");
+    let reply = loop {
+        let frame = editor.until("prompt reply or permission", |frame| {
+            asked(frame) || frame["id"] == 3
+        });
+        if !asked(&frame) {
+            break frame;
+        }
+        let answer = json!({"jsonrpc": "2.0", "id": frame["id"], "result": {"outcome": {"outcome": "cancelled"}}});
+        editor.send(&answer);
+    };
+    assert_eq!(reply["result"]["stopReason"], "max_tokens", "{reply}");
+}
+
+#[test]
+fn a_turn_reports_context_usage() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(vec![Step::Text("done")]);
+    let mut editor = Editor::open(home.path(), &model);
+    let session = editor.session(home.path());
+    editor.prompt(&session, "hi");
+    let usage = editor.until("usage_update", |frame| {
+        frame["params"]["update"]["sessionUpdate"] == "usage_update"
+    });
+    assert_eq!(usage["params"]["update"]["size"], 32768, "{usage}");
+    assert_eq!(usage["params"]["update"]["used"], 15, "{usage}");
+    assert_eq!(reply(&mut editor)["result"]["stopReason"], "end_turn");
+}
+
+#[test]
+fn a_request_during_a_prompt_is_busy_not_auth_required() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(guarded_command());
+    let mut editor = Editor::open(home.path(), &model);
+    let session = editor.session(home.path());
+    editor.prompt(&session, "push it");
+    let request = editor.until("session/request_permission", asked);
+    assert_eq!(
+        request["params"]["toolCall"]["toolCallId"], "call_0",
+        "{request}"
+    );
+    let busy = editor.call(
+        9,
+        "session/new",
+        json!({"cwd": home.path(), "mcpServers": []}),
+    );
+    let code = busy["error"]["code"].as_i64().expect("an error code");
+    assert!(
+        code != -32000 && !(-32768..=-32000).contains(&code),
+        "{busy}"
+    );
+    editor.send(&json!({"jsonrpc": "2.0", "id": request["id"], "result": {"outcome": {"outcome": "cancelled"}}}));
+    assert_eq!(reply(&mut editor)["result"]["stopReason"], "end_turn");
+}
+
+#[test]
+fn an_unknown_session_is_resource_not_found() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    editor.initialize();
+    let reply = editor.call(
+        3,
+        "session/prompt",
+        json!({"sessionId": "nope", "prompt": []}),
+    );
+    assert_eq!(reply["error"]["code"], -32002, "{reply}");
+}
+
+#[test]
+fn an_editor_sets_effort_through_config_options() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    let session = editor.session(home.path());
+    let set = json!({"sessionId": session, "configId": "effort", "value": "high"});
+    let reply = editor.call(4, "session/set_config_option", set);
+    assert_eq!(
+        reply["result"]["configOptions"][0]["currentValue"], "high",
+        "{reply}"
+    );
+    let bad = json!({"sessionId": session, "configId": "effort", "value": "loud"});
+    let reply = editor.call(5, "session/set_config_option", bad);
+    assert_eq!(reply["error"]["code"], -32602, "{reply}");
+}
+
+#[test]
+fn initialize_advertises_only_stdio_mcp_and_unadvertised_transports_are_refused() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    let init = editor.initialize();
+    let caps = &init["result"]["agentCapabilities"];
+    assert_eq!(
+        caps["mcpCapabilities"],
+        json!({"http": false, "sse": false}),
+        "{init}"
+    );
+    assert_eq!(caps["loadSession"], false, "{init}");
+    let http =
+        json!({"type": "http", "name": "web", "url": "http://127.0.0.1:9/mcp", "headers": []});
+    let reply = editor.call(
+        2,
+        "session/new",
+        json!({"cwd": home.path(), "mcpServers": [http]}),
+    );
+    assert_eq!(reply["error"]["code"], -32602, "{reply}");
 }

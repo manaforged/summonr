@@ -77,6 +77,37 @@ pub(super) fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) 
     drop(out.send(frame_line(&update(session, content))));
 }
 
+pub(super) fn usage(out: &UnboundedSender<String>, session: &str, window: Option<u32>, used: u64) {
+    let Some(size) = window else {
+        return;
+    };
+    let content = json!({"sessionUpdate": "usage_update", "used": used, "size": size});
+    drop(out.send(frame_line(&update(session, content))));
+}
+
+pub(super) fn servers(params: &Value) -> std::result::Result<Vec<String>, (i64, String)> {
+    let mut names = Vec::new();
+    for server in params
+        .get("mcpServers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let name = server.get("name").and_then(Value::as_str);
+        let stdio = server.get("type").is_none() && server.get("command").is_some();
+        match name.filter(|_| stdio) {
+            Some(name) => names.push(name.to_string()),
+            None => {
+                return Err((
+                    super::codes::INVALID,
+                    format!("mcpServers takes stdio servers with a name and command, not {server}"),
+                ));
+            }
+        }
+    }
+    Ok(names)
+}
+
 pub(super) fn update(session: &str, content: Value) -> Value {
     rpc::notification(
         "session/update",

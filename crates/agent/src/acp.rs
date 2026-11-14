@@ -19,8 +19,16 @@ type Reply = std::result::Result<Value, (i64, String)>;
 
 const PERMISSION: &str = "permission-";
 
+mod codes {
+    pub(super) const INVALID: i64 = -32602;
+    pub(super) const INTERNAL: i64 = -32603;
+    pub(super) const NO_SESSION: i64 = -32002;
+    pub(super) const BUSY: i64 = -31000;
+}
+
+mod config;
 mod update;
-use update::{emit, update};
+use update::{emit, update, usage};
 
 struct Choice {
     id: &'static str,
@@ -59,6 +67,7 @@ struct Updates {
     out: UnboundedSender<String>,
     session: String,
     open: Vec<String>,
+    window: Option<u32>,
 }
 
 struct Server<F> {
@@ -92,6 +101,11 @@ where
     while let Some(line) = next_line(&mut input).await {
         server.handle(&line, &mut input).await;
     }
+    for seat in server.sessions.values() {
+        for note in seat.agent.close().await {
+            eprintln!("summonr: {note}");
+        }
+    }
     drop(server);
     drop(writer.await);
     Ok(0)
@@ -108,11 +122,16 @@ where
         let reply = match rpc::ask(&method) {
             Ask::Initialize => Ok(json!({
                 "protocolVersion": 1,
-                "agentCapabilities": {"loadSession": false},
+                "agentCapabilities": {
+                    "loadSession": false,
+                    "mcpCapabilities": {"http": false, "sse": false}
+                },
+                "agentInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")},
                 "authMethods": []
             })),
             Ask::Authenticate => Ok(json!({})),
-            Ask::SessionNew => self.open(&params),
+            Ask::SessionNew => self.open(&params).await,
+            Ask::SessionSetConfigOption => self.configure(&params),
             Ask::SessionPrompt => self.prompt(&params, input).await,
             Ask::Roots
             | Ask::Elicit
@@ -137,13 +156,26 @@ where
         )
     }
 
-    fn open(&mut self, params: &Value) -> Reply {
+    async fn open(&mut self, params: &Value) -> Reply {
         let cwd = params
             .get("cwd")
             .and_then(Value::as_str)
             .map(PathBuf::from)
-            .ok_or_else(|| (-32602, "session/new needs cwd".to_string()))?;
-        let endpoint = self.endpoint.clone().map_err(|error| (-32603, error))?;
+            .ok_or_else(|| (codes::INVALID, "session/new needs cwd".to_string()))?;
+        let servers = update::servers(params)?;
+        if !servers.is_empty() {
+            return Err((
+                codes::INVALID,
+                format!(
+                    "session/new mcpServers ({}) are not supported yet",
+                    servers.join(", ")
+                ),
+            ));
+        }
+        let endpoint = self
+            .endpoint
+            .clone()
+            .map_err(|error| (codes::INTERNAL, error))?;
         let tag = Arc::new(OnceLock::new());
         let client = self.connect(&endpoint, &tag).map_err(failure)?;
         let mut session = (self.build)(&endpoint, client, &cwd).map_err(failure)?;
@@ -155,6 +187,8 @@ where
         session.set_fallbacks(fallbacks);
         let steering = Arc::new(Steering::approvals_only());
         session.steer_with(Arc::clone(&steering));
+        session.begin().await;
+        let options = config::options(session.effort());
         let id = session.session_id();
         drop(tag.set(id.clone()));
         self.sessions.insert(
@@ -164,7 +198,23 @@ where
                 steering,
             },
         );
-        Ok(json!({"sessionId": id}))
+        Ok(json!({"sessionId": id, "configOptions": options}))
+    }
+
+    fn configure(&mut self, params: &Value) -> Reply {
+        let id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let Some(seat) = self.sessions.get_mut(id) else {
+            return Err(missing(id));
+        };
+        let effort = config::effort(params)?;
+        seat.agent.choose_effort(effort);
+        if effort.is_none() {
+            seat.agent.set_effort(None);
+        }
+        Ok(json!({"configOptions": config::options(seat.agent.effort())}))
     }
 
     fn stream(
@@ -197,13 +247,15 @@ where
             .join("\n");
         let out = self.out.clone();
         let Some(Seat { agent, steering }) = self.sessions.get_mut(&session) else {
-            return Err((-32602, format!("unknown session {session}")));
+            return Err(missing(&session));
         };
+        let window = agent.context_window();
         let outcome = {
             let mut updates = Updates {
                 out: out.clone(),
                 session: session.clone(),
                 open: Vec::new(),
+                window,
             };
             let turn = agent.turn_with(text, move |event| updates.emit(event));
             tokio::pin!(turn);
@@ -222,7 +274,7 @@ where
                                 break None;
                             }
                             Ok(Frame::Request { id, .. }) => {
-                                let busy = Err((-32000, "a prompt is already running".to_string()));
+                                let busy = Err((codes::BUSY, "a prompt is already running".to_string()));
                                 drop(out.send(frame_line(&rpc::answer(&id, busy))));
                             }
                             Ok(Frame::Response { id, result, .. }) => answer(steering, &id, result.as_ref()),
@@ -233,8 +285,7 @@ where
             }
         };
         match outcome {
-            Some(Ok(turn)) if turn.aborted => Ok(json!({"stopReason": "max_turn_requests"})),
-            Some(Ok(_turn)) => Ok(json!({"stopReason": "end_turn"})),
+            Some(Ok(turn)) => config::stop(&turn),
             Some(Err(error)) => Err(failure(error)),
             None => {
                 agent.abort_note("cancelled by client").map_err(failure)?;
@@ -254,6 +305,16 @@ impl Updates {
                 persist,
                 dialog,
             } => return self.ask(detail, *persist, *dialog),
+            Event::Usage {
+                prompt_tokens,
+                completion_tokens,
+                ..
+            } => usage(
+                &self.out,
+                &self.session,
+                self.window,
+                u64::from(*prompt_tokens) + u64::from(*completion_tokens),
+            ),
             _other => {}
         }
         emit(&self.out, &self.session, event);
@@ -312,7 +373,11 @@ fn frame_line(frame: &Value) -> String {
 }
 
 fn failure(error: Error) -> (i64, String) {
-    (-32603, error.to_string())
+    (codes::INTERNAL, error.to_string())
+}
+
+fn missing(session: &str) -> (i64, String) {
+    (codes::NO_SESSION, format!("unknown session {session}"))
 }
 
 fn block(item: &Value) -> Option<String> {

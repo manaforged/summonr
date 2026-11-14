@@ -5,6 +5,8 @@ use super::{ext, frame_line, permission};
 use crate::rpc;
 use crate::tools::Event;
 
+pub(super) const METHOD: &str = "session/update";
+
 pub(super) struct Updates {
     pub(super) out: UnboundedSender<String>,
     pub(super) session: String,
@@ -188,10 +190,7 @@ pub(super) fn servers(
 }
 
 pub(super) fn update(session: &str, content: Value) -> Value {
-    rpc::notification(
-        "session/update",
-        json!({"sessionId": session, "update": content}),
-    )
+    rpc::notification(METHOD, json!({"sessionId": session, "update": content}))
 }
 
 fn kind(name: &str) -> &'static str {

@@ -60,6 +60,7 @@ pub(super) struct Args {
     pub(super) grep: Option<String>,
     pub(super) logs: bool,
     pub(super) report: bool,
+    pub(super) schema: bool,
     pub(super) all: bool,
     pub(super) last: Option<usize>,
     pub(super) name: Option<String>,

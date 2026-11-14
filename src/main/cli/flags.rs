@@ -148,6 +148,8 @@ pub(super) const FLAGS: Table<Args> = Table {
             .scope("doctor", |args| matches!(args.verb, Some(Verb::Doctor))),
         Flag::switch(&["--report"], |args| on(&mut args.report))
             .scope("doctor", |args| matches!(args.verb, Some(Verb::Doctor))),
+        Flag::switch(&["--schema"], |args| on(&mut args.schema))
+            .scope("acp", |args| matches!(args.verb, Some(Verb::Acp))),
         Flag::value(&["--questions"], "JSON or @file", |args, questions| {
             set(&mut args.questions, questions)
         })

@@ -5,8 +5,16 @@ use crate::provider::Effort;
 use crate::runtime::Turn;
 use crate::tools::{AbortCode, Event};
 
-const EFFORT: &str = "effort";
+pub(super) const EFFORT: &str = "effort";
 const DEFAULT: &str = "default";
+pub(super) const CANCELLED: &str = "cancelled";
+pub(super) const STOPS: [&str; 4] = ["end_turn", "max_tokens", "max_turn_requests", CANCELLED];
+
+pub(super) fn values() -> Vec<&'static str> {
+    std::iter::once(DEFAULT)
+        .chain(Effort::ALL.iter().map(|level| level.as_str()))
+        .collect()
+}
 
 pub(super) fn options(effort: Option<Effort>) -> Value {
     let mut values = vec![json!({"value": DEFAULT, "name": "Default"})];
@@ -47,7 +55,7 @@ pub(super) fn effort(params: &Value) -> std::result::Result<Option<Effort>, (i64
 
 pub(super) fn stop(turn: &Turn) -> Reply {
     if !turn.aborted {
-        return Ok(json!({"stopReason": "end_turn"}));
+        return Ok(json!({"stopReason": STOPS[0]}));
     }
     let (code, reason) = turn
         .events
@@ -59,9 +67,9 @@ pub(super) fn stop(turn: &Turn) -> Reply {
         })
         .unwrap_or((AbortCode::Error, "the turn stopped"));
     let reason = match code {
-        AbortCode::TokenBudget => "max_tokens",
-        AbortCode::TimeBudget => "max_turn_requests",
-        AbortCode::Interrupted | AbortCode::Cancelled => "cancelled",
+        AbortCode::TokenBudget => STOPS[1],
+        AbortCode::TimeBudget => STOPS[2],
+        AbortCode::Interrupted | AbortCode::Cancelled => CANCELLED,
         AbortCode::Error => return Err((codes::INTERNAL, reason.to_string())),
     };
     Ok(json!({"stopReason": reason}))

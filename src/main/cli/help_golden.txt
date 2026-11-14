@@ -40,7 +40,8 @@ Setup:
                               --report prints the last crash to paste into an issue
 
 Integrations:
-  acp                         serve the Agent Client Protocol on stdio
+  acp [--schema]              serve the Agent Client Protocol on stdio;
+                              --schema prints its JSON Schema
   mail                        peer mail between agent sessions: agents, send, inbox, board
   tool run NAME [JSON]        run one tool and print the result
   classify --set NAME [STATE] answer typed questions about text (below)

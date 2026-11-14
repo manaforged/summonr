@@ -5,15 +5,16 @@ use crate::rpc;
 use crate::runtime::{GrantAnswer, Steering};
 
 const PERMISSION: &str = "permission-";
+pub(super) const METHOD: &str = "session/request_permission";
 
-struct Choice {
-    id: &'static str,
+pub(super) struct Choice {
+    pub(super) id: &'static str,
     name: &'static str,
-    kind: &'static str,
+    pub(super) kind: &'static str,
     answer: GrantAnswer,
 }
 
-const CHOICES: [Choice; 3] = [
+pub(super) const CHOICES: [Choice; 3] = [
     Choice {
         id: "allow-once",
         name: "Allow once",
@@ -52,11 +53,7 @@ pub(super) fn request(
         "toolCall": {"toolCallId": call.unwrap_or_default(), "title": detail},
         "options": options,
     });
-    rpc::request(
-        &json!(format!("{PERMISSION}{dialog}")),
-        "session/request_permission",
-        params,
-    )
+    rpc::request(&json!(format!("{PERMISSION}{dialog}")), METHOD, params)
 }
 
 /// Passes an editor's answer to permission dialog `id` to the session.

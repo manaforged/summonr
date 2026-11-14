@@ -15,16 +15,31 @@ use summonr_core::error::{Error, Result};
 type Input = rpc::Lines<Stdin>;
 type Reply = std::result::Result<Value, (i64, String)>;
 
+pub use schema::schema;
+
+const PROTOCOL: u64 = 1;
+
 mod codes {
     pub(super) const INVALID: i64 = -32602;
     pub(super) const INTERNAL: i64 = -32603;
     pub(super) const NO_SESSION: i64 = -32002;
     pub(super) const BUSY: i64 = -31000;
+    pub(super) const ALL: [(i64, &str); 5] = [
+        (
+            crate::rpc::NOT_FOUND,
+            "method not found, or a summonr extension without the opt-in",
+        ),
+        (INVALID, "invalid params"),
+        (INTERNAL, "internal error, including a failed turn"),
+        (NO_SESSION, "unknown sessionId"),
+        (BUSY, "a prompt is already running in this session"),
+    ];
 }
 
 mod config;
 pub(crate) mod ext;
 mod permission;
+mod schema;
 mod update;
 use update::{Updates, chunk, update};
 
@@ -115,7 +130,7 @@ where
             capabilities["_meta"] = ext::capability();
         }
         json!({
-            "protocolVersion": 1,
+            "protocolVersion": PROTOCOL,
             "agentCapabilities": capabilities,
             "agentInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")},
             "authMethods": []
@@ -297,7 +312,7 @@ where
             Some(Err(error)) => Err(failure(error)),
             None => {
                 agent.abort_note("cancelled by client").map_err(failure)?;
-                Ok(json!({"stopReason": "cancelled"}))
+                Ok(json!({"stopReason": config::CANCELLED}))
             }
         }
     }

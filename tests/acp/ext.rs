@@ -132,3 +132,56 @@ fn a_model_switch_reaches_the_next_model_request() {
     let last = requests.last().expect("a model request");
     assert_eq!(last["model"], "m2", "{last}");
 }
+
+#[test]
+fn the_schema_names_every_feature_and_the_served_protocol_version() {
+    let home = tempfile::tempdir().expect("temp home");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["acp", "--schema"])
+        .current_dir(home.path())
+        .env_clear()
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .output()
+        .expect("run summonr acp --schema");
+    assert!(output.status.success(), "{output:?}");
+    let schema: Value = serde_json::from_slice(&output.stdout).expect("the schema is JSON");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    let init = editor.opt_in();
+    let echoed = &init["result"]["agentCapabilities"]["_meta"]["summonr.dev/ext"]["features"];
+    let echoed: Vec<&str> = echoed
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(echoed, FEATURES, "{init}");
+    assert_eq!(
+        schema["extension"]["features"],
+        json!(FEATURES),
+        "{schema:#}"
+    );
+    for feature in FEATURES {
+        let method = format!("_summonr.dev/{feature}");
+        let named = [
+            &schema["methods"][&method],
+            &schema["notifications"][&method],
+        ];
+        assert!(
+            named.iter().any(|entry| entry.is_object()),
+            "no {method} in {schema:#}"
+        );
+    }
+    assert_eq!(
+        schema["protocolVersion"], init["result"]["protocolVersion"],
+        "{init}"
+    );
+    assert_eq!(schema["version"], 1, "{schema:#}");
+    let definitions = schema["definitions"]
+        .as_object()
+        .map_or(0, serde_json::Map::len);
+    assert!(definitions > 0, "{schema:#}");
+}

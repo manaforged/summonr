@@ -112,6 +112,10 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
             summonr_agent::panel::cli::run(command, &cwd, args.trust).await
         }
         Verb::Tool { name, arguments } => tool::run(name, arguments).await,
+        Verb::Acp if args.schema => {
+            println!("{:#}", summonr_agent::acp::schema());
+            Ok(0)
+        }
         Verb::Acp => acp(args).await,
         Verb::Login => done(login(args).await),
         Verb::Logout => logout(args),

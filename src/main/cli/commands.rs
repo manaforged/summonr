@@ -130,7 +130,7 @@ pub(super) const COMMANDS: [Command; 19] = [
         name: "acp",
         most: Some(0),
         run: |args, _| verb(args, Verb::Acp),
-        help: "acp                         serve the Agent Client Protocol on stdio",
+        help: "acp [--schema]              serve the Agent Client Protocol on stdio;\n                            --schema prints its JSON Schema",
     },
     Command {
         name: "mail",

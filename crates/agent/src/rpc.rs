@@ -150,22 +150,36 @@ pub(crate) enum Ask {
     Unsupported,
 }
 
+const ASKS: [(Ask, &str); 12] = [
+    (Ask::Roots, "roots/list"),
+    (Ask::Elicit, "elicitation/create"),
+    (Ask::Ping, "ping"),
+    (Ask::Initialize, "initialize"),
+    (Ask::Authenticate, "authenticate"),
+    (Ask::SessionNew, "session/new"),
+    (Ask::SessionLoad, "session/load"),
+    (Ask::SessionPrompt, "session/prompt"),
+    (Ask::SessionCancel, "session/cancel"),
+    (Ask::SessionSetConfigOption, "session/set_config_option"),
+    (Ask::ToolsList, "tools/list"),
+    (Ask::ToolsCall, "tools/call"),
+];
+
 pub(crate) fn ask(method: &str) -> Ask {
-    match method {
-        "roots/list" => Ask::Roots,
-        "elicitation/create" => Ask::Elicit,
-        "ping" => Ask::Ping,
-        "initialize" => Ask::Initialize,
-        "authenticate" => Ask::Authenticate,
-        "session/new" => Ask::SessionNew,
-        "session/load" => Ask::SessionLoad,
-        "session/prompt" => Ask::SessionPrompt,
-        "session/cancel" => Ask::SessionCancel,
-        "session/set_config_option" => Ask::SessionSetConfigOption,
-        extension if extension.starts_with(crate::acp::ext::PREFIX) => Ask::Extension,
-        "tools/list" => Ask::ToolsList,
-        "tools/call" => Ask::ToolsCall,
-        _unsupported => Ask::Unsupported,
+    if method.starts_with(crate::acp::ext::PREFIX) {
+        return Ask::Extension;
+    }
+    ASKS.iter()
+        .find(|(_, name)| *name == method)
+        .map_or(Ask::Unsupported, |(ask, _)| *ask)
+}
+
+impl Ask {
+    /// The JSON-RPC method name this request kind answers to, if it has a fixed one.
+    pub(crate) fn name(self) -> Option<&'static str> {
+        ASKS.iter()
+            .find(|(ask, _)| *ask == self)
+            .map(|(_, name)| *name)
     }
 }
 

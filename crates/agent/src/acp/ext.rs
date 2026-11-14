@@ -14,8 +14,8 @@ use crate::tools::Event;
 use summonr_core::error::Result;
 
 pub(crate) const PREFIX: &str = "_summonr.dev/";
-const KEY: &str = "summonr.dev/ext";
-const VERSION: u64 = 1;
+pub(super) const KEY: &str = "summonr.dev/ext";
+pub(super) const VERSION: u64 = 1;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Method {
@@ -26,24 +26,40 @@ pub(super) enum Method {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Note {
+pub(super) enum Note {
     Status,
     Child,
     Usage,
 }
 
-const METHODS: [(Method, &str); 4] = [
+pub(super) const METHODS: [(Method, &str); 4] = [
     (Method::SessionList, "session/list"),
     (Method::SessionDiff, "session/diff"),
     (Method::SessionModel, "session/model"),
     (Method::Steer, "steer"),
 ];
 
-const NOTES: [(Note, &str); 3] = [
+pub(super) const NOTES: [(Note, &str); 3] = [
     (Note::Status, "session/status"),
     (Note::Child, "session/child"),
     (Note::Usage, "usage"),
 ];
+
+pub(super) const STATES: [(Status, &str); 5] = [
+    (Status::Idle, "idle"),
+    (Status::Working, "working"),
+    (Status::NeedsYou, "asking"),
+    (Status::Review, "done"),
+    (Status::Failed, "failed"),
+];
+
+pub(super) fn features() -> Vec<&'static str> {
+    METHODS
+        .iter()
+        .map(|(_, name)| *name)
+        .chain(NOTES.iter().map(|(_, name)| *name))
+        .collect()
+}
 
 pub(super) fn opted(params: &Value) -> bool {
     ["/_meta", "/clientCapabilities/_meta"].iter().any(|at| {
@@ -57,12 +73,7 @@ pub(super) fn opted(params: &Value) -> bool {
 }
 
 pub(super) fn capability() -> Value {
-    let features: Vec<&str> = METHODS
-        .iter()
-        .map(|(_, name)| *name)
-        .chain(NOTES.iter().map(|(_, name)| *name))
-        .collect();
-    json!({KEY: {"version": VERSION, "features": features}})
+    json!({KEY: {"version": VERSION, "features": features()}})
 }
 
 pub(super) fn call(opted: bool, method: &str) -> std::result::Result<Method, (i64, String)> {
@@ -130,13 +141,10 @@ fn sessions(params: &Value) -> Reply {
 }
 
 pub(super) fn status(out: &UnboundedSender<String>, session: &str, status: Status) {
-    let state = match status {
-        Status::Idle => "idle",
-        Status::Working => "working",
-        Status::NeedsYou => "asking",
-        Status::Review => "done",
-        Status::Failed => "failed",
-    };
+    let state = STATES
+        .iter()
+        .find(|(known, _)| *known == status)
+        .map_or("", |(_, name)| *name);
     note(
         out,
         Note::Status,

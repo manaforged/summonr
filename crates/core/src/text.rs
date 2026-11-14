@@ -270,13 +270,13 @@ fn block_scalar(
 }
 
 impl<'a> Frontmatter<'a> {
-    /// Reads the front matter of `text`; a text with none is all body.
+    /// Reads the front matter of `text` when its first line is `---`; any other text is all body.
     pub fn parse(text: &'a str) -> Self {
         let plain = Self {
             fields: Vec::new(),
             body: text,
         };
-        let Some(rest) = text.trim_start().strip_prefix(FENCE).and_then(|rest| {
+        let Some(rest) = text.strip_prefix(FENCE).and_then(|rest| {
             rest.strip_prefix('\n')
                 .or_else(|| rest.strip_prefix("\r\n"))
         }) else {

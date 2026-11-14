@@ -155,12 +155,18 @@ fn launch(entry: Entry, vars: &Vars<'_>) -> Option<Launch> {
         Some(Transport::Http | Transport::Sse | Transport::Ws | Transport::Sdk) | None => true,
     };
     if remote && let Some(url) = entry.url {
+        let sent = Vars {
+            remote: true,
+            ..*vars
+        };
+        let fill = |text: &str| expand(text, &sent);
         let mut headers: Vec<(String, String)> = entry
             .headers
             .iter()
             .map(|(key, value)| (key.clone(), fill(value)))
             .collect();
         if let Some(var) = entry.bearer_token_env_var
+            && !crate::secret::credential_env(&var)
             && let Ok(token) = std::env::var(var)
         {
             headers.push(("Authorization".to_string(), format!("Bearer {token}")));

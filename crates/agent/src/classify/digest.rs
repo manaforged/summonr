@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::display::ellipsize;
 use crate::limits::limits;
+use summonr_core::markdown::Fence;
 
 #[derive(Default)]
 struct Seen {
@@ -26,7 +27,7 @@ fn walk(transcript: &str) -> Seen {
     let mut seen = Seen::default();
     let mut section = String::new();
     let mut body = String::new();
-    let mut fenced = false;
+    let mut fence = Fence::default();
     for line in transcript.lines() {
         if let Some(header) = line.strip_prefix("# session ") {
             header_fields(header, &mut seen);
@@ -38,12 +39,11 @@ fn walk(transcript: &str) -> Seen {
             body.clear();
             continue;
         }
-        if line.starts_with("```") {
-            fenced = !fenced;
-            continue;
-        }
-        if fenced {
-            capture_output(line, &mut seen);
+        let inside = fence.open();
+        if fence.code(line) {
+            if inside && fence.open() {
+                capture_output(line, &mut seen);
+            }
             continue;
         }
         if let Some(call) = line.strip_prefix("- `") {

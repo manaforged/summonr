@@ -95,9 +95,7 @@ impl ToolRegistry {
     pub(super) fn available(&self, kind: Builtin) -> Result<()> {
         let name = kind.name();
         if !self.policy.scope().builtin(kind) {
-            return Err(Error::Denied(format!(
-                "tool `{name}` is not one of this agent's tools"
-            )));
+            return Err(Error::Denied(crate::policy::Scope::refusal(name)));
         }
         if self.enabled(kind) {
             Ok(())

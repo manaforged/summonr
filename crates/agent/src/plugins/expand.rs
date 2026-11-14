@@ -25,6 +25,7 @@ pub(crate) struct Vars<'a> {
     pub(crate) workspace: Option<&'a Path>,
     pub(crate) user_config: Option<&'a BTreeMap<String, String>>,
     pub(crate) env: Option<Unset>,
+    pub(crate) remote: bool,
 }
 
 /// `text` with each `open`...`}` span replaced by what `resolve` returns for its inside, or kept when it returns `None`.
@@ -83,6 +84,9 @@ pub(crate) fn expand(text: &str, vars: &Vars<'_>) -> String {
         let (name, fallback) = inner
             .split_once(":-")
             .map_or((inner, None), |(name, fallback)| (name, Some(fallback)));
+        if vars.remote && crate::secret::credential_env(name) {
+            return Some(String::new());
+        }
         std::env::var(name)
             .ok()
             .or_else(|| fallback.map(str::to_string))

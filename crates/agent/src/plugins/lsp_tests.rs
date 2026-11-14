@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn a_plugin_lsp_file_becomes_servers_with_its_root_env_and_languages() {
-    let dir = tempfile::tempdir().unwrap();
-    let workspace = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let workspace = tempfile::tempdir().expect("temp dir");
     std::fs::write(
         dir.path().join(LSP.file),
         serde_json::json!({"svelte": {
@@ -14,9 +14,11 @@ fn a_plugin_lsp_file_becomes_servers_with_its_root_env_and_languages() {
         }})
         .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     let plugin = Plugin::at("ui".to_string(), dir.path().to_owned());
-    let [server] = of(&plugin, workspace.path()).try_into().unwrap();
+    let [server] = of(&plugin, workspace.path())
+        .try_into()
+        .expect("value fits");
     let root = dir.path().display().to_string();
     assert_eq!(server.key, "ui:svelte");
     assert_eq!(
@@ -34,7 +36,7 @@ fn a_plugin_lsp_file_becomes_servers_with_its_root_env_and_languages() {
 
 #[test]
 fn an_lsp_entry_without_a_command_does_not_hide_the_others() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     std::fs::write(
         dir.path().join(LSP.file),
         serde_json::json!({
@@ -43,7 +45,7 @@ fn an_lsp_entry_without_a_command_does_not_hide_the_others() {
         })
         .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     let plugin = Plugin::at("py".to_string(), dir.path().to_owned());
     let keys: Vec<String> = of(&plugin, dir.path())
         .into_iter()
@@ -54,7 +56,7 @@ fn an_lsp_entry_without_a_command_does_not_hide_the_others() {
 
 #[test]
 fn an_lsp_entry_expands_environment_placeholders() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     std::fs::write(
         dir.path().join(LSP.file),
         serde_json::json!({"go": {
@@ -65,9 +67,9 @@ fn an_lsp_entry_expands_environment_placeholders() {
         }})
         .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     let plugin = Plugin::at("go".to_string(), dir.path().to_owned());
-    let [server] = of(&plugin, dir.path()).try_into().unwrap();
+    let [server] = of(&plugin, dir.path()).try_into().expect("value fits");
     assert_eq!(server.argv, ["gopls", "-logfile=/opt/gopls.log"]);
     assert_eq!(
         server.env.get("GOPATH").map(String::as_str),
@@ -77,9 +79,9 @@ fn an_lsp_entry_expands_environment_placeholders() {
 
 #[test]
 fn inline_lsp_servers_in_the_manifest_load_with_their_options_and_folder() {
-    let dir = tempfile::tempdir().unwrap();
-    let workspace = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".claude-plugin")).unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
+    let workspace = tempfile::tempdir().expect("temp dir");
+    std::fs::create_dir_all(dir.path().join(".claude-plugin")).expect("create fixture dir");
     std::fs::write(
         dir.path().join(super::super::MANIFEST),
         serde_json::json!({"name": "go-lsp", "lspServers": {"go": {
@@ -92,9 +94,11 @@ fn inline_lsp_servers_in_the_manifest_load_with_their_options_and_folder() {
         }}})
         .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     let plugin = Plugin::at("go-lsp".to_string(), dir.path().to_owned());
-    let [server] = of(&plugin, workspace.path()).try_into().unwrap();
+    let [server] = of(&plugin, workspace.path())
+        .try_into()
+        .expect("value fits");
     assert_eq!(server.key, "go-lsp:go");
     assert_eq!(server.argv, ["gopls", "serve"]);
     assert_eq!(server.options, serde_json::json!({"staticcheck": true}));
@@ -107,14 +111,14 @@ fn inline_lsp_servers_in_the_manifest_load_with_their_options_and_folder() {
 
 #[test]
 fn a_manifest_lsp_server_replaces_the_default_file_entry_of_the_same_name() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".claude-plugin")).unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::create_dir_all(dir.path().join(".claude-plugin")).expect("create fixture dir");
     std::fs::write(
         dir.path().join(LSP.file),
         serde_json::json!({"py": {"command": "old", "extensionToLanguage": {".py": "python"}}})
             .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     std::fs::write(
         dir.path().join(super::super::MANIFEST),
         serde_json::json!({"name": "py", "lspServers": [
@@ -123,13 +127,13 @@ fn a_manifest_lsp_server_replaces_the_default_file_entry_of_the_same_name() {
         ]})
         .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     std::fs::write(
         dir.path().join("extra.json"),
         serde_json::json!({"rb": {"command": "solargraph", "extensionToLanguage": {".rb": "ruby"}}})
             .to_string(),
     )
-    .unwrap();
+    .expect("write fixture");
     let plugin = Plugin::at("py".to_string(), dir.path().to_owned());
     let argv: Vec<String> = of(&plugin, dir.path())
         .into_iter()

@@ -13,11 +13,11 @@ mod delta;
 mod model;
 
 fn parent(replies: Vec<Reply>) -> (Loop<Scripted>, [tempfile::TempDir; 2]) {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     let driver =
         crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
-            .unwrap();
+            .expect("open_driver succeeds");
     let parent = Loop::open(
         Scripted::new(replies),
         "m",
@@ -25,7 +25,7 @@ fn parent(replies: Vec<Reply>) -> (Loop<Scripted>, [tempfile::TempDir; 2]) {
         "system",
         driver,
     )
-    .unwrap();
+    .expect("open");
     (parent, [workspace, home])
 }
 
@@ -39,7 +39,7 @@ fn browser_parent(replies: Vec<Reply>) -> (Loop<Scripted>, [tempfile::TempDir; 2
             &on,
             &Default::default(),
         ))
-        .unwrap();
+        .expect("set_modules succeeds");
     (parent, dirs)
 }
 
@@ -58,7 +58,7 @@ fn args(assignment: &str, access: &str, background: bool) -> super::Args {
         "access": access,
         "background": background,
     }))
-    .unwrap()
+    .expect("parse fixture")
 }
 
 fn named(assignment: &str, name: &str) -> super::Args {
@@ -68,7 +68,7 @@ fn named(assignment: &str, name: &str) -> super::Args {
         "background": true,
         "name": name,
     }))
-    .unwrap()
+    .expect("parse fixture")
 }
 
 fn implement() -> super::Args {
@@ -76,11 +76,16 @@ fn implement() -> super::Args {
 }
 
 fn spawn_background(parent: &mut Loop<Scripted>) -> String {
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     parent
         .task_spawn(args("find the config loader", "research", true), &budget)
-        .unwrap();
-    parent.spawned.keys().next().cloned().unwrap()
+        .expect("task_spawn succeeds");
+    parent
+        .spawned
+        .keys()
+        .next()
+        .cloned()
+        .expect("cloned returns a value")
 }
 
 fn abort(parent: &mut Loop<Scripted>, code: AbortCode, reason: &str) {
@@ -88,22 +93,24 @@ fn abort(parent: &mut Loop<Scripted>, code: AbortCode, reason: &str) {
         code,
         reason: reason.to_string(),
     };
-    parent.abort_with(&abort, |_| {}).unwrap();
+    parent
+        .abort_with(&abort, |_| {})
+        .expect("abort_with succeeds");
 }
 
 #[tokio::test]
 async fn a_child_gets_its_brief_and_its_own_tools() {
     let (mut parent, dirs) = browser_parent(vec![Reply::Text("hello"), Reply::Text("found it")]);
-    parent.turn("hi").await.unwrap();
+    parent.turn("hi").await.expect("turn succeeds");
     assert!(tool_names(&mut parent).contains(&"browser".to_string()));
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let mut run = parent
         .task_start_in(
             args("find the config loader", "research", false),
             &budget,
             None,
         )
-        .unwrap();
+        .expect("task_start_in succeeds");
     assert_eq!(run.child.system_prompt, parent.system_prompt);
     let child_tools = tool_names(&mut run.child);
     assert!(
@@ -120,7 +127,7 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
     assert!(
         run.assignment.contains(
             &dunce::canonicalize(dirs[0].path())
-                .unwrap()
+                .expect("canonical path")
                 .display()
                 .to_string()
         ),
@@ -129,13 +136,13 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
     );
     assert!(run.assignment.ends_with("find the config loader"));
     let assignment = run.assignment.clone();
-    run.child.turn(&assignment).await.unwrap();
+    run.child.turn(&assignment).await.expect("turn succeeds");
 }
 
 #[tokio::test]
 async fn a_child_runs_without_the_parent_output_style() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("hello")]);
-    parent.turn("hi").await.unwrap();
+    parent.turn("hi").await.expect("turn succeeds");
     let workspace = parent.workspace().to_path_buf();
     let plain = crate::prompt::styled(&workspace, None, crate::Sources::default(), None);
     let style = crate::style::Style {
@@ -147,14 +154,14 @@ async fn a_child_runs_without_the_parent_output_style() {
         origin: crate::plugins::agents::Origin::User,
     };
     parent.set_system_prompt(crate::prompt::restyle(&plain, Some(&style)));
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let run = parent
         .task_start_in(
             args("find the config loader", "research", false),
             &budget,
             None,
         )
-        .unwrap();
+        .expect("task_start_in succeeds");
     assert!(parent.system_prompt.contains("TERSE RULES"));
     assert_eq!(run.child.system_prompt, plain);
 }
@@ -162,15 +169,17 @@ async fn a_child_runs_without_the_parent_output_style() {
 #[tokio::test]
 async fn an_implement_child_keeps_the_browser() {
     let (mut parent, _dirs) = browser_parent(vec![Reply::Text("done")]);
-    let budget = parent.task_budget(1).unwrap();
-    let mut run = parent.task_start_in(implement(), &budget, None).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
+    let mut run = parent
+        .task_start_in(implement(), &budget, None)
+        .expect("task_start_in succeeds");
     assert!(tool_names(&mut run.child).contains(&"browser".to_string()));
 }
 
 #[tokio::test]
 async fn a_cancelled_turn_leaves_background_children_settleable_by_poll() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
-    parent.turn("hi").await.unwrap();
+    parent.turn("hi").await.expect("turn succeeds");
     let id = spawn_background(&mut parent);
     abort(&mut parent, AbortCode::Cancelled, "cancelled by user");
     assert!(parent.spawned.contains_key(&id));
@@ -187,21 +196,28 @@ async fn a_cancelled_turn_leaves_background_children_settleable_by_poll() {
             &mut crate::provider::Usage::default(),
         )
         .await
-        .unwrap();
-    let execution = parent.task_poll(&id, false, &mut |_| {}).await.unwrap();
+        .expect("await_children succeeds");
+    let execution = parent
+        .task_poll(&id, false, &mut |_| {})
+        .await
+        .expect("task_poll succeeds");
     assert!(execution.output.success);
 }
 
 #[tokio::test]
 async fn a_child_of_a_goal_session_works_in_plain_mode_and_finishes_its_turn() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("done")]);
-    parent.select_goal("ship it", &[]).unwrap();
+    parent
+        .select_goal("ship it", &[])
+        .expect("select_goal succeeds");
     parent.set_mode(crate::WorkKind::Goal);
-    let budget = parent.task_budget(1).unwrap();
-    let mut run = parent.task_start_in(implement(), &budget, None).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
+    let mut run = parent
+        .task_start_in(implement(), &budget, None)
+        .expect("task_start_in succeeds");
     assert_eq!(run.child.mode(), crate::WorkKind::Single);
     let assignment = run.assignment.clone();
-    run.child.turn(&assignment).await.unwrap();
+    run.child.turn(&assignment).await.expect("turn succeeds");
 }
 
 #[test]
@@ -220,7 +236,7 @@ fn an_assignment_names_the_childs_checkout_not_the_parent() {
 #[tokio::test]
 async fn a_failed_turn_keeps_its_background_children() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
-    parent.turn("hi").await.unwrap();
+    parent.turn("hi").await.expect("turn succeeds");
     let id = spawn_background(&mut parent);
     abort(&mut parent, AbortCode::Error, "provider failed");
     assert!(parent.spawned.contains_key(&id));
@@ -263,7 +279,7 @@ async fn task_calls_beside_a_todo_update_start_together() {
         Reply::Text("the store"),
         Reply::Text("both found"),
     ]);
-    let turn = parent.turn("look around").await.unwrap();
+    let turn = parent.turn("look around").await.expect("turn succeeds");
     let spawned: Vec<bool> = turn
         .events
         .iter()
@@ -280,7 +296,7 @@ async fn task_calls_beside_a_todo_update_start_together() {
 #[tokio::test]
 async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_the_job() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("ok"), Reply::Text("child done")]);
-    parent.turn("hi").await.unwrap();
+    parent.turn("hi").await.expect("turn succeeds");
     let id = spawn_background(&mut parent);
     let started = std::time::Instant::now();
     while !parent.spawned[&id].handle.is_finished() {
@@ -295,12 +311,12 @@ async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_th
             &serde_json::json!({"command": "sleep 30", "background": true}),
         ))
         .await
-        .unwrap()
+        .expect("execute_outcome succeeds")
         .text;
     let job = job
         .lines()
         .find_map(|line| line.strip_prefix("started job "))
-        .unwrap()
+        .expect("find_map returns a value")
         .to_string();
     let mut events = Vec::new();
     let waited = std::time::Instant::now();
@@ -311,9 +327,9 @@ async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_th
             &mut |_| {},
         )
         .await
-        .unwrap();
+        .expect("run_or_wake succeeds");
     drop(parent.tools.stop_jobs());
-    let text = output.unwrap().text;
+    let text = output.expect("command runs").text;
     assert!(!text.starts_with("returned early"), "{text}");
     assert!(text.contains("state: running"), "{text}");
     assert!(waited.elapsed() >= std::time::Duration::from_millis(900));
@@ -323,10 +339,10 @@ async fn a_job_wait_settles_a_child_that_finished_before_it_and_then_waits_on_th
 #[tokio::test]
 async fn a_research_child_can_run_a_foreground_command() {
     let (mut parent, dirs) = parent(vec![Reply::Text("done")]);
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let run = parent
         .task_start_in(args("hold", "research", false), &budget, None)
-        .unwrap();
+        .expect("task_start_in succeeds");
     let output = run
         .child
         .execute_for_test(&ToolCall {
@@ -340,7 +356,7 @@ async fn a_research_child_can_run_a_foreground_command() {
             continuation: None,
         })
         .await
-        .unwrap();
+        .expect("execute_for_test succeeds");
     assert!(output.success, "{}", output.text);
     assert!(output.text.contains("ok"), "{}", output.text);
     drop(dirs);
@@ -360,14 +376,21 @@ async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() 
         continuation: None,
     };
     let (mut parent, _dirs) = parent(vec![Reply::Text("first")]);
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let name = format!("steered-{}", parent.session_id());
     let mut run = parent
         .task_start_in(named("wait", &name), &budget, None)
-        .unwrap();
-    parent.tools.execute_outcome(&start).await.unwrap();
+        .expect("task_start_in succeeds");
+    parent
+        .tools
+        .execute_outcome(&start)
+        .await
+        .expect("execute_outcome succeeds");
     assert_eq!(parent.steered("lead"), "lead");
-    assert_eq!(parent.tools.stop_jobs().unwrap().len(), 1);
+    assert_eq!(
+        parent.tools.stop_jobs().expect("stop_jobs succeeds").len(),
+        1
+    );
     assert!(run.child.input_interrupts());
     let steering = std::sync::Arc::new(crate::runtime::Steering::default());
     run.child.steer_with(std::sync::Arc::clone(&steering));
@@ -405,7 +428,7 @@ async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() 
         }
         steering
             .lock()
-            .unwrap()
+            .expect("lock")
             .push_back(crate::provider::UserInput::from("stop now"));
         steering.notify();
     };
@@ -416,8 +439,8 @@ async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() 
         tokio::join!(waited, sender)
     })
     .await
-    .unwrap();
-    let (output, _) = outcome.unwrap();
+    .expect("timeout succeeds");
+    let (output, _) = outcome.expect("outcome returns a value");
     let Err(error) = output else {
         panic!("the command must be interrupted");
     };
@@ -439,23 +462,29 @@ async fn incoming_input_interrupts_a_child_and_leaves_main_session_jobs_alone() 
 #[tokio::test]
 async fn two_messages_to_the_same_name_stay_on_one_session() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("first"), Reply::Text("second")]);
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let name = format!("climb-{}", parent.session_id());
     let mut run = parent
         .task_start_in(named("look at the loader", &name), &budget, None)
-        .unwrap();
+        .expect("task_start_in succeeds");
     let id = run.child.session_id();
     assert_eq!(run.child.name().as_deref(), Some(name.as_str()));
     assert!(
         run.child.mailbox.is_some(),
         "the child is not on the roster"
     );
-    let agents = crate::mail::live(&crate::mail::dir().unwrap());
+    let agents = crate::mail::live(&crate::mail::dir().expect("dir returns a value"));
     let resolved = agents.iter().find(|agent| agent.answers_to(&name));
     assert_eq!(resolved.map(|agent| agent.id.as_str()), Some(id.as_str()));
-    crate::mail::Mailbox::wake(&id, "port the win").unwrap();
-    crate::mail::Mailbox::wake(&id, "port the next win").unwrap();
-    let notes = run.child.mailbox.as_mut().unwrap().poll().unwrap();
+    crate::mail::Mailbox::wake(&id, "port the win").expect("wake succeeds");
+    crate::mail::Mailbox::wake(&id, "port the next win").expect("wake succeeds");
+    let notes = run
+        .child
+        .mailbox
+        .as_mut()
+        .expect("as_mut returns a value")
+        .poll()
+        .expect("poll succeeds");
     let text = notes
         .iter()
         .map(|note| note.text.as_str())
@@ -475,10 +504,10 @@ async fn shared_lanes_publish_writes_without_finishing_or_reconciling() {
             .args(["init", "-q"])
             .current_dir(&parent.workspace)
             .status()
-            .unwrap()
+            .expect("command runs")
             .success()
     );
-    let budget = parent.task_budget(5).unwrap();
+    let budget = parent.task_budget(5).expect("task_budget succeeds");
     let mut lanes = Vec::new();
     for index in 0..5 {
         let args = serde_json::from_value(serde_json::json!({
@@ -487,8 +516,12 @@ async fn shared_lanes_publish_writes_without_finishing_or_reconciling() {
             "workspace": "shared",
             "background": true,
         }))
-        .unwrap();
-        lanes.push(parent.task_start_in(args, &budget, None).unwrap());
+        .expect("parse fixture");
+        lanes.push(
+            parent
+                .task_start_in(args, &budget, None)
+                .expect("task_start_in succeeds"),
+        );
     }
     for (index, lane) in lanes.iter().enumerate() {
         let path = format!("lane-{index}.txt");
@@ -500,15 +533,19 @@ async fn shared_lanes_publish_writes_without_finishing_or_reconciling() {
                 "content": "verified win",
             }),
         );
-        lane.child.tools.execute_for_test(&call).await.unwrap();
+        lane.child
+            .tools
+            .execute_for_test(&call)
+            .await
+            .expect("execute_for_test succeeds");
         assert_eq!(
-            std::fs::read_to_string(parent.workspace.join(path)).unwrap(),
+            std::fs::read_to_string(parent.workspace.join(path)).expect("read file"),
             "verified win"
         );
     }
     drop(lanes);
     assert_eq!(
-        std::fs::read_to_string(parent.workspace.join("lane-0.txt")).unwrap(),
+        std::fs::read_to_string(parent.workspace.join("lane-0.txt")).expect("read file"),
         "verified win"
     );
 }
@@ -520,11 +557,16 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
         Reply::Text("unnamed done"),
         Reply::Text("ported"),
     ]);
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     parent
         .task_spawn(named("find the loader", "climb-b"), &budget)
-        .unwrap();
-    let id = parent.spawned.keys().next().cloned().unwrap();
+        .expect("task_spawn succeeds");
+    let id = parent
+        .spawned
+        .keys()
+        .next()
+        .cloned()
+        .expect("cloned returns a value");
     let started = std::time::Instant::now();
     while !parent.spawned[&id].state.borrow().terminal() {
         parent.drain(&mut |_| {});
@@ -542,13 +584,13 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
     );
     parent
         .task_spawn(args("finish", "research", true), &budget)
-        .unwrap();
+        .expect("task_spawn succeeds");
     let unnamed = parent
         .spawned
         .keys()
         .find(|key| key.as_str() != id)
         .cloned()
-        .unwrap();
+        .expect("cloned returns a value");
     while !parent.spawned[&unnamed].handle.is_finished() {
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -560,15 +602,15 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
             &mut crate::provider::Usage::default(),
         )
         .await
-        .unwrap();
+        .expect("await_children succeeds");
     assert!(
         !running.iter().any(|line| line.contains(&id)),
         "judge_work would skip: {running:?}"
     );
     assert!(!parent.spawned.contains_key(&unnamed));
-    crate::mail::Mailbox::wake(&id, "port the win").unwrap();
+    crate::mail::Mailbox::wake(&id, "port the win").expect("wake succeeds");
     let sent = parent.provider.sent();
-    while !sent.lock().unwrap().iter().any(|messages| {
+    while !sent.lock().expect("lock").iter().any(|messages| {
         messages
             .iter()
             .any(|message| message.content.contains("port the win"))
@@ -588,7 +630,7 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
             &mut crate::provider::Usage::default(),
         )
         .await
-        .unwrap();
+        .expect("kill_spawned succeeds");
     assert_eq!(parent.spawned[&id].record.id.to_string(), id);
 }
 
@@ -596,34 +638,35 @@ async fn a_named_child_keeps_its_first_text_and_does_not_block_the_parent() {
 async fn a_child_runs_with_the_skill_set_of_its_lead() {
     let (mut parent, dirs) = parent(vec![Reply::Text("done")]);
     let skill = dirs[0].path().join(".summonr").join("skills").join("demo");
-    std::fs::create_dir_all(&skill).unwrap();
-    std::fs::write(skill.join("SKILL.md"), "# Demo\n").unwrap();
-    let budget = parent.task_budget(1).unwrap();
+    std::fs::create_dir_all(&skill).expect("create fixture dir");
+    std::fs::write(skill.join("SKILL.md"), "# Demo\n").expect("write fixture");
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let mut open = parent
         .task_start_in(args("look around", "research", false), &budget, None)
-        .unwrap();
+        .expect("task_start_in succeeds");
     assert!(tool_names(&mut open.child).contains(&"skill".to_string()));
     parent
         .choose_skills(
-            crate::skills::Set::from_sets(&std::collections::BTreeMap::new(), "none").unwrap(),
+            crate::skills::Set::from_sets(&std::collections::BTreeMap::new(), "none")
+                .expect("from_sets succeeds"),
         )
-        .unwrap();
-    let budget = parent.task_budget(1).unwrap();
+        .expect("choose_skills succeeds");
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let mut run = parent
         .task_start_in(args("look around", "research", false), &budget, None)
-        .unwrap();
+        .expect("task_start_in succeeds");
     assert!(!tool_names(&mut run.child).contains(&"skill".to_string()));
     assert_eq!(run.child.skills().as_deref(), Some("none"));
 }
 
 fn agent_file(workspace: &std::path::Path, name: &str, fields: &str) {
     let dir = workspace.join(".claude").join("agents");
-    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(&dir).expect("create fixture dir");
     std::fs::write(
         dir.join(format!("{name}.md")),
         format!("---\nname: {name}\ndescription: {name} agent\n{fields}---\nWork as {name}.\n"),
     )
-    .unwrap();
+    .expect("write fixture");
 }
 
 fn agent_args(agent: &str) -> super::Args {
@@ -632,14 +675,14 @@ fn agent_args(agent: &str) -> super::Args {
         "access": "research",
         "agent": agent,
     }))
-    .unwrap()
+    .expect("parse fixture")
 }
 
 fn start_agent(parent: &mut Loop<Scripted>, agent: &str) -> super::Run<Scripted> {
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     parent
         .task_start_in(agent_args(agent), &budget, None)
-        .unwrap()
+        .expect("task_start_in succeeds")
 }
 
 #[tokio::test]
@@ -689,7 +732,7 @@ async fn an_agent_child_gets_only_the_tools_its_lists_leave() {
         names.contains(&Builtin::Read.name().to_string()),
         "{names:?}"
     );
-    let budget = parent.task_budget(1).unwrap();
+    let budget = parent.task_budget(1).expect("task_budget succeeds");
     let empty = parent.task_start_in(agent_args("nothing"), &budget, None);
     assert!(empty.is_err());
 }
@@ -769,8 +812,9 @@ async fn a_named_agent_child_sees_and_runs_only_the_mail_tools_it_lists() {
 async fn an_agent_preloads_its_skills_and_notes_the_missing_ones() {
     let (mut parent, dirs) = parent(vec![]);
     let skill = dirs[0].path().join(".summonr").join("skills").join("demo");
-    std::fs::create_dir_all(&skill).unwrap();
-    std::fs::write(skill.join("SKILL.md"), "# Demo\nUse the demo convention.\n").unwrap();
+    std::fs::create_dir_all(&skill).expect("create fixture dir");
+    std::fs::write(skill.join("SKILL.md"), "# Demo\nUse the demo convention.\n")
+        .expect("write fixture");
     agent_file(dirs[0].path(), "styled", "skills:\n  - demo\n  - absent\n");
     let mut run = start_agent(&mut parent, "styled");
     run.preload().await;

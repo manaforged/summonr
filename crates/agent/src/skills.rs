@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use summonr_core::error::{Error, Result};
 use summonr_core::text::Frontmatter;
@@ -9,11 +8,13 @@ mod fill;
 mod found;
 mod inject;
 mod meta;
+mod names;
 
 pub(crate) use found::plugin_files;
 use found::{Found, found};
 pub(crate) use inject::{Body, Piece, Scope};
 pub(crate) use meta::{Meta, flag, unapplied};
+pub(crate) use names::Names;
 
 const SKILL: &str = "SKILL.md";
 /// The mark between a namespace and a name, as in `plugin:skill` or `frontend:component`.
@@ -26,8 +27,6 @@ const FLAT: usize = 1;
 
 /// Sets every config has, each with no skills: `none` turns skills off for a session.
 const BUILT_IN: [&str; 1] = ["none"];
-
-static NOTED: AtomicBool = AtomicBool::new(false);
 
 /// A named choice of skills: folder paths to include, then paths to leave out.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
@@ -261,15 +260,12 @@ pub(crate) fn load(
 
 /// Prints once per process each frontmatter key that the user's and the workspace's own skills and commands set and summonr does not apply.
 pub(crate) fn report(workspace: &Path) {
-    if NOTED.swap(true, Ordering::Relaxed) {
-        return;
-    }
     let skills = found(workspace)
         .into_iter()
         .filter(|skill| skill.plugin.is_none())
         .flat_map(|skill| skill.meta.notes("skill", &skill.name));
     for note in skills.chain(crate::plugins::commands::notes(workspace)) {
-        eprintln!("summonr: {note}");
+        crate::display::note(&note);
     }
 }
 

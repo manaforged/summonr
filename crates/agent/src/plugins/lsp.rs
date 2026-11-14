@@ -122,7 +122,10 @@ pub(super) fn unused(plugin: &Plugin) -> Vec<String> {
                 .flatten()
                 .filter(|(field, _)| !USED.contains(&field.as_str()))
                 .map(move |(field, _)| {
-                    format!("skipped\tlsp {server} {field} (summonr does not apply it)")
+                    format!(
+                        "skipped\t{}",
+                        crate::skills::unapplied("lsp", server, field)
+                    )
                 })
         })
         .collect()

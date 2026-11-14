@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
 
@@ -15,8 +14,6 @@ const BASH: &str = "Bash";
 const DEFAULT_MODES: [&str; 2] = ["default", "manual"];
 const OWN_PREFIXES: [&str; 2] = ["SUMMONR_", "XDG_"];
 const CLAUDE_DIRS: [&str; 2] = ["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_TMPDIR"];
-
-static NOTED: AtomicBool = AtomicBool::new(false);
 
 /// What the Claude Code settings files give a session, mapped onto summonr's hooks, policy, environment, and style.
 #[derive(Clone, Debug, Default)]
@@ -118,10 +115,8 @@ pub fn files(workspace: &Path, trust: bool) -> Vec<PathBuf> {
 impl Settings {
     /// Prints each note once per process.
     pub(crate) fn report(&self) {
-        if !self.notes.is_empty() && !NOTED.swap(true, Ordering::Relaxed) {
-            for note in &self.notes {
-                eprintln!("summonr: {note}");
-            }
+        for note in &self.notes {
+            crate::display::note(note);
         }
     }
 

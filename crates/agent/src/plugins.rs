@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::hooks::{Hook, HookEvent, Hooks};
 use crate::skills;
 use summonr_core::dirs::summonr_home;
-use summonr_core::error::{Error, Result};
+use summonr_core::error::Result;
+use summonr_types::mcp::Entry;
 
 pub(crate) mod agents;
 pub(crate) mod commands;
@@ -16,13 +16,19 @@ mod hooks;
 pub(crate) mod lsp;
 pub mod manage;
 pub mod market;
+mod read;
 
 pub(crate) use expand::{HOOK_VARS, USER_CONFIG, Unset, Vars, expand, hook_env, scan};
 pub(crate) use hooks::{claude as claude_hooks, unsupported as unsupported_hooks};
 pub(crate) use manage::off::{unknown_off, warn_unknown_off};
+pub(super) use read::{is_json, json_file, read_json, read_noted, skip};
+pub(crate) use read::{located, read_parsed, server_entry};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
 pub(super) const HOOKS: &str = "hooks";
+pub(super) const HOOK_FILE: &str = "hooks/hooks.json";
+pub(super) const NATIVE_HOOKS: &str = "hooks.toml";
+pub(super) const NATIVE_MCP: &str = "mcp.toml";
 pub(super) const UNSUPPORTED: [(&str, &str); 3] = [
     ("monitors", "monitors"),
     ("workflows", "workflows"),
@@ -137,19 +143,30 @@ impl Plugin {
     }
 
     fn hook_docs(&self) -> Vec<Value> {
-        let mut files = vec![self.dir.join("hooks/hooks.json")];
+        let default = self.dir.join(HOOK_FILE);
+        let mut seen = BTreeSet::from([default.clone()]);
+        let mut docs = vec![(read_json(&default), default)];
         let mut inline = Vec::new();
         for source in self.declared(HOOKS).into_iter().flatten() {
             match source {
-                Source::File(file) if !files.contains(&file) => files.push(file),
-                Source::Inline(map) => inline.push(serde_json::json!({ HOOKS: map })),
+                Source::File(file) if seen.insert(file.clone()) => {
+                    docs.push((read_json(&file), file));
+                }
+                Source::Inline(map) => {
+                    inline.push((serde_json::json!({ HOOKS: map }), self.dir.join(MANIFEST)));
+                }
                 Source::File(_) | Source::Outside(_) => {}
             }
         }
-        files
-            .iter()
-            .map(|file| read_json(file))
+        docs.into_iter()
             .chain(inline)
+            .filter_map(|(doc, file)| match hooks::shape(&doc) {
+                Some(problem) => {
+                    skip(&located(&file, problem));
+                    None
+                }
+                None => Some(doc),
+            })
             .collect()
     }
 
@@ -201,6 +218,14 @@ impl Plugin {
         format!("{}-{server}", self.name)
     }
 
+    /// Each of `servers` by its legacy name, mapped to the name summonr gives it now.
+    pub(crate) fn legacy_names(&self, servers: &[McpServer]) -> BTreeMap<String, String> {
+        servers
+            .iter()
+            .map(|server| (self.legacy_mcp_name(&server.key), server.name.clone()))
+            .collect()
+    }
+
     fn maps(&self, merge: Merge) -> Vec<(PathBuf, Value)> {
         let path = self.dir.join(merge.file);
         let default = read_json(&path);
@@ -231,10 +256,8 @@ impl Plugin {
     /// Every MCP server this plugin declares, in key order, `mcp.toml` last, with the name summonr gives it.
     pub(crate) fn mcp_servers(&self) -> Vec<McpServer> {
         let mut maps = self.maps(MCP);
-        let path = self.dir.join("mcp.toml");
-        let native = std::fs::read_to_string(&path).ok();
-        let native = native
-            .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+        let path = self.dir.join(NATIVE_MCP);
+        let native = read_noted(&path, toml::from_str::<toml::Value>)
             .and_then(|file| serde_json::to_value(file.get("mcp")?).ok());
         maps.extend(native.map(|table| (path, table)));
         keyed(maps)
@@ -249,8 +272,7 @@ impl Plugin {
     }
 
     pub(crate) fn hooks(&self) -> Hooks {
-        let native = std::fs::read_to_string(self.dir.join("hooks.toml")).ok();
-        let native = native.and_then(|text| toml::from_str::<Hooks>(&text).ok());
+        let native = read_noted(&self.dir.join(NATIVE_HOOKS), toml::from_str::<Hooks>);
         let mut hooks = Hooks::default();
         for source in self.hook_docs().iter().map(hooks::claude).chain(native) {
             for event in HookEvent::ALL {
@@ -269,6 +291,24 @@ impl Plugin {
     }
 }
 
+/// The `[mcp.NAME]` tables of `layer` under the names `legacy` maps them to, each later table laid over an earlier one of the same name.
+pub(crate) fn renamed(
+    layer: BTreeMap<String, Entry>,
+    legacy: &BTreeMap<String, String>,
+) -> BTreeMap<String, Entry> {
+    let mut out: BTreeMap<String, Entry> = BTreeMap::new();
+    for (name, entry) in layer {
+        let name = legacy.get(&name).cloned().unwrap_or(name);
+        match out.get_mut(&name) {
+            Some(base) => base.overlay(entry),
+            None => {
+                out.insert(name, entry);
+            }
+        }
+    }
+    out
+}
+
 fn keyed(maps: Vec<(PathBuf, Value)>) -> BTreeMap<String, (PathBuf, Value)> {
     let mut servers = BTreeMap::new();
     for (path, map) in maps {
@@ -280,45 +320,6 @@ fn keyed(maps: Vec<(PathBuf, Value)>) -> BTreeMap<String, (PathBuf, Value)> {
         }
     }
     servers
-}
-
-pub(super) fn is_json(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|extension| extension == "json")
-}
-
-/// Server entry `key` from `file` read as `T`, or a message naming the file and the key.
-pub(crate) fn server_entry<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
-    file: &Path,
-    key: &str,
-    entry: D,
-) -> std::result::Result<T, String> {
-    T::deserialize(entry).map_err(|error| format!("{}: {key}: {error}", file.display()))
-}
-
-pub(super) fn read_json(path: &Path) -> Value {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or(Value::Null)
-}
-
-/// Parses `path` when it holds text; a missing or blank file is `None`.
-pub(crate) fn read_parsed<T, E: std::fmt::Display>(
-    path: &Path,
-    parse: impl FnOnce(&str) -> std::result::Result<T, E>,
-) -> Result<Option<T>> {
-    let failed =
-        |error: &dyn std::fmt::Display| Error::Config(format!("{}: {error}", path.display()));
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(failed(&error)),
-    };
-    if text.trim().is_empty() {
-        return Ok(None);
-    }
-    parse(&text).map(Some).map_err(|error| failed(&error))
 }
 
 /// `relative` under `dir`, with `./` and `.` allowed, or `None` when it is absolute or has `..`.
@@ -334,10 +335,6 @@ pub(super) fn inside(dir: &Path, relative: &str) -> Option<PathBuf> {
             dir.join(relative)
         }
     })
-}
-
-pub(super) fn json_file(path: &Path) -> Result<Value> {
-    Ok(read_parsed(path, |text: &str| serde_json::from_str::<Value>(text))?.unwrap_or(Value::Null))
 }
 
 pub(super) fn root() -> Result<PathBuf> {

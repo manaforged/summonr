@@ -2,11 +2,12 @@ use super::*;
 
 fn command(dir: &Path, template: &str) -> Command {
     let plugin = Plugin::at("demo".to_string(), dir.to_owned());
-    Command::new(&plugin, "echo".to_string(), &Frontmatter::parse(template)).unwrap()
+    Command::new(&plugin, "echo".to_string(), &Frontmatter::parse(template)).expect("build fixture")
 }
 
 fn written(body: Result<Option<Body>>) -> Option<String> {
-    body.unwrap().map(|body| body.written())
+    body.expect("body returns a value")
+        .map(|body| body.written())
 }
 
 fn fill(template: &str, arguments: &str, names: &[String]) -> String {
@@ -21,7 +22,7 @@ fn fill(template: &str, arguments: &str, names: &[String]) -> String {
 
 #[test]
 fn argument_text_is_never_rescanned_but_path_variables_still_fill() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     let rendered = command(dir.path(), "All: $ARGUMENTS. First: $0. Third: $2.").render(
         "price $1 ${CLAUDE_PLUGIN_ROOT}",
         dir.path(),
@@ -37,7 +38,7 @@ fn argument_text_is_never_rescanned_but_path_variables_still_fill() {
 
 #[test]
 fn the_plugin_root_expands_in_the_template_only() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     let rendered =
         command(dir.path(), "Run ${CLAUDE_PLUGIN_ROOT}/bin/lint $0").render("x", dir.path(), None);
     assert_eq!(
@@ -48,7 +49,7 @@ fn the_plugin_root_expands_in_the_template_only() {
 
 #[test]
 fn the_session_id_fills_a_command() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     let rendered =
         command(dir.path(), "Log to ${CLAUDE_SESSION_ID}.log").render("", dir.path(), Some("s-9"));
     assert_eq!(rendered.written(), "Log to s-9.log");
@@ -56,7 +57,7 @@ fn the_session_id_fills_a_command() {
 
 #[test]
 fn a_quoted_argument_binds_as_one_word() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     let rendered =
         command(dir.path(), "say $0 then $1").render("\"hello world\" next", dir.path(), None);
     assert_eq!(rendered.written(), "say hello world then next");
@@ -64,14 +65,14 @@ fn a_quoted_argument_binds_as_one_word() {
 
 #[test]
 fn a_project_command_file_expands_with_its_arguments() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let folder = workspace.path().join(".summonr/commands");
-    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&folder).expect("create fixture dir");
     std::fs::write(
         folder.join("ship-check.md"),
         "---\ndescription: check a crate\n---\nRun the tests for $0, then report: $ARGUMENTS",
     )
-    .unwrap();
+    .expect("write fixture");
     let expanded = written(expand(
         "/ship-check summonr fast",
         workspace.path(),
@@ -86,21 +87,21 @@ fn a_project_command_file_expands_with_its_arguments() {
 
 #[test]
 fn a_workspace_secret_never_reaches_the_prompt_through_a_command_or_a_skill() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let root = workspace.path();
-    std::fs::write(root.join(".env"), "API_KEY=deploy-key-value-42\n").unwrap();
-    std::fs::create_dir_all(root.join(".summonr/commands")).unwrap();
-    std::fs::create_dir_all(root.join(".summonr/skills")).unwrap();
+    std::fs::write(root.join(".env"), "API_KEY=deploy-key-value-42\n").expect("write fixture");
+    std::fs::create_dir_all(root.join(".summonr/commands")).expect("create fixture dir");
+    std::fs::create_dir_all(root.join(".summonr/skills")).expect("create fixture dir");
     std::fs::write(
         root.join(".summonr/commands/deploy.md"),
         "Deploy with deploy-key-value-42 to $0",
     )
-    .unwrap();
+    .expect("write fixture");
     std::fs::write(
         root.join(".summonr/skills/release.md"),
         "Sign with deploy-key-value-42",
     )
-    .unwrap();
+    .expect("write fixture");
     assert_eq!(
         written(expand("/deploy staging", root, None, None)).as_deref(),
         Some("Deploy with [secret] to staging")
@@ -139,16 +140,16 @@ fn arguments_no_placeholder_takes_are_appended() {
 
 #[test]
 fn a_command_in_a_subfolder_is_named_by_its_folder_path() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let folder = workspace
         .path()
         .join(".claude/commands/probe-front/probe-deep");
-    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&folder).expect("create fixture dir");
     std::fs::write(
         folder.join("probe-widget.md"),
         "---\nargument-hint: [name]\n---\nBuild $0",
     )
-    .unwrap();
+    .expect("write fixture");
     let expanded = written(expand(
         "/probe-front:probe-deep:probe-widget Card",
         workspace.path(),
@@ -166,18 +167,18 @@ fn a_command_in_a_subfolder_is_named_by_its_folder_path() {
 
 #[test]
 fn the_manifest_commands_key_replaces_the_default_folder() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     let root = dir.path();
-    std::fs::create_dir_all(root.join(".claude-plugin")).unwrap();
-    std::fs::create_dir_all(root.join("commands")).unwrap();
-    std::fs::create_dir_all(root.join("extra/nested")).unwrap();
-    std::fs::write(root.join("commands/skipped.md"), "not loaded").unwrap();
-    std::fs::write(root.join("extra/nested/deep.md"), "deep body").unwrap();
+    std::fs::create_dir_all(root.join(".claude-plugin")).expect("create fixture dir");
+    std::fs::create_dir_all(root.join("commands")).expect("create fixture dir");
+    std::fs::create_dir_all(root.join("extra/nested")).expect("create fixture dir");
+    std::fs::write(root.join("commands/skipped.md"), "not loaded").expect("write fixture");
+    std::fs::write(root.join("extra/nested/deep.md"), "deep body").expect("write fixture");
     std::fs::write(
         root.join("status.md"),
         "---\ndescription: from file\n---\nStatus of $0",
     )
-    .unwrap();
+    .expect("write fixture");
     let manifests = [
         (r#"{"commands": "./extra"}"#, vec!["nested:deep"]),
         (
@@ -190,7 +191,7 @@ fn the_manifest_commands_key_replaces_the_default_folder() {
         ),
     ];
     for (manifest, names) in manifests {
-        std::fs::write(root.join(".claude-plugin/plugin.json"), manifest).unwrap();
+        std::fs::write(root.join(".claude-plugin/plugin.json"), manifest).expect("write fixture");
         let loaded = load(&Plugin::at("probe-kit".to_string(), root.to_owned()));
         let found: Vec<&str> = loaded.iter().map(|command| command.name.as_str()).collect();
         assert_eq!(found, names, "{manifest}");
@@ -199,7 +200,7 @@ fn the_manifest_commands_key_replaces_the_default_folder() {
     let status = loaded
         .iter()
         .find(|command| command.name == "status")
-        .unwrap();
+        .expect("find returns a value");
     assert_eq!(status.meta.offer(), "from file [env]");
     assert_eq!(status.meta.unapplied, ["model", "allowedTools"]);
     assert_eq!(status.qualified(), "/probe-kit:status");
@@ -211,14 +212,14 @@ fn the_manifest_commands_key_replaces_the_default_folder() {
 
 #[test]
 fn a_command_that_is_not_user_invocable_does_not_run() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let folder = workspace.path().join(".claude/commands");
-    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&folder).expect("create fixture dir");
     std::fs::write(
         folder.join("probe-hidden.md"),
         "---\nuser-invocable: No\n---\nhidden",
     )
-    .unwrap();
+    .expect("write fixture");
     assert_eq!(
         written(expand("/probe-hidden", workspace.path(), None, None)),
         None
@@ -227,25 +228,26 @@ fn a_command_that_is_not_user_invocable_does_not_run() {
 
 #[test]
 fn a_typed_command_gets_its_block_output_and_keeps_arguments_out_of_the_shell() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let folder = workspace.path().join(".summonr/commands");
-    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::create_dir_all(&folder).expect("create fixture dir");
     let template = "Status: !`echo typed-out $ARGUMENTS` for $0";
-    std::fs::write(folder.join("probe-shell.md"), template).unwrap();
+    std::fs::write(folder.join("probe-shell.md"), template).expect("write fixture");
     let body = expand("/probe-shell main", workspace.path(), None, None)
-        .unwrap()
-        .unwrap();
+        .expect("expand succeeds")
+        .expect("the command is found");
     let policy = crate::policy::Policy::builtin();
     let mut tools =
-        crate::tools::ToolRegistry::with_policy_and_search(workspace.path(), policy, None).unwrap();
+        crate::tools::ToolRegistry::with_policy_and_search(workspace.path(), policy, None)
+            .expect("with_policy_and_search succeeds");
     tools.set_trust(true);
     let input = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()
-        .unwrap()
+        .expect("build succeeds")
         .block_on(tools.inject(&body))
-        .unwrap();
+        .expect("block_on succeeds");
     assert_eq!(input.text, "Status: typed-out for main");
 }
 

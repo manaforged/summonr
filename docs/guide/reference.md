@@ -179,7 +179,7 @@ git diff | summonr kimi -p
 | `plugin marketplace remove NAME` | Remove a marketplace and uninstall the plugins installed from it. `rm` also works. |
 | `update` | Replace this binary with the latest release: download the archive for this platform, check its SHA-256 against the release's `.sha256` file, run the new binary once, then swap it in. A build from source prints the `cargo install` command instead. |
 | `doctor [--logs\|--report]` | Report crashed runs; `--logs` lists the run logs; `--report` prints the last crashed or failed run, with the home folder shown as `~`, to paste into an issue. |
-| `acp` | Serve the Agent Client Protocol on stdio. |
+| `acp` | Serve the Agent Client Protocol on stdio. Each session offers an `effort` config option; prompts report `usage_update`; a token budget stops with `max_tokens`. `session/load`, `session/resume`, and client `mcpServers` are not supported yet. |
 | `mail` | Peer mail between sessions: `agents`, `send`, `inbox`, `board`. See Mail. |
 | `tool run NAME [JSON]` | Run one tool with JSON arguments (default `{}`) in this directory and print the result. Exits 1 when the tool fails. |
 | `classify --set NAME [STATE]` | Answer a named question set about STATE, read from arguments or stdin. |
@@ -985,7 +985,7 @@ When the workspace is trusted, summonr injects these files in this order. User c
 
 ### Hooks
 
-Each event key under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `timeout`, in seconds; without it a hook gets `job_wait_secs`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: names separated by `|`, or a regex. On tool events the hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`). In `claude`, `search` is `Grep`, or `Glob` for a name search with no `pattern`, and either matcher matches every search. A hook on `search` does not see `grep` or `rg` run through `run_command`; to block both, also match `run_command` or add the commands to `[policy] deny`. On other events the matcher is checked against the value in the Matcher column below.
+Each event key under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `timeout`, in seconds; without it a hook gets `job_wait_secs`. A table can add `async = true` to run the hook in the background (see below). A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: names separated by `|`, or a regex. On tool events the hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`). In `claude`, `search` is `Grep`, or `Glob` for a name search with no `pattern`, and either matcher matches every search. A hook on `search` does not see `grep` or `rg` run through `run_command`; to block both, also match `run_command` or add the commands to `[policy] deny`. On other events the matcher is checked against the value in the Matcher column below.
 
 ```toml
 [hooks]
@@ -996,8 +996,8 @@ stop = [{ command = "./scripts/notify.sh" }, { command = "claude-hook.sh", diale
 
 | Key | Claude Code event | Runs | Matcher | Can block |
 | --- | --- | --- | --- | --- |
-| `session_start` | `SessionStart` | Before the first turn of a session, and after a compaction | `startup`, `resume`, `fork`, `compact` | No |
-| `user_prompt` | `UserPromptSubmit` | Before a typed prompt reaches the model | none | Yes: the prompt does not run |
+| `session_start` | `SessionStart` | When a session opens, before its first prompt; after `/clear`; after `/fork`, a branch, or an `/undo` that forks; after a compaction | `startup`, `resume`, `clear`, `compact`, `fork` | No |
+| `user_prompt` | `UserPromptSubmit` | Before a prompt reaches the model: a typed or `-p` prompt, each goal or step round, and peer mail. Not when a `stop` hook keeps the turn going | none | Yes: the prompt does not run |
 | `pre_tool` | `PreToolUse` | Before a tool call, in the lead, in a child, and in a scout | tool name | Yes: the call does not run |
 | `permission_request` | `PermissionRequest` | Before an approval prompt, also where no one can answer it | tool name | Yes: its decision answers the prompt |
 | `post_tool` | `PostToolUse` | After a tool call; a `claude` hook only after a call that succeeded | tool name | No |
@@ -1007,9 +1007,9 @@ stop = [{ command = "./scripts/notify.sh" }, { command = "claude-hook.sh", diale
 | `subagent_stop` | `SubagentStop` | When a child agent's turn ends, in place of `stop` | agent type | Yes: the child goes on |
 | `pre_compact` | `PreCompact` | Before the compaction summary is built | `manual`, `auto` | Yes: compaction is skipped |
 | `compact` | `PostCompact` | After the compaction summary replaces the history | `manual`, `auto` | No |
-| `stop` | `Stop` | When a lead session's turn ends | none | Yes: the turn goes on |
+| `stop` | `Stop` | When a lead session's turn ends, also when a time or token budget ends it. Not when you cancel the turn, a hook blocks the prompt, or an error ends the turn | none | Yes: the turn goes on, unless a budget ended it |
 | `stop_failure` | `StopFailure` | When a provider error ends a lead session's turn, in place of `stop` | error type | No |
-| `session_end` | `SessionEnd` | When the host ends the session | `clear`, `resume`, `prompt_input_exit`, `other` | No |
+| `session_end` | `SessionEnd` | When the session ends: you quit or run `/exit` (`prompt_input_exit`), you run `/clear` (`clear`), or a `-p`, `--goal`, `--steps`, or cron run finishes (`other`). Not on Ctrl+C or a signal | `clear`, `prompt_input_exit`, `other` | No |
 
 A `summonr` hook reads this JSON on stdin. Every event also carries `event` (the key), `session`, `workspace`, and `transcript` (the session journal). In a child agent every event also carries `agent_id` (the child's session id) and `agent_type` (the `agent` the task named, else `implement` or `research`):
 
@@ -1047,7 +1047,9 @@ Both dialects read one JSON object on stdout:
 | `hookSpecificOutput.permissionDecision` | `PreToolUse` only. `deny` (or the older `decision: "block"`) blocks the call with `permissionDecisionReason`. `ask` asks you with that reason, the way an approval asks; without anyone to answer, the call is denied. `allow` lets the call go on to policy, which still decides. `defer` is a note. |
 | `hookSpecificOutput.updatedInput` | `PreToolUse` only: replaces the call's arguments before it runs. Ignored for a call routed through `mcp`. |
 
-Plain stdout from `SessionStart` and `UserPromptSubmit` goes to the model as context, and from `PreCompact` it adds to the summary instructions. A `stop` or `subagent_stop` hook can keep the turn going at most 8 times in a row; a turn that calls a tool resets the count. A child agent runs `subagent_stop` and not `stop`. `notification` runs when the prompt opens; summonr does not wait for you to be away from the keyboard, and has no `idle_prompt` notification. summonr does not run `if`, `async`, `onFailure`, or non-command handler types.
+Plain stdout from `SessionStart` and `UserPromptSubmit` goes to the model as context, and from `PreCompact` it adds to the summary instructions. A `stop` or `subagent_stop` hook can keep the turn going at most 8 times in a row; a turn that calls a tool resets the count. A child agent runs `subagent_stop` and not `stop`. `notification` runs when the prompt opens; summonr does not wait for you to be away from the keyboard, and has no `idle_prompt` notification. `/resume` opens the other session next to this one, so it sends no `session_end` with `resume`. summonr does not run `if`, `asyncRewake`, `onFailure`, or non-command handler types.
+
+A hook with `async = true`, or a Claude Code handler with `"async": true`, starts and the session goes on without waiting for it. It cannot block or change anything. When it exits, its `additionalContext` (or plain stdout where that is context) goes to the model with the next prompt; its `systemMessage` and notes are dropped. It keeps its `timeout`. A `-p`, `--goal`, or `--steps` run does not wait for a background hook before it exits.
 
 Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR` in its environment. A plugin hook also gets `CLAUDE_PLUGIN_ROOT` and `SUMMONR_PLUGIN_ROOT`, and `CLAUDE_PLUGIN_DATA` and `SUMMONR_PLUGIN_DATA`.
 

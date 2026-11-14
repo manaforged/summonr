@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
 
 use crate::tools::command::ProcessGroup;
+use summonr_core::dirs::PATH_ENV;
 use summonr_core::error::{Error, Result};
 
 mod info;
@@ -95,12 +96,12 @@ impl Spec {
     }
 
     fn command(self) -> std::process::Command {
-        let absolute_path = std::env::var_os("PATH").is_none_or(|path| {
+        let absolute_path = std::env::var_os(PATH_ENV).is_none_or(|path| {
             std::env::split_paths(&path).all(|directory| directory.is_absolute())
         });
         let resolved = (absolute_path
             && std::path::Path::new(&self.program).components().count() == 1
-            && !self.env.iter().any(|(name, _)| name == "PATH"))
+            && !self.env.iter().any(|(name, _)| name == PATH_ENV))
         .then(|| self.program.to_str().and_then(crate::askpass::on_path))
         .flatten();
         let program = resolved

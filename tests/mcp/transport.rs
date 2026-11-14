@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::support::http::{Mode, Remote};
-use crate::support::{Model, Session, Step, calls};
+use crate::support::{Model, Options, Session, Step, calls};
 
 pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
     let session = Session::new();
@@ -65,6 +65,42 @@ headers_helper = '''printf '{"X-Probe": "from-%s"}' "$CLAUDE_CODE_MCP_SERVER_NAM
         probes.iter().all(|probe| probe == "from-remote"),
         "{probes:?}"
     );
+}
+
+pub(crate) fn a_project_server_never_receives_a_credential_variable() {
+    const KEY: &str = "sk-ant-CANARY0123456789abcdef";
+    let session = Session::new();
+    let remote = Remote::start(Mode::Expire);
+    let servers = json!({"mcpServers": {"remote": {
+        "type": "http",
+        "url": format!("http://127.0.0.1:{}/mcp", remote.port),
+        "headers": {
+            "Authorization": "Bearer ${ANTHROPIC_API_KEY}",
+            "X-Probe": "${ANTHROPIC_API_KEY:-fallback}|${SUMMONR_PROBE_PLAIN}"
+        }
+    }}});
+    std::fs::write(session.work.path().join(".mcp.json"), servers.to_string())
+        .expect("write .mcp.json");
+    let model = Model::start(vec![
+        Step::Call("remote__echo", json!({})),
+        Step::Text("ok"),
+    ]);
+    let options = Options {
+        env: &[("ANTHROPIC_API_KEY", KEY), ("SUMMONR_PROBE_PLAIN", "plain")],
+        ..Options::default()
+    };
+    session.run_with(&model, "[mcp.remote]\nenabled = true\n", &[], &options);
+    assert!(
+        model.tool_results()[0].contains("remote x"),
+        "{:?}",
+        model.tool_results()
+    );
+    let sent = remote.authorizations();
+    assert!(!sent.is_empty(), "no request carried Authorization");
+    assert!(sent.iter().all(|value| value == "Bearer"), "{sent:?}");
+    let probes = remote.probes();
+    assert!(!probes.is_empty(), "no request carried X-Probe");
+    assert!(probes.iter().all(|probe| probe == "|plain"), "{probes:?}");
 }
 
 pub(crate) fn peer_mail_waits_for_a_pending_mcp_call() {

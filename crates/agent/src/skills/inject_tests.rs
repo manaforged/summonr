@@ -69,3 +69,27 @@ fn keys_summonr_does_not_apply_are_named_and_inherit_is_not() {
         ]
     );
 }
+
+#[test]
+fn an_at_path_inside_code_is_not_attached() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    std::fs::write(workspace.path().join(".env"), "probe env file").expect("env");
+    std::fs::write(workspace.path().join("notes.txt"), "probe notes").expect("notes");
+    let dir = workspace.path().join(".claude/skills/probe-at");
+    std::fs::create_dir_all(&dir).expect("skill directory");
+    let file = "Example:\n```sh\ncat @.env\n```\nNot `@.env` either.\nRead @notes.txt\n";
+    std::fs::write(dir.join("SKILL.md"), file).expect("skill file");
+    let policy = crate::policy::Policy::builtin();
+    let tools = crate::tools::ToolRegistry::with_policy_and_search(workspace.path(), policy, None)
+        .expect("registry");
+    let input = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("runtime")
+        .block_on(tools.render_skill("probe-at"))
+        .expect("a code example does not attach .env");
+    let text = input.text;
+    assert!(text.contains("--- notes.txt ---\nprobe notes"), "{text}");
+    assert!(!text.contains("--- .env ---"), "{text}");
+}

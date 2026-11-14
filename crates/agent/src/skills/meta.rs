@@ -41,10 +41,22 @@ pub(crate) struct Meta {
 }
 
 impl Meta {
-    /// The fields of `file`; a missing or unreadable file has none.
-    pub(crate) fn read(file: &Path) -> Self {
-        let bytes = std::fs::read(file).unwrap_or_default();
-        Self::parse(&Frontmatter::parse(&String::from_utf8_lossy(&bytes)))
+    /// The fields of `file`, read from its text up to the first byte that is not UTF-8.
+    pub(crate) fn read(file: &Path) -> std::io::Result<Self> {
+        let bytes = std::fs::read(file)?;
+        let text = std::str::from_utf8(&bytes).unwrap_or_else(|error| {
+            std::str::from_utf8(&bytes[..error.valid_up_to()]).unwrap_or_default()
+        });
+        Ok(Self::parse(&Frontmatter::parse(text)))
+    }
+
+    /// The fields of `file`; an unreadable file has none and prints one note naming the file and the error.
+    pub(crate) fn read_or_note(file: &Path) -> Self {
+        Self::read(file).unwrap_or_else(|error| {
+            let problem = crate::plugins::located(file, error);
+            crate::display::note(&format!("{problem}; summonr cannot read this skill"));
+            Self::parse(&Frontmatter::parse(""))
+        })
     }
 
     /// The fields of parsed front matter, with the body's first line as the fallback summary.

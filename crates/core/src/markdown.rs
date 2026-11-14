@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 const FENCE_CHARS: [char; 2] = ['`', '~'];
 const FENCE_MIN: usize = 3;
 const FENCE_INDENT: usize = 3;
@@ -52,4 +54,74 @@ pub fn span_end(line: &str, at: usize) -> usize {
         next = start + close;
     }
     at + run
+}
+
+/// One `@path` mention: where it sits in its line, the path, and whether it was written as a quoted string.
+pub struct Mention {
+    /// The bytes of the line from the `@` to the end of the path.
+    pub span: Range<usize>,
+    /// The path, with `\ ` escapes and JSON quotes undone.
+    pub path: String,
+    /// Whether the path was written in double quotes.
+    pub quoted: bool,
+}
+
+/// Every `@path` mention in `text` outside fenced code blocks and code spans.
+pub fn mentions(text: &str) -> Vec<Mention> {
+    let mut fence = Fence::default();
+    text.lines()
+        .filter(|line| !fence.code(line))
+        .flat_map(targets)
+        .collect()
+}
+
+/// Every `@path` mention in one `line` outside its code spans.
+pub fn targets(line: &str) -> Vec<Mention> {
+    let bytes = line.as_bytes();
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'`' {
+            at = span_end(line, at);
+        } else if bytes[at] == b'@' && (at == 0 || bytes[at - 1].is_ascii_whitespace()) {
+            let rest = &line[at + 1..];
+            let (path, len) = quoted(rest).unwrap_or_else(|| token(rest));
+            if !path.is_empty() {
+                out.push(Mention {
+                    span: at..at + 1 + len,
+                    path,
+                    quoted: rest.starts_with('"'),
+                });
+            }
+            at += 1 + len;
+        } else {
+            at += 1;
+        }
+    }
+    out
+}
+
+fn quoted(rest: &str) -> Option<(String, usize)> {
+    rest.strip_prefix('"')?;
+    let mut parsed = serde_json::Deserializer::from_str(rest).into_iter::<String>();
+    match parsed.next() {
+        Some(Ok(path)) => Some((path, parsed.byte_offset())),
+        Some(Err(_)) | None => None,
+    }
+}
+
+fn token(rest: &str) -> (String, usize) {
+    let mut path = String::new();
+    let mut chars = rest.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        if c == '\\' && chars.peek().is_some_and(|(_, next)| *next == ' ') {
+            chars.next();
+            path.push(' ');
+        } else if c.is_whitespace() {
+            return (path, at);
+        } else {
+            path.push(c);
+        }
+    }
+    (path, rest.len())
 }

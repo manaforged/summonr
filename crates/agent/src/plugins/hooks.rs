@@ -55,3 +55,37 @@ pub(super) fn skipped(doc: &Value) -> impl Iterator<Item = (HookEvent, &str)> {
         .filter(|(_, _, handler)| handler["type"] != "command")
         .map(|(event, _, handler)| (event, handler["type"].as_str().unwrap_or("hook")))
 }
+
+/// What makes `doc` a hook document summonr cannot read, or `None` when its shape is sound.
+pub(crate) fn shape(doc: &Value) -> Option<String> {
+    let Value::Object(file) = doc else {
+        return (!doc.is_null()).then(|| "the file is not a JSON object".to_string());
+    };
+    let table = match file.get(HOOKS) {
+        None => return None,
+        Some(Value::Object(table)) => table,
+        Some(_) => return Some(format!("`{HOOKS}` is not an object")),
+    };
+    for event in HookEvent::ALL {
+        let name = event.claude();
+        let Some(groups) = table.get(name) else {
+            continue;
+        };
+        let Some(groups) = groups.as_array() else {
+            return Some(format!("`{HOOKS}.{name}` is not a list"));
+        };
+        for (group, entry) in groups.iter().enumerate() {
+            let Some(handlers) = entry[HOOKS].as_array() else {
+                return Some(format!("`{HOOKS}.{name}[{group}].{HOOKS}` is not a list"));
+            };
+            for (index, handler) in handlers.iter().enumerate() {
+                if handler["type"] == "command" && !handler["command"].is_string() {
+                    return Some(format!(
+                        "`{HOOKS}.{name}[{group}].{HOOKS}[{index}].command` is not a string"
+                    ));
+                }
+            }
+        }
+    }
+    None
+}

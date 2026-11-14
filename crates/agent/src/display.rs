@@ -156,3 +156,15 @@ fn after_cd(command: &str) -> &str {
     }
     rest
 }
+
+/// Prints `summonr: {note}` on stderr the first time this process meets that note.
+pub(crate) fn note(note: &str) {
+    static SEEN: std::sync::Mutex<std::collections::BTreeSet<String>> =
+        std::sync::Mutex::new(std::collections::BTreeSet::new());
+    let mut seen = SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if seen.insert(note.to_string()) {
+        eprintln!("summonr: {note}");
+    }
+}

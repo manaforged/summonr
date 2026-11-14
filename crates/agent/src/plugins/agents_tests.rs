@@ -17,11 +17,12 @@ fn agent(origin: Origin, name: &str) -> Agent {
 }
 
 fn plugin_dir(files: &[(&str, &str)]) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("temp dir");
     for (path, text) in files {
         let path = dir.path().join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text).unwrap();
+        std::fs::create_dir_all(path.parent().expect("path has a parent"))
+            .expect("create fixture dir");
+        std::fs::write(path, text).expect("write fixture");
     }
     dir
 }
@@ -32,9 +33,11 @@ fn a_block_list_of_tools_is_read_and_not_dropped() {
         "agents/reviewer.md",
         "---\nname: reviewer\ntools:\n  - Read\n  - Grep\n---\nReview it.\n",
     )]);
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let plugin = Plugin::at("demo".to_string(), dir.path().to_owned());
-    let [found] = of_plugin(&plugin, workspace.path()).try_into().unwrap();
+    let [found] = of_plugin(&plugin, workspace.path())
+        .try_into()
+        .expect("value fits");
     assert_eq!(
         found.tools,
         Some(vec!["Read".to_string(), "Grep".to_string()])
@@ -68,7 +71,9 @@ fn a_plugin_subfolder_becomes_part_of_the_scoped_name() {
         "---\nname: security\ndescription: audits\n---\nAudit.",
     )]);
     let plugin = Plugin::at("my-plugin".to_string(), dir.path().to_owned());
-    let [found] = of_plugin(&plugin, dir.path()).try_into().unwrap();
+    let [found] = of_plugin(&plugin, dir.path())
+        .try_into()
+        .expect("value fits");
     assert_eq!(found.qualified(), "my-plugin:review:security");
 }
 
@@ -78,7 +83,9 @@ fn a_project_subfolder_does_not_change_the_name() {
         "review/security.md",
         "---\nname: sec\ndescription: audits\n---\nAudit.",
     )]);
-    let [found] = of_dir(dir.path(), &Origin::Project).try_into().unwrap();
+    let [found] = of_dir(dir.path(), &Origin::Project)
+        .try_into()
+        .expect("value fits");
     assert_eq!(found.qualified(), "sec");
 }
 
@@ -89,7 +96,9 @@ fn disallowed_tools_remove_the_whole_tool_and_only_color_is_unapplied() {
         "---\nname: fixer\ntools: Read, Bash, Edit\ndisallowedTools: Bash(git push *)\nmodel: opus\ncolor: red\n---\nFix.",
     )]);
     let plugin = Plugin::at("demo".to_string(), dir.path().to_owned());
-    let [found] = of_plugin(&plugin, dir.path()).try_into().unwrap();
+    let [found] = of_plugin(&plugin, dir.path())
+        .try_into()
+        .expect("value fits");
     let scope = found.scope();
     assert!(scope.builtin(Builtin::Read));
     assert!(scope.builtin(Builtin::Edit));
@@ -146,24 +155,26 @@ fn project_files_without_a_name_or_description_are_skipped() {
             "---\nname: kept\ndescription: kept\nskills: [lint, test, lint]\n---\nKept.",
         ),
     ]);
-    let [found] = of_dir(dir.path(), &Origin::Project).try_into().unwrap();
+    let [found] = of_dir(dir.path(), &Origin::Project)
+        .try_into()
+        .expect("value fits");
     assert_eq!(found.name, "kept");
     assert_eq!(found.skills, ["lint", "test"]);
 }
 
 #[test]
 fn the_closest_project_definition_wins() {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::create_dir(root.path().join(".git")).unwrap();
+    let root = tempfile::tempdir().expect("temp dir");
+    std::fs::create_dir(root.path().join(".git")).expect("create fixture dir");
     let inner = root.path().join("app");
     for (dir, body) in [(root.path(), "Outer."), (inner.as_path(), "Inner.")] {
         let agents = summonr_core::dirs::claude(dir).join(DIR);
-        std::fs::create_dir_all(&agents).unwrap();
+        std::fs::create_dir_all(&agents).expect("create fixture dir");
         std::fs::write(
             agents.join("reviewer.md"),
             format!("---\nname: reviewer\ndescription: reviews\n---\n{body}"),
         )
-        .unwrap();
+        .expect("write fixture");
     }
     std::fs::write(
         summonr_core::dirs::claude(root.path())
@@ -171,11 +182,23 @@ fn the_closest_project_definition_wins() {
             .join("linter.md"),
         "---\nname: linter\ndescription: lints\n---\nLint.",
     )
-    .unwrap();
-    assert_eq!(find("linter", &inner).unwrap().instructions, "Lint.");
-    assert_eq!(find("reviewer", &inner).unwrap().instructions, "Inner.");
+    .expect("write fixture");
     assert_eq!(
-        find("reviewer", root.path()).unwrap().instructions,
+        find("linter", &inner)
+            .expect("find returns a value")
+            .instructions,
+        "Lint."
+    );
+    assert_eq!(
+        find("reviewer", &inner)
+            .expect("find returns a value")
+            .instructions,
+        "Inner."
+    );
+    assert_eq!(
+        find("reviewer", root.path())
+            .expect("find returns a value")
+            .instructions,
         "Outer."
     );
 }

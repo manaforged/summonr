@@ -263,7 +263,7 @@ impl Policy {
 
     fn tool_rules(&self, alias: &str, readonly: bool) -> Check {
         if !self.scope.mcp(alias) {
-            return Err(format!("`{alias}` is not one of this agent's tools"));
+            return Err(Scope::refusal(alias));
         }
         if self.read_only && !readonly {
             return Err(format!(
@@ -276,17 +276,17 @@ impl Policy {
         if let Some(pattern) = self
             .deny
             .iter()
-            .find(|pattern| tool_matches(alias, pattern))
+            .find(|pattern| scope::matches(alias, pattern.trim()))
         {
             return Err(format!("denied by policy `{pattern}`"));
         }
         if readonly
             || !self.strict
             || !self.allow.is_empty()
-                && self
-                    .allow
-                    .iter()
-                    .all(|list| list.iter().any(|pattern| tool_matches(alias, pattern)))
+                && self.allow.iter().all(|list| {
+                    list.iter()
+                        .any(|pattern| scope::matches(alias, pattern.trim()))
+                })
         {
             return Ok(());
         }
@@ -360,10 +360,3 @@ pub(crate) use verbs::*;
 #[cfg(test)]
 #[path = "policy_tests.rs"]
 mod tests;
-
-fn tool_matches(alias: &str, pattern: &str) -> bool {
-    pattern
-        .trim()
-        .strip_suffix('*')
-        .map_or(alias == pattern.trim(), |prefix| alias.starts_with(prefix))
-}

@@ -128,7 +128,7 @@ pub(crate) fn joined(line: &str, out: &str) -> String {
     }
 }
 
-/// The text and images of each `@path` file `line` names, each opened through `open`; a bare `@word` that names no file is left as text.
+/// The text and images of each `@path` file `line` names outside code, each opened through `open`; a bare `@word` that names no file is left as text.
 pub(crate) fn attachments(
     workspace: &Path,
     line: &str,
@@ -137,18 +137,9 @@ pub(crate) fn attachments(
     let mut out = String::new();
     let mut images = Vec::new();
     let mut image_bytes = 0_usize;
-    for word in words(line) {
-        let path = word.strip_prefix('@').map(|path| {
-            if path.starts_with('"') {
-                serde_json::from_str::<String>(path).unwrap_or_else(|_| path.to_string())
-            } else {
-                path.to_string()
-            }
-        });
-        let Some(path) = path.as_deref().filter(|path| !path.is_empty()) else {
-            continue;
-        };
-        let Some(bytes) = read_attachment(workspace, word, path, &open)? else {
+    for mention in summonr_core::markdown::mentions(line) {
+        let path = mention.path.as_str();
+        let Some(bytes) = read_attachment(workspace, mention.quoted, path, &open)? else {
             continue;
         };
         if image_type(&bytes).is_some() {
@@ -173,12 +164,12 @@ pub(crate) fn attachments(
 
 fn read_attachment(
     workspace: &Path,
-    word: &str,
+    quoted: bool,
     path: &str,
     open: &impl Fn(&str) -> Result<PathBuf>,
 ) -> Result<Option<Vec<u8>>> {
     if !workspace.join(path).is_file() {
-        if !word.starts_with("@\"") {
+        if !quoted {
             return Ok(None);
         }
         return Err(Error::Tool(format!(
@@ -204,23 +195,6 @@ fn contained(workspace: &Path, path: &str) -> Result<PathBuf> {
         )));
     }
     Ok(canonical)
-}
-
-fn words(mut line: &str) -> Vec<&str> {
-    let mut words = Vec::new();
-    loop {
-        line = line.trim_start();
-        if line.is_empty() {
-            return words;
-        }
-        let quoted = line.strip_prefix("@\"").and_then(|_| {
-            let mut parsed = serde_json::Deserializer::from_str(&line[1..]).into_iter::<String>();
-            matches!(parsed.next(), Some(Ok(_))).then(|| parsed.byte_offset() + 1)
-        });
-        let end = quoted.unwrap_or_else(|| line.find(char::is_whitespace).unwrap_or(line.len()));
-        words.push(&line[..end]);
-        line = &line[end..];
-    }
 }
 
 pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {

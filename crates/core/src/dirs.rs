@@ -8,6 +8,9 @@ pub const STATE: &str = ".summonr";
 /// The environment variable that moves the summonr home folder.
 pub const HOME_ENV: &str = "SUMMONR_HOME";
 
+/// The environment variable that lists the folders a process searches for programs.
+pub const PATH_ENV: &str = "PATH";
+
 /// The `.summonr` folder inside a workspace.
 #[must_use]
 pub fn workspace(root: &Path) -> PathBuf {

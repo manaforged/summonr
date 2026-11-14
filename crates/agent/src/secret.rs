@@ -275,8 +275,11 @@ fn platform() -> Backend {
 }
 
 mod backends;
+mod env;
 mod seal;
 pub(crate) mod shield;
+
+pub(crate) use env::credential_env;
 
 #[cfg(not(target_os = "macos"))]
 use backends::native_forget;

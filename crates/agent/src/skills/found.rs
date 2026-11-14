@@ -1,10 +1,11 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use summonr_core::dirs::summonr_home;
 
 use super::inject::{Body, Scope};
 use super::meta::Meta;
-use super::{DEPTH, FLAT, SEPARATOR, SKILL, valid};
+use super::{DEPTH, FLAT, Names, SEPARATOR, SKILL, valid};
 use crate::plugins::Plugin;
 
 const SKILLS_KEY: &str = "skills";
@@ -25,7 +26,7 @@ impl Found {
         Self {
             name: leaf.clone(),
             alias: None,
-            meta: Meta::read(&file),
+            meta: Meta::read_or_note(&file),
             leaf,
             folder: folder.to_owned(),
             file,
@@ -91,6 +92,7 @@ pub(super) fn found(workspace: &Path) -> Vec<Found> {
 
 fn local_names(all: Vec<Found>) -> Vec<Found> {
     let mut kept: Vec<Found> = Vec::new();
+    let mut seen = HashSet::new();
     for mut skill in all {
         let chosen = skill
             .meta
@@ -98,21 +100,16 @@ fn local_names(all: Vec<Found>) -> Vec<Found> {
             .clone()
             .filter(|name| valid(name))
             .unwrap_or_else(|| skill.leaf.clone());
-        if !valid(&chosen)
-            || kept
-                .iter()
-                .any(|seen| seen.name == chosen && seen.folder == skill.folder)
-        {
+        if !valid(&chosen) || !seen.insert((chosen.clone(), skill.folder.clone())) {
             continue;
         }
         skill.alias = (chosen != skill.leaf && valid(&skill.leaf)).then(|| skill.leaf.clone());
         skill.name = chosen;
         kept.push(skill);
     }
-    let names: Vec<String> = kept.iter().map(|skill| skill.name.clone()).collect();
+    let names = Names::count(kept.iter().map(|skill| skill.name.as_str()));
     for skill in &mut kept {
-        let shared = names.iter().filter(|name| **name == skill.name).count() > 1;
-        if shared && !skill.folder.is_empty() {
+        if !names.once(&skill.name) && !skill.folder.is_empty() {
             skill.name = format!("{}{SEPARATOR}{}", skill.folder, skill.name);
         }
     }
@@ -121,6 +118,7 @@ fn local_names(all: Vec<Found>) -> Vec<Found> {
 
 fn plugin_names(all: Vec<Found>) -> Vec<Found> {
     let mut kept: Vec<Found> = Vec::new();
+    let mut seen = HashSet::new();
     for mut skill in all {
         let Some(plugin) = skill.plugin.as_ref() else {
             continue;
@@ -134,7 +132,7 @@ fn plugin_names(all: Vec<Found>) -> Vec<Found> {
             .filter(|name| valid(name))
             .map_or_else(|| skill.leaf.clone(), str::to_owned);
         let name = plugin.scoped(&leaf);
-        if !valid(&leaf) || kept.iter().any(|seen| seen.name == name) {
+        if !valid(&leaf) || !seen.insert(name.clone()) {
             continue;
         }
         skill.name = name;
@@ -145,15 +143,12 @@ fn plugin_names(all: Vec<Found>) -> Vec<Found> {
 }
 
 fn free_aliases(all: &mut [Found]) {
-    let taken: Vec<String> = all
-        .iter()
-        .flat_map(|skill| std::iter::once(skill.name.clone()).chain(skill.alias.clone()))
-        .collect();
+    let taken = Names::count(
+        all.iter()
+            .flat_map(|skill| std::iter::once(skill.name.as_str()).chain(skill.alias.as_deref())),
+    );
     for skill in all {
-        skill.alias = skill.alias.take().filter(|alias| {
-            taken.iter().filter(|name| *name == alias).count() == 1
-                && crate::parse_command(&format!("/{alias}")).is_none()
-        });
+        skill.alias = skill.alias.take().filter(|alias| taken.free(alias));
     }
 }
 

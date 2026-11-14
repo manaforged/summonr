@@ -7,6 +7,9 @@ mod content;
 mod defer;
 #[path = "mcp/diff.rs"]
 mod diff;
+#[cfg(unix)]
+#[path = "mcp/hooks.rs"]
+mod hooks;
 #[path = "mcp/lifecycle.rs"]
 mod lifecycle;
 #[path = "mcp/manage.rs"]
@@ -119,6 +122,7 @@ fn main() {
         plugins::a_legacy_bundle_installs_and_an_unreachable_server_fails_it,
         plugin_install::plugin_install_refuses_a_tree_that_adds_nothing,
         plugin_install::plugin_install_keeps_the_copy_when_json_does_not_parse,
+        plugin_install::a_broken_plugin_file_is_one_note_and_the_session_runs,
         plugin_install::plugin_reinstall_keeps_plugin_data,
         plugin_install::plugin_unknown_off_warns_without_blocking_list_or_session_start,
         plugin_install::plugin_uninstall_removes_an_unknown_off_name,
@@ -152,6 +156,10 @@ fn main() {
         plugins::subagent_hooks_open_and_hold_a_child,
         #[cfg(unix)]
         plugins::a_provider_error_runs_stop_failure_instead_of_stop,
+        #[cfg(unix)]
+        hooks::a_print_run_opens_and_closes_its_session_hooks,
+        #[cfg(unix)]
+        hooks::a_turn_cut_by_the_time_limit_still_runs_stop,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -222,6 +230,7 @@ fn main() {
         transport::a_claude_timeout_in_milliseconds_cancels_a_call,
         #[cfg(unix)]
         transport::a_headers_helper_header_replaces_the_static_one,
+        transport::a_project_server_never_receives_a_credential_variable,
         transport::peer_mail_waits_for_a_pending_mcp_call,
         transport::a_timed_out_reply_does_not_break_the_next_call,
         transport::a_request_the_server_does_not_read_times_out,

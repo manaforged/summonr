@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::{Plugin, Source, enabled};
 use crate::mcp::{Offer, OfferKind};
-use crate::skills::{self, Body, Meta, Piece, SEPARATOR, Scope};
+use crate::skills::{self, Body, Meta, Names, Piece, SEPARATOR, Scope};
 use summonr_core::error::Result;
 use summonr_core::text::Frontmatter;
 
@@ -113,7 +113,8 @@ pub(crate) fn find(head: &str, workspace: &Path) -> Option<Command> {
     {
         return Some(command.clone());
     }
-    bare(&all, head)
+    names(&all)
+        .free(head)
         .then(|| all.into_iter().find(|command| command.name == head))
         .flatten()
 }
@@ -168,10 +169,11 @@ pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
             .filter(|(insert, _)| crate::parse_command(insert).is_none())
     };
     let all = commands(workspace);
+    let names = names(&all);
     let mut wanted: Vec<(String, String)> = skill(false).collect();
     for command in &all {
         let about = command.meta.offer();
-        if bare(&all, &command.name) {
+        if names.free(&command.name) {
             wanted.push((format!("/{}", command.name), about.clone()));
         }
         wanted.push((command.qualified(), about));
@@ -189,9 +191,8 @@ pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
         .collect()
 }
 
-fn bare(all: &[Command], name: &str) -> bool {
-    all.iter().filter(|command| command.name == name).count() == 1
-        && crate::parse_command(&format!("/{name}")).is_none()
+fn names(all: &[Command]) -> Names {
+    Names::count(all.iter().map(|command| command.name.as_str()))
 }
 
 /// The commands `plugin` ships: the manifest `commands` key when set, else every file under `commands/`.

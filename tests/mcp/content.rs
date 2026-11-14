@@ -80,6 +80,11 @@ pub(crate) fn an_unreadable_skill_fails_before_the_model_is_called() {
     let result = session.run_with(&model, "", &[], &options);
     assert_eq!(result.code, Some(1), "{}", result.stdout);
     assert!(model.requests().is_empty());
+    let stderr = crate::support::read(&session.file("stderr"));
+    assert!(
+        stderr.contains("skill `probe-unreadable`: stream did not contain valid UTF-8"),
+        "{stderr}"
+    );
 }
 
 fn asked(session: &Session, model: &Model, prompt: &str) -> String {

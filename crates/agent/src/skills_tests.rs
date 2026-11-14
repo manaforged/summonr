@@ -48,20 +48,20 @@ fn a_skill_cannot_shadow_a_builtin_slash_command() {
 fn claude_code_skills_join_the_catalog_and_load() {
     let home = summonr_core::dirs::user_home().expect("test home");
     let user = home.join(".claude/skills/probe-user-skill");
-    std::fs::create_dir_all(&user).unwrap();
+    std::fs::create_dir_all(&user).expect("create fixture dir");
     std::fs::write(
         user.join("SKILL.md"),
         "---\nname: probe-user-skill\ndescription: from the user's Claude folder\n---\nuser body\n",
     )
-    .unwrap();
-    let workspace = tempfile::tempdir().unwrap();
+    .expect("write fixture");
+    let workspace = tempfile::tempdir().expect("temp dir");
     let project = workspace.path().join(".claude/skills/probe-project-skill");
-    std::fs::create_dir_all(&project).unwrap();
+    std::fs::create_dir_all(&project).expect("create fixture dir");
     std::fs::write(
         project.join("SKILL.md"),
         "---\nname: probe-project-skill\ndescription: from the project's Claude folder\n---\nproject body\n",
     )
-    .unwrap();
+    .expect("write fixture");
     let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
     assert!(
         catalog.contains("probe-user-skill: from the user's Claude folder"),
@@ -73,25 +73,25 @@ fn claude_code_skills_join_the_catalog_and_load() {
     );
     assert!(
         load(workspace.path(), None, "probe-user-skill", None)
-            .unwrap()
+            .expect("load succeeds")
             .contains("user body")
     );
     assert!(
         load(workspace.path(), None, "probe-project-skill", None)
-            .unwrap()
+            .expect("load succeeds")
             .contains("project body")
     );
 }
 
 #[test]
 fn a_skill_with_a_binary_body_still_lists() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let skill = workspace.path().join(".claude/skills/probe-binary-skill");
-    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::create_dir_all(&skill).expect("create fixture dir");
     let mut body =
         b"---\nname: probe-binary-skill\ndescription: listed from its frontmatter\n---\n".to_vec();
     body.extend([0xff, 0xfe, 0x00, 0xc3, 0x28]);
-    std::fs::write(skill.join("SKILL.md"), body).unwrap();
+    std::fs::write(skill.join("SKILL.md"), body).expect("write fixture");
     let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
     assert!(
         catalog.contains("probe-binary-skill: listed from its frontmatter"),
@@ -253,7 +253,9 @@ fn typed(workspace: &std::path::Path, line: &str) -> Option<String> {
 
 #[test]
 fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
-    let plugins = summonr_core::dirs::summonr_home().unwrap().join("plugins");
+    let plugins = summonr_core::dirs::summonr_home()
+        .expect("summonr home")
+        .join("plugins");
     let plugin = plugins.join("probe-plug");
     write(
         &plugin.join("skills/probe-same/SKILL.md"),
@@ -267,7 +269,7 @@ fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
         &plugins.join("probe-solo/SKILL.md"),
         "---\ndescription: solo\n---\nsolo body",
     );
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     write(
         &workspace.path().join(".claude/skills/probe-same/SKILL.md"),
         "---\ndescription: local same\n---\nlocal body",
@@ -292,7 +294,7 @@ fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
         );
     }
     let data = summonr_core::dirs::summonr_home()
-        .unwrap()
+        .expect("summonr home")
         .join("plugin-data/probe-plug");
     assert_eq!(
         typed(workspace.path(), "/probe-plug:probe-same go").as_deref(),
@@ -312,7 +314,7 @@ fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
     );
     assert!(
         load(workspace.path(), None, "probe-fancy", None)
-            .unwrap()
+            .expect("load succeeds")
             .contains("fancy body")
     );
     assert_eq!(
@@ -323,7 +325,7 @@ fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
 
 #[test]
 fn invocation_flags_split_the_model_catalog_from_the_slash_menu() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let skills = workspace.path().join(".claude/skills");
     write(
         &skills.join("probe-manual/SKILL.md"),
@@ -352,14 +354,14 @@ fn invocation_flags_split_the_model_catalog_from_the_slash_menu() {
     assert_eq!(typed(workspace.path(), "/probe-quiet now"), None);
     assert!(
         load(workspace.path(), None, "probe-quiet", None)
-            .unwrap()
+            .expect("load succeeds")
             .contains("quiet body")
     );
 }
 
 #[test]
 fn frontmatter_names_the_skill_and_declares_its_arguments() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let file = workspace
         .path()
         .join(".claude/skills/probe-folder-name/SKILL.md");
@@ -388,6 +390,8 @@ fn frontmatter_names_the_skill_and_declares_its_arguments() {
         typed(workspace.path(), "/probe-plain extra words").as_deref(),
         Some("Plain body\n\nARGUMENTS: extra words")
     );
-    let unapplied = super::Meta::read(&file).unapplied;
+    let unapplied = super::Meta::read(&file)
+        .expect("the probe skill reads")
+        .unapplied;
     assert_eq!(unapplied, ["allowed-tools", "model", "context"]);
 }

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::{Plugin, Source, enabled};
@@ -171,10 +172,10 @@ pub(crate) fn find(name: &str, workspace: &Path) -> Result<Agent, String> {
 }
 
 fn labels(all: &[Agent]) -> Vec<String> {
+    let names = skills::Names::count(all.iter().map(|agent| agent.name.as_str()));
     all.iter()
         .map(|agent| {
-            let shared = all.iter().filter(|other| other.name == agent.name).count() > 1;
-            if shared && agent.is_plugin() {
+            if !names.once(&agent.name) && agent.is_plugin() {
                 agent.qualified()
             } else {
                 agent.name.clone()
@@ -262,8 +263,9 @@ fn agent(
     instructions: String,
 ) -> Option<Agent> {
     let mut preload: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
     for skill in front.list("skills").into_iter().flatten() {
-        if !preload.contains(&skill) && preload.len() < crate::limits::limits().agent_skills_max {
+        if preload.len() < crate::limits::limits().agent_skills_max && seen.insert(skill.clone()) {
             preload.push(skill);
         }
     }

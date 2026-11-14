@@ -1,8 +1,7 @@
 use std::collections::HashSet;
-use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use summonr_core::markdown::{Fence, span_end};
+use summonr_core::markdown::{Fence, Mention, targets};
 
 const MAX_HOPS: usize = 4;
 
@@ -41,8 +40,11 @@ impl<'a> Loader<'a> {
                 lines.push(line.to_string());
                 continue;
             }
-            let found = if hops < MAX_HOPS {
+            let found: Vec<Mention> = if hops < MAX_HOPS {
                 targets(line)
+                    .into_iter()
+                    .filter(|mention| !mention.quoted && !mention.path.starts_with('\''))
+                    .collect()
             } else {
                 Vec::new()
             };
@@ -57,14 +59,14 @@ impl<'a> Loader<'a> {
         lines: &mut Vec<String>,
         line: &str,
         dir: &Path,
-        found: &[(Range<usize>, String)],
+        found: &[Mention],
         hops: usize,
     ) {
-        let whole = matches!(found, [(span, _)] if line[span.clone()] == *line.trim());
+        let whole = matches!(found, [mention] if line[mention.span.clone()] == *line.trim());
         let mut texts = Vec::new();
         let mut missing = false;
-        for (_, raw) in found {
-            let target = self.resolve(dir, raw);
+        for mention in found {
+            let target = self.resolve(dir, &mention.path);
             if !self.claim(&target) {
                 continue;
             }
@@ -85,40 +87,4 @@ impl<'a> Loader<'a> {
             (None, _) | (Some(_), None) => dir.join(raw),
         }
     }
-}
-
-fn targets(line: &str) -> Vec<(Range<usize>, String)> {
-    let bytes = line.as_bytes();
-    let mut out = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == b'`' {
-            at = span_end(line, at);
-        } else if bytes[at] == b'@' && (at == 0 || bytes[at - 1].is_ascii_whitespace()) {
-            let (path, len) = token(&line[at + 1..]);
-            if !path.is_empty() && !path.starts_with(['"', '\'']) {
-                out.push((at..at + 1 + len, path));
-            }
-            at += 1 + len;
-        } else {
-            at += 1;
-        }
-    }
-    out
-}
-
-fn token(rest: &str) -> (String, usize) {
-    let mut path = String::new();
-    let mut chars = rest.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        if c == '\\' && chars.peek().is_some_and(|(_, next)| *next == ' ') {
-            chars.next();
-            path.push(' ');
-        } else if c.is_whitespace() {
-            return (path, at);
-        } else {
-            path.push(c);
-        }
-    }
-    (path, rest.len())
 }

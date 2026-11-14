@@ -223,10 +223,6 @@
       "tools"
     ],
     [
-      "review",
-      "runtime"
-    ],
-    [
       "rpc",
       "tools"
     ],
@@ -241,10 +237,6 @@
     [
       "skills",
       "plugins"
-    ],
-    [
-      "steps",
-      "tools"
     ],
     [
       "tools",

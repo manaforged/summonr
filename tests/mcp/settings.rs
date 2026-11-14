@@ -8,8 +8,8 @@ const IMPORT: &str = "import_claude_settings = true\n";
 
 fn settings(root: &Path, doc: &Value) {
     let dir = root.join(".claude");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("settings.json"), doc.to_string()).unwrap();
+    std::fs::create_dir_all(&dir).expect("create fixture dir");
+    std::fs::write(dir.join("settings.json"), doc.to_string()).expect("write fixture");
 }
 
 fn imported(root: &'static str) -> Options<'static> {
@@ -82,8 +82,8 @@ pub(crate) fn a_project_deny_rule_holds_only_in_a_trusted_workspace() {
 pub(crate) fn a_malformed_settings_file_is_a_note_and_the_session_runs() {
     let session = Session::new();
     let dir = session.work.path().join(".claude");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("settings.json"), "{ \"env\": ").unwrap();
+    std::fs::create_dir_all(&dir).expect("create fixture dir");
+    std::fs::write(dir.join("settings.json"), "{ \"env\": ").expect("write fixture");
     let model = Model::start(vec![Step::Text("ok")]);
     let outcome = session.run_with(&model, "", &[], &imported(IMPORT));
     let stderr = read(&session.file("stderr"));

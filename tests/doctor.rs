@@ -4,16 +4,16 @@ use serde_json::json;
 
 #[test]
 fn doctor_report_shows_the_last_crash_with_home_paths_hidden() {
-    let home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().expect("temp dir");
     let logs = home.path().join("logs");
-    std::fs::create_dir_all(&logs).unwrap();
+    std::fs::create_dir_all(&logs).expect("create fixture dir");
     let root = home.path().display().to_string();
     let lines = [
         json!({"time_unix_ms": 1, "run": "1-1", "event": "start", "cwd": format!("{root}/work/app"), "version": "0.1.0"}),
         json!({"time_unix_ms": 2, "run": "1-1", "event": "panic", "message": format!("panicked at {root}/src/turn.rs:9:5: index out of range"), "backtrace": "0: summonr::turn"}),
     ];
     let body: String = lines.iter().map(|line| format!("{line}\n")).collect();
-    std::fs::write(logs.join("1-1.jsonl"), body).unwrap();
+    std::fs::write(logs.join("1-1.jsonl"), body).expect("write fixture");
     let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .args(["doctor", "--report"])
         .env("HOME", home.path())
@@ -21,7 +21,7 @@ fn doctor_report_shows_the_last_crash_with_home_paths_hidden() {
         .env("SUMMONR_HOME", home.path())
         .stdin(Stdio::null())
         .output()
-        .unwrap();
+        .expect("command runs");
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(
         output.status.success(),
@@ -39,15 +39,15 @@ fn doctor_report_shows_the_last_crash_with_home_paths_hidden() {
 
 #[test]
 fn doctor_names_the_claude_settings_files_only_when_imported() {
-    let home = tempfile::tempdir().unwrap();
-    let work = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(work.path().join(".claude")).unwrap();
-    std::fs::write(work.path().join(".claude/settings.json"), "{}").unwrap();
+    let home = tempfile::tempdir().expect("temp dir");
+    let work = tempfile::tempdir().expect("temp dir");
+    std::fs::create_dir_all(work.path().join(".claude")).expect("create fixture dir");
+    std::fs::write(work.path().join(".claude/settings.json"), "{}").expect("write fixture");
     for (config, shown) in [
         ("", "claude settings\tnone"),
         ("import_claude_settings = true\n", ".claude/settings.json"),
     ] {
-        std::fs::write(home.path().join("config.toml"), config).unwrap();
+        std::fs::write(home.path().join("config.toml"), config).expect("write fixture");
         let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
             .arg("doctor")
             .current_dir(work.path())
@@ -56,7 +56,7 @@ fn doctor_names_the_claude_settings_files_only_when_imported() {
             .env("SUMMONR_HOME", home.path())
             .stdin(Stdio::null())
             .output()
-            .unwrap();
+            .expect("command runs");
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains(shown), "{shown}: {text}");
     }

@@ -60,7 +60,11 @@ fn tools() -> Vec<ToolDefinition> {
     ]
     .into_iter()
     .map(|(name, description, schema)| {
-        summonr_types::tool(name, description, serde_json::from_str(schema).unwrap())
+        summonr_types::tool(
+            name,
+            description,
+            serde_json::from_str(schema).expect("parse fixture"),
+        )
     })
     .collect()
 }
@@ -120,11 +124,11 @@ fn sent(case: &Case) -> Sent {
     let prefix = request.prefix_hash();
     let request = request.with_prefix_hash(prefix.clone());
     let body = Client::connect(&endpoint)
-        .unwrap()
+        .expect("connect")
         .request(&request, true)
-        .unwrap()
+        .expect("request succeeds")
         .to_bytes()
-        .unwrap();
+        .expect("to_bytes succeeds");
     Sent { body, prefix }
 }
 
@@ -154,7 +158,7 @@ fn around(bytes: &[u8], at: usize) -> String {
 
 fn clear(written: &Path) {
     if written.exists() {
-        std::fs::remove_file(written).unwrap();
+        std::fs::remove_file(written).expect("remove file");
     }
 }
 
@@ -162,8 +166,8 @@ fn golden(name: &str, actual: &[u8]) -> Option<String> {
     let path = dir().join(name);
     let written = dir().join(format!("{name}.actual"));
     if std::env::var_os(BLESS).is_some() {
-        std::fs::create_dir_all(dir()).unwrap();
-        std::fs::write(&path, actual).unwrap();
+        std::fs::create_dir_all(dir()).expect("create fixture dir");
+        std::fs::write(&path, actual).expect("write fixture");
         clear(&written);
         return None;
     }
@@ -172,7 +176,7 @@ fn golden(name: &str, actual: &[u8]) -> Option<String> {
         clear(&written);
         return None;
     }
-    std::fs::write(&written, actual).unwrap();
+    std::fs::write(&written, actual).expect("write fixture");
     let at = held
         .iter()
         .zip(actual)
@@ -200,7 +204,7 @@ fn every_wire_sends_the_pinned_request_bytes() {
     let mut hashes = String::new();
     for case in &CASES {
         let sent = sent(case);
-        writeln!(hashes, "{} {}", case.wire, sent.prefix).unwrap();
+        writeln!(hashes, "{} {}", case.wire, sent.prefix).expect("write to a string");
         drift.extend(golden(&format!("{}{suffix}.json", case.wire), &sent.body));
     }
     drift.extend(golden(

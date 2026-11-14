@@ -6,12 +6,14 @@ use std::sync::{Mutex, OnceLock};
 
 use zeroize::Zeroizing;
 
+use summonr_core::dirs::PATH_ENV;
 use summonr_core::error::Result;
 
 pub type Secret = Zeroizing<String>;
 
 /// The askpass variables summonr sets for commands, besides `SUMMONR_ASKPASS` and `PATH`.
 pub(crate) const VARS: [&str; 3] = ["SUDO_ASKPASS", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE"];
+const SOCKET_ENV: &str = "SUMMONR_ASKPASS";
 
 pub struct Request {
     pub prompt: String,
@@ -171,17 +173,14 @@ pub fn env(path: &str) -> Vec<(String, String)> {
             (sudo.to_string(), helper.clone()),
             (ssh.to_string(), helper),
             (require.to_string(), "force".to_string()),
-            (
-                "SUMMONR_ASKPASS".to_string(),
-                broker.socket.display().to_string(),
-            ),
-            ("PATH".to_string(), shim_path(&broker.helper, path)),
+            (SOCKET_ENV.to_string(), broker.socket.display().to_string()),
+            (PATH_ENV.to_string(), shim_path(&broker.helper, path)),
         ]
     })
 }
 
 pub(crate) fn on_path(name: &str) -> Option<std::path::PathBuf> {
-    let mut dirs: Vec<_> = std::env::var_os("PATH")
+    let mut dirs: Vec<_> = std::env::var_os(PATH_ENV)
         .map(|path| std::env::split_paths(&path).collect())
         .unwrap_or_default();
     #[cfg(unix)]
@@ -353,7 +352,7 @@ pub fn client(args: &[OsString]) -> i32 {
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join(" ");
-    let Some(socket) = std::env::var_os("SUMMONR_ASKPASS") else {
+    let Some(socket) = std::env::var_os(SOCKET_ENV) else {
         eprintln!("summonr askpass: a secret prompt needs an interactive summonr session");
         return 1;
     };

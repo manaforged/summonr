@@ -3,7 +3,8 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::super::{
-    HOOKS, LSP, MCP, McpServer, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json, scan,
+    HOOKS, LSP, MCP, McpServer, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json, located,
+    renamed, scan,
 };
 
 const COMPONENTS: [&str; 6] = [
@@ -64,7 +65,10 @@ pub(super) fn skipped(plugin: &Plugin) -> Vec<String> {
     for file in crate::skills::plugin_files(plugin) {
         let dir = file.parent().and_then(std::path::Path::file_name);
         let name = dir.map_or_else(|| plugin.name.clone(), |dir| dir.to_string_lossy().into());
-        notes.extend(crate::skills::Meta::read(&file).notes("skill", &name));
+        match crate::skills::Meta::read(&file) {
+            Ok(meta) => notes.extend(meta.notes("skill", &name)),
+            Err(error) => notes.push(format!("skill {name}: {}", located(&file, error))),
+        }
     }
     for command in crate::plugins::commands::load(plugin) {
         notes.extend(command.meta.notes("command", &command.name));
@@ -183,15 +187,11 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
     if manifest.get("userConfig").is_some() {
         lines.push("skipped\tuserConfig (summonr does not prompt for plugin settings)".to_string());
     }
-    let file = crate::config::file();
-    let user = match &file {
-        Ok(file) => Some(&file.mcp),
-        Err(error) => {
-            lines.push(format!("warning\t{error}"));
-            None
-        }
-    };
-    for (server, keys) in config_needs(plugin, user) {
+    let user = user_servers();
+    if let Err(error) = &user {
+        lines.push(format!("warning\t{error}"));
+    }
+    for (server, keys) in config_needs(plugin, user.ok()) {
         let tokens = keys
             .iter()
             .map(|key| format!("{USER_CONFIG}{key}}}"))
@@ -207,12 +207,7 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
 }
 
 pub(super) fn settings_servers(plugin: &Plugin) -> BTreeSet<String> {
-    let file = crate::config::file();
-    let user = match &file {
-        Ok(file) => Some(&file.mcp),
-        Err(_reported_by_install) => None,
-    };
-    config_needs(plugin, user)
+    config_needs(plugin, user_servers().ok())
         .into_iter()
         .map(|(server, _)| server.name)
         .collect()
@@ -220,16 +215,21 @@ pub(super) fn settings_servers(plugin: &Plugin) -> BTreeSet<String> {
 
 type UserServers = std::collections::BTreeMap<String, summonr_types::mcp::Entry>;
 
-fn config_needs(plugin: &Plugin, user: Option<&UserServers>) -> Vec<(McpServer, Vec<String>)> {
-    plugin
-        .mcp_servers()
+fn user_servers() -> summonr_core::error::Result<UserServers> {
+    crate::config::file().map(|file| file.mcp.clone())
+}
+
+fn config_needs(plugin: &Plugin, user: Option<UserServers>) -> Vec<(McpServer, Vec<String>)> {
+    let servers = plugin.mcp_servers();
+    let user = user.map(|user| renamed(user, &plugin.legacy_names(&servers)));
+    servers
         .into_iter()
         .filter_map(|server| {
-            let names = [server.name.clone(), plugin.legacy_mcp_name(&server.key)];
             let own = server.config.get("user_config").and_then(Value::as_object);
-            let set: BTreeSet<&String> = names
-                .iter()
-                .filter_map(|name| user?.get(name))
+            let set: BTreeSet<&String> = user
+                .as_ref()
+                .and_then(|user| user.get(&server.name))
+                .into_iter()
                 .flat_map(|entry| entry.user_config.keys())
                 .chain(own.into_iter().flat_map(serde_json::Map::keys))
                 .collect();

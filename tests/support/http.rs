@@ -24,6 +24,7 @@ struct State {
     current: Option<String>,
     answered: Vec<Value>,
     probes: Vec<String>,
+    authorizations: Vec<String>,
 }
 
 impl Remote {
@@ -49,6 +50,14 @@ impl Remote {
         self.state.lock().unwrap().probes.clone()
     }
 
+    pub(crate) fn authorizations(&self) -> Vec<String> {
+        self.state
+            .lock()
+            .expect("remote state")
+            .authorizations
+            .clone()
+    }
+
     pub(crate) fn config(&self, name: &str, extra: &str) -> String {
         format!(
             "[mcp.{name}]\nurl = \"http://127.0.0.1:{}/mcp\"\n{extra}\n",
@@ -62,6 +71,7 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
     let mut length = 0;
     let mut session = None;
     let mut probe = None;
+    let mut authorization = None;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).unwrap_or(0) == 0 {
@@ -77,6 +87,9 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
         if lower.starts_with("x-probe:") {
             probe = Some(line["x-probe:".len()..].trim().to_string());
         }
+        if lower.starts_with("authorization:") {
+            authorization = Some(line["authorization:".len()..].trim().to_string());
+        }
         if line == "\r\n" {
             break;
         }
@@ -88,6 +101,7 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
     let mut stream = stream;
     let mut state = state.lock().unwrap();
     state.probes.extend(probe);
+    state.authorizations.extend(authorization);
     if request.get("method").is_none() && request.get("result").is_some() {
         state.answered.push(id);
         reply(&mut stream, "202 Accepted", &[], "");

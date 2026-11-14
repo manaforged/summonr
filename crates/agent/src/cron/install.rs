@@ -25,7 +25,6 @@ const LOG_DIR: &str = "cron";
 #[cfg(target_os = "macos")]
 const LOG_FILE: &str = "tick.log";
 #[cfg(any(unix, test))]
-const PATH_VAR: &str = "PATH";
 #[cfg(any(unix, test))]
 const USER_HOME_VAR: &str = "HOME";
 #[cfg(any(target_os = "linux", windows, test))]
@@ -48,7 +47,7 @@ pub(crate) struct TickEnv<'a> {
 #[cfg(any(unix, test))]
 impl<'a> TickEnv<'a> {
     pub(crate) fn vars(self) -> Vec<(&'static str, &'a str)> {
-        let mut vars = vec![(PATH_VAR, self.path)];
+        let mut vars = vec![(summonr_core::dirs::PATH_ENV, self.path)];
         vars.extend(self.home.map(|home| (USER_HOME_VAR, home)));
         vars.extend(
             self.summonr_home
@@ -130,7 +129,7 @@ impl OwnedEnv {
     fn current() -> Self {
         let set = |key| std::env::var(key).ok().filter(|value| !value.is_empty());
         Self {
-            path: std::env::var(PATH_VAR).unwrap_or_default(),
+            path: std::env::var(summonr_core::dirs::PATH_ENV).unwrap_or_default(),
             home: set(USER_HOME_VAR),
             summonr_home: set(summonr_core::dirs::HOME_ENV),
         }

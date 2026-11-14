@@ -3,6 +3,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::jobs::Owner;
 use crate::process::{Io, Spec};
+use summonr_core::dirs::PATH_ENV;
 use summonr_core::error::{Error, Result};
 
 use super::ToolOutput;
@@ -84,7 +85,7 @@ pub(super) fn spawn_command(
         .map_err(|error| Error::Tool(format!("cannot clone job log: {error}")))?;
     let path = command_env()
         .into_iter()
-        .find_map(|(key, value)| (key == "PATH").then_some(value))
+        .find_map(|(key, value)| (key == PATH_ENV).then_some(value))
         .unwrap_or_default();
     crate::process::spawn(
         Spec {
@@ -125,7 +126,7 @@ pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String
 
 /// The variables a command keeps from summonr's own environment.
 pub(crate) const KEEP: &[&str] = &[
-    "PATH",
+    PATH_ENV,
     "HOME",
     "TMPDIR",
     "TMP",
@@ -175,7 +176,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
         .collect();
     if let Some(extra) = crate::plugins::bin_path_prefix() {
         let sep = if cfg!(windows) { ';' } else { ':' };
-        match env.iter_mut().find(|(key, _)| key == "PATH") {
+        match env.iter_mut().find(|(key, _)| key == PATH_ENV) {
             Some((_, path)) => {
                 if !path.is_empty() {
                     *path = format!("{extra}{sep}{path}");
@@ -183,7 +184,7 @@ pub(crate) fn command_env() -> Vec<(String, String)> {
                     *path = extra;
                 }
             }
-            None => env.push(("PATH".to_string(), extra)),
+            None => env.push((PATH_ENV.to_string(), extra)),
         }
     }
     env

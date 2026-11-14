@@ -33,9 +33,19 @@ struct Reach {
     prefix: Option<String>,
 }
 
+/// The stem of `pattern` when it ends in the `*` wildcard, or `None` when it names one tool.
+fn stem(pattern: &str) -> Option<&str> {
+    pattern.strip_suffix('*')
+}
+
+/// Whether tool `alias` matches `pattern`: a trailing `*` matches every alias with that stem, else only the alias itself.
+pub(super) fn matches(alias: &str, pattern: &str) -> bool {
+    stem(pattern).map_or(alias == pattern, |stem| alias.starts_with(stem))
+}
+
 impl Reach {
     fn of(pattern: &str, side: Side) -> Self {
-        if let Some(stem) = pattern.strip_suffix('*') {
+        if let Some(stem) = stem(pattern) {
             return Self {
                 exact: None,
                 prefix: Some(stem.to_string()),

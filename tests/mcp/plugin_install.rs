@@ -86,6 +86,60 @@ pub(crate) fn plugin_reinstall_keeps_plugin_data() {
     assert!(!skill_text.contains("first"), "{skill_text}");
 }
 
+pub(crate) fn a_broken_plugin_file_is_one_note_and_the_session_runs() {
+    let session = Session::new();
+    let src = session.files.path().join("demo-src");
+    skill(&src, "demo", "Hi.\n");
+    let (ok, text) = session.cli(&["install", &src.display().to_string()]);
+    assert!(ok, "{text}");
+    let demo = session.home.path().join("plugins/demo");
+    write(
+        &demo.join(".claude-plugin/plugin.json"),
+        r#"{"name": "demo", "hooks": "./hooks/shape.json"}"#,
+    );
+    write(
+        &demo.join("hooks/shape.json"),
+        &json!({"hooks": {"PreToolUse": {"hooks": []}}}).to_string(),
+    );
+    let broken = [
+        ("hooks/hooks.json", "{"),
+        (".mcp.json", "{"),
+        ("mcp.toml", "[mcp"),
+        ("hooks.toml", "PreToolUse ="),
+    ];
+    for (file, text) in broken {
+        write(&demo.join(file), text);
+    }
+    let other = session.home.path().join("plugins/other");
+    write(&other.join(".claude-plugin/plugin.json"), "{");
+    let model = Model::start(vec![Step::Text("ok")]);
+    let outcome = session.run(&model, "", &[]);
+    let stderr = crate::support::read(&session.file("stderr"));
+    assert_eq!(outcome.code, Some(0), "{stderr}");
+    let mut named: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for line in stderr.lines() {
+        if let Some((file, _)) = line
+            .strip_prefix("summonr: ")
+            .and_then(|note| note.split_once(": "))
+        {
+            *named.entry(file).or_default() += 1;
+        }
+    }
+    let files = broken
+        .iter()
+        .map(|(file, _)| demo.join(file))
+        .chain([other.join(".claude-plugin/plugin.json")]);
+    for path in files {
+        let shown = path.display().to_string();
+        assert_eq!(named.get(shown.as_str()), Some(&1), "{shown}: {stderr}");
+    }
+    let shape = format!(
+        "summonr: {}: `hooks.PreToolUse` is not a list; summonr skipped this plugin file",
+        demo.join("hooks/shape.json").display()
+    );
+    assert!(stderr.lines().any(|line| line == shape), "{stderr}");
+}
+
 pub(crate) fn plugin_unknown_off_warns_without_blocking_list_or_session_start() {
     let session = Session::new();
     std::fs::write(

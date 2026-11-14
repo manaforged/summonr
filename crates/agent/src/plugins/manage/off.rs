@@ -2,8 +2,6 @@ use std::collections::BTreeSet;
 
 use super::super::installed;
 
-static WARNED_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 pub(crate) fn unknown_off(off: &[String]) -> Option<String> {
     if off.is_empty() {
         return None;
@@ -27,9 +25,7 @@ pub(crate) fn unknown_off(off: &[String]) -> Option<String> {
 }
 
 pub(crate) fn warn_unknown_off(off: &[String]) {
-    if let Some(note) = unknown_off(off)
-        && !WARNED_OFF.swap(true, std::sync::atomic::Ordering::Relaxed)
-    {
-        eprintln!("summonr: {note}");
+    if let Some(note) = unknown_off(off) {
+        crate::display::note(&note);
     }
 }

@@ -13,15 +13,15 @@ fn trusted(workspace: &Path) -> String {
 
 #[test]
 fn an_at_include_pulls_the_referenced_file_in_once() {
-    let workspace = tempfile::tempdir().unwrap();
-    std::fs::write(workspace.path().join("AGENTS.md"), "AGENTS RULE").unwrap();
-    std::fs::create_dir(workspace.path().join("docs")).unwrap();
-    std::fs::write(workspace.path().join("docs/map.md"), "MAP RULE").unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    std::fs::write(workspace.path().join("AGENTS.md"), "AGENTS RULE").expect("write fixture");
+    std::fs::create_dir(workspace.path().join("docs")).expect("create fixture dir");
+    std::fs::write(workspace.path().join("docs/map.md"), "MAP RULE").expect("write fixture");
     std::fs::write(
         workspace.path().join("CLAUDE.md"),
         "@AGENTS.md\n@docs/map.md\n\nCLAUDE RULE",
     )
-    .unwrap();
+    .expect("write fixture");
     let prompt = trusted(workspace.path());
     assert!(prompt.contains("MAP RULE"), "{prompt}");
     assert!(prompt.contains("CLAUDE RULE"), "{prompt}");
@@ -30,17 +30,17 @@ fn an_at_include_pulls_the_referenced_file_in_once() {
 
 #[test]
 fn a_missing_at_include_stays_a_literal_line() {
-    let workspace = tempfile::tempdir().unwrap();
-    std::fs::write(workspace.path().join("CLAUDE.md"), "@NOPE.md").unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    std::fs::write(workspace.path().join("CLAUDE.md"), "@NOPE.md").expect("write fixture");
     let prompt = trusted(workspace.path());
     assert!(prompt.contains("@NOPE.md"), "{prompt}");
 }
 
 #[test]
 fn at_include_cycles_terminate() {
-    let workspace = tempfile::tempdir().unwrap();
-    std::fs::write(workspace.path().join("AGENTS.md"), "@CLAUDE.md").unwrap();
-    std::fs::write(workspace.path().join("CLAUDE.md"), "@AGENTS.md").unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    std::fs::write(workspace.path().join("AGENTS.md"), "@CLAUDE.md").expect("write fixture");
+    std::fs::write(workspace.path().join("CLAUDE.md"), "@AGENTS.md").expect("write fixture");
     let prompt = trusted(workspace.path());
     assert!(
         prompt.contains("@CLAUDE.md") || prompt.contains("@AGENTS.md"),
@@ -50,8 +50,8 @@ fn at_include_cycles_terminate() {
 
 #[test]
 fn a_workspace_system_file_keeps_the_preamble() {
-    let workspace = tempfile::tempdir().unwrap();
-    std::fs::write(workspace.path().join("SYSTEM.md"), "WORKSPACE RULE").unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    std::fs::write(workspace.path().join("SYSTEM.md"), "WORKSPACE RULE").expect("write fixture");
     let prompt = trusted(workspace.path());
     assert!(
         prompt.contains("You are an expert coding assistant running inside summonr"),
@@ -62,8 +62,8 @@ fn a_workspace_system_file_keeps_the_preamble() {
 
 #[test]
 fn a_session_without_memory_is_told_nothing_persists() {
-    let work = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     let off = compose(
         work.path(),
         Some(home.path()),
@@ -87,7 +87,7 @@ fn a_session_without_memory_is_told_nothing_persists() {
 
 #[test]
 fn tests_keep_summonr_state_out_of_the_real_home() {
-    let home = summonr_core::dirs::summonr_home().unwrap();
+    let home = summonr_core::dirs::summonr_home().expect("summonr home");
     assert!(home.starts_with(std::env::temp_dir()), "{}", home.display());
 }
 
@@ -98,8 +98,8 @@ fn context(workspace: &Path, home: &Path) -> String {
 }
 
 fn write(path: &Path, text: &str) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, text).unwrap();
+    std::fs::create_dir_all(path.parent().expect("path has a parent")).expect("create fixture dir");
+    std::fs::write(path, text).expect("write fixture");
 }
 
 fn order(prompt: &str, markers: &[&str]) {
@@ -116,8 +116,8 @@ fn order(prompt: &str, markers: &[&str]) {
 
 #[test]
 fn claude_files_load_from_parents_down_with_local_notes_last() {
-    let root = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     let workspace = root.path().join("repo");
     write(&root.path().join("CLAUDE.md"), "PARENT RULE");
     write(&root.path().join("CLAUDE.local.md"), "PARENT LOCAL");
@@ -142,8 +142,8 @@ fn claude_files_load_from_parents_down_with_local_notes_last() {
 
 #[test]
 fn rules_load_recursively_after_user_rules_and_skip_path_scoped_ones() {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     write(&home.path().join(".claude/rules/me.md"), "USER RULE");
     write(&workspace.path().join(".claude/CLAUDE.md"), "DOT RULE");
     let rules = workspace.path().join(".claude/rules");
@@ -177,8 +177,8 @@ fn rules_load_recursively_after_user_rules_and_skip_path_scoped_ones() {
 
 #[test]
 fn imports_expand_anywhere_outside_code_with_home_and_escaped_paths() {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     let dir = workspace.path();
     write(&dir.join("inline.md"), "INLINE RULE");
     write(&dir.join("Design Docs/api.md"), "SPACED RULE");
@@ -204,8 +204,8 @@ fn imports_expand_anywhere_outside_code_with_home_and_escaped_paths() {
 
 #[test]
 fn imports_stop_after_four_hops() {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     let dir = workspace.path();
     write(&dir.join("CLAUDE.md"), "@1.md");
     for hop in 1..=5 {
@@ -222,11 +222,11 @@ fn imports_stop_after_four_hops() {
 #[cfg(unix)]
 #[test]
 fn a_claude_file_linked_to_agents_loads_it_once() {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
     let dir = workspace.path();
     write(&dir.join("AGENTS.md"), "AGENTS RULE");
-    std::os::unix::fs::symlink(dir.join("AGENTS.md"), dir.join("CLAUDE.md")).unwrap();
+    std::os::unix::fs::symlink(dir.join("AGENTS.md"), dir.join("CLAUDE.md")).expect("symlink");
     write(&dir.join(".claude/CLAUDE.md"), "@../AGENTS.md\nDOT RULE");
     let prompt = context(dir, home.path());
     assert_eq!(prompt.matches("AGENTS RULE").count(), 1, "{prompt}");
@@ -250,7 +250,7 @@ fn plain(workspace: &Path) -> String {
 
 #[test]
 fn the_default_style_keeps_the_whole_preamble() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let prompt = plain(workspace.path());
     assert!(prompt.starts_with(&preamble(true)), "{prompt}");
     assert!(prompt.contains(IDENTITY) && prompt.contains(CODING_RULES));
@@ -260,7 +260,7 @@ fn the_default_style_keeps_the_whole_preamble() {
 
 #[test]
 fn a_custom_style_drops_the_coding_rules_and_sits_before_the_cwd() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let prompt = styled(
         workspace.path(),
         None,
@@ -284,7 +284,7 @@ fn a_custom_style_drops_the_coding_rules_and_sits_before_the_cwd() {
 
 #[test]
 fn keep_coding_instructions_keeps_the_coding_rules_beside_the_style() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let prompt = styled(
         workspace.path(),
         None,
@@ -297,7 +297,7 @@ fn keep_coding_instructions_keeps_the_coding_rules_beside_the_style() {
 
 #[test]
 fn restyling_round_trips_to_the_plain_prompt() {
-    let workspace = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().expect("temp dir");
     let base = plain(workspace.path());
     let styled_once = restyle(&base, Some(&custom(false)));
     assert_eq!(restyle(&styled_once, Some(&custom(false))), styled_once);
@@ -307,9 +307,9 @@ fn restyling_round_trips_to_the_plain_prompt() {
 
 #[test]
 fn a_replaced_preamble_keeps_its_text_under_a_style() {
-    let work = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join("SYSTEM.md"), "OWN PREAMBLE").unwrap();
+    let work = tempfile::tempdir().expect("temp dir");
+    let home = tempfile::tempdir().expect("temp dir");
+    std::fs::write(home.path().join("SYSTEM.md"), "OWN PREAMBLE").expect("write fixture");
     let prompt = styled(
         work.path(),
         Some(home.path()),

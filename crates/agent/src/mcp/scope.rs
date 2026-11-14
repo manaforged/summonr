@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::config::Entry;
 use crate::config;
-use crate::plugins::{expand, read_parsed, server_entry};
+use crate::plugins::{expand, read_parsed, renamed, server_entry};
 use summonr_core::error::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,11 +178,7 @@ fn plugins(
     let mut legacy = BTreeMap::new();
     for plugin in crate::plugins::enabled() {
         let servers = plugin.mcp_servers();
-        legacy.extend(
-            servers
-                .iter()
-                .map(|server| (plugin.legacy_mcp_name(&server.key), server.name.clone())),
-        );
+        legacy.extend(plugin.legacy_names(&servers));
         let vars = plugin.vars(workspace);
         for server in servers {
             let entry: Entry = match server_entry(&server.file, &server.key, server.config) {
@@ -208,23 +204,6 @@ fn plugins(
         }
     }
     legacy
-}
-
-fn renamed(
-    layer: BTreeMap<String, Entry>,
-    legacy: &BTreeMap<String, String>,
-) -> BTreeMap<String, Entry> {
-    let mut out: BTreeMap<String, Entry> = BTreeMap::new();
-    for (name, entry) in layer {
-        let name = legacy.get(&name).cloned().unwrap_or(name);
-        match out.get_mut(&name) {
-            Some(base) => base.overlay(entry),
-            None => {
-                out.insert(name, entry);
-            }
-        }
-    }
-    out
 }
 
 fn json_map(

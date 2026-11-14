@@ -15,7 +15,7 @@ mod ran;
 mod tail;
 
 pub(crate) use info::{command, footprint_kb, parent, started, table};
-pub(crate) use ran::{Ran, finish};
+pub(crate) use ran::{Ran, exited, finish};
 pub(crate) use tail::{Cap, Tail};
 
 const SECRET_MIN: usize = 8;
@@ -237,6 +237,14 @@ pub(crate) fn spawn_blocking(spec: Spec) -> Result<std::process::Child> {
 pub struct Deadline {
     pub after: Duration,
     pub poll: Duration,
+}
+
+impl Deadline {
+    /// A wait of `after` in total that checks every `poll`.
+    #[must_use]
+    pub const fn new(after: Duration, poll: Duration) -> Self {
+        Self { after, poll }
+    }
 }
 
 pub fn output(spec: Spec, input: Option<&[u8]>) -> Result<Output> {

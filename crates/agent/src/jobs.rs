@@ -284,7 +284,7 @@ mod tree;
 pub(crate) use tree::{block, child_lines};
 
 fn check_id(id: &str) -> Result<&str> {
-    if id.len() > ID_MAX || !summonr_core::text::is_name(id, "-") {
+    if id.len() > ID_MAX || !summonr_core::text::is_name(id, summonr_core::text::Charset::Dash) {
         return Err(Error::Tool("job id is invalid".to_string()));
     }
     Ok(id)

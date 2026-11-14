@@ -34,7 +34,7 @@ pub(crate) const SEPARATOR: &str = "__";
 /// Spells `name` in `A-Z`, `a-z`, `0-9`, `_` and `-`, other characters becoming `_`, cut to `max`.
 #[must_use]
 pub(crate) fn clean(name: &str, max: usize) -> String {
-    summonr_core::text::clean_name(name, "_-", '_', max)
+    summonr_core::text::clean_name(name, summonr_core::text::Charset::Word, '_', max)
 }
 
 /// Parses one `KEY=VALUE` environment variable or header.

@@ -103,6 +103,9 @@ mod tests;
 #[path = "provider/cache_tests.rs"]
 mod cache_tests;
 #[cfg(test)]
+#[path = "provider/fixture.rs"]
+pub(crate) mod fixture;
+#[cfg(test)]
 #[path = "provider/host_cache_tests.rs"]
 mod host_cache_tests;
 

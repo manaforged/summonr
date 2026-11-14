@@ -50,10 +50,9 @@ async fn pump(
     mut inbox: UnboundedReceiver<String>,
     shown: &(impl Fn(Result<Content, String>) + Sync),
 ) -> String {
-    let limits = crate::limits::limits();
-    let max = limits.panel_output_bytes;
+    let max = crate::limits::limits().panel_output_bytes;
     let (mut child, _group, mut stdin) = (process.child, process.group, process.stdin);
-    let mut stderr = Tail::spawn(process.stderr, Cap::Tail(limits.mcp_stderr_tail_bytes));
+    let mut stderr = Tail::spawn(process.stderr, Cap::stderr());
     let mut stdout = BufReader::new(process.stdout);
     let mut line = Vec::new();
     let mut open = true;
@@ -78,7 +77,7 @@ async fn pump(
     let status = child.wait().await;
     drop(stderr.settle().await);
     match (status, stderr.text().trim()) {
-        (Ok(status), "") => format!("stopped: exited with {:?}", status.code()),
+        (Ok(status), "") => format!("stopped: {}", crate::process::exited(status.code())),
         (Ok(_), reason) => reason.to_string(),
         (Err(error), _) => error.to_string(),
     }

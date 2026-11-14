@@ -36,7 +36,7 @@ pub(crate) fn tools(module: bool) -> bool {
 }
 
 fn clean_id(id: &str) -> String {
-    summonr_core::text::clean_name(id, "-_.", '-', 64)
+    summonr_core::text::clean_name(id, summonr_core::text::Charset::Dotted, '-', 64)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -72,7 +72,7 @@ struct Stamp {
 }
 
 pub(crate) fn slug(cwd: &str) -> String {
-    summonr_core::text::clean_name(cwd, "", '-', usize::MAX)
+    summonr_core::text::clean_name(cwd, summonr_core::text::Charset::Plain, '-', usize::MAX)
 }
 
 pub(crate) fn inbox_text(mail: &[Mail]) -> String {

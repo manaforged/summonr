@@ -5,7 +5,7 @@ use crate::config;
 use summonr_core::error::{Error, Result};
 
 pub fn add(name: &str, launch: &Launch) -> Result<String> {
-    if !summonr_core::text::is_name(name, "-_") {
+    if !summonr_core::text::is_name(name, summonr_core::text::Charset::Word) {
         return Err(Error::Config(format!(
             "mcp name `{name}`: letters, digits, `-`, and `_` only"
         )));

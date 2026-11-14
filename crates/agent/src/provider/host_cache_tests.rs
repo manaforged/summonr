@@ -1,7 +1,8 @@
 use serde_json::json;
 
 use super::Message;
-use super::cache_tests::{body, endpoint, plain, sent};
+use super::cache_tests::{body, plain, sent};
+use super::fixture::endpoint;
 
 #[test]
 fn each_host_gets_the_session_cache_hint_its_docs_name() {

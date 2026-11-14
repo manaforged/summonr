@@ -339,10 +339,7 @@ fn gh(dir: &Path, args: &[&str]) -> Result<String, Failure> {
     let mut spec = Spec::new(GH, args.iter().map(OsStr::new)).envs(QUIET);
     spec.cwd = Some(dir.to_path_buf());
     let limits = crate::limits::limits();
-    let deadline = process::Deadline {
-        after: limits.gh(),
-        poll: limits.gh_poll(),
-    };
+    let deadline = process::Deadline::new(limits.gh(), limits.gh_poll());
     let finished =
         process::output_within(spec, None, deadline).map_err(|_error| Failure::SignedOut)?;
     let Some(output) = finished else {

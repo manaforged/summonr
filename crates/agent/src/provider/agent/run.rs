@@ -131,10 +131,7 @@ impl Run {
                 "{error}; install Claude Code and run `claude auth login`"
             ))
         })?;
-        let stderr = Tail::spawn(
-            process.stderr,
-            Cap::Tail(crate::limits::limits().mcp_stderr_tail_bytes),
-        );
+        let stderr = Tail::spawn(process.stderr, Cap::stderr());
         let thread = match &spec.thread {
             Thread::Start(id) | Thread::Resume(id) => Some(id.clone()),
             Thread::Once => None,

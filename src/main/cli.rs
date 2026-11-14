@@ -296,7 +296,7 @@ fn unknown(name: &str, tail: &str) -> Error {
 }
 
 fn named(token: &str) -> bool {
-    token.len() <= 40 && summonr_core::text::is_name(token, "-_.")
+    token.len() <= 40 && summonr_core::text::is_name(token, summonr_core::text::Charset::Dotted)
 }
 
 #[cfg(test)]

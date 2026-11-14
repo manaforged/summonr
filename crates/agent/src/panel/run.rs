@@ -52,7 +52,7 @@ pub(crate) async fn output(
 ) -> Result<String, String> {
     let limits = crate::limits::limits();
     let max = limits.panel_output_bytes;
-    let keep = (Cap::Head(max + 1), Cap::Tail(limits.mcp_stderr_tail_bytes));
+    let keep = (Cap::Head(max + 1), Cap::stderr());
     let input = input.unwrap_or_default();
     let ran = crate::process::finish(
         process,

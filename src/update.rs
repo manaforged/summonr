@@ -141,20 +141,9 @@ fn newer(latest: &str, current: &str) -> Ordering {
 }
 
 async fn fetch(http: &Session, url: &str) -> Result<Vec<u8>> {
-    let failed = |why: String| Error::Setup(format!("cannot download {url}: {why}"));
-    let response = http
-        .get(url)
-        .send()
+    summonr_agent::credentials::download(http, url, None)
         .await
-        .map_err(|error| failed(error.to_string()))?;
-    if !response.status().is_success() {
-        return Err(failed(format!("HTTP {}", response.status().as_u16())));
-    }
-    response
-        .bytes()
-        .await
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| failed(error.to_string()))
+        .map_err(Error::Setup)
 }
 
 fn check(archive: &[u8], listed: &[u8], asset: &str) -> Result<()> {

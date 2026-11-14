@@ -12,6 +12,13 @@ pub(crate) enum Cap {
     Lines(usize),
 }
 
+impl Cap {
+    /// The tail of a child's stderr that its error reports keep, `mcp_stderr_tail_bytes` long.
+    pub(crate) fn stderr() -> Self {
+        Self::Tail(crate::limits::limits().mcp_stderr_tail_bytes)
+    }
+}
+
 pub(crate) struct Tail {
     kept: Arc<Mutex<Vec<u8>>>,
     drain: Option<JoinHandle<()>>,

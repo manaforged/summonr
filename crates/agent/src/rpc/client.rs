@@ -50,10 +50,7 @@ impl Client {
             }
             .envs(launch.env.iter().cloned()),
         )?;
-        let stderr = Tail::spawn(
-            process.stderr,
-            Cap::Tail(crate::limits::limits().mcp_stderr_tail_bytes),
-        );
+        let stderr = Tail::spawn(process.stderr, Cap::stderr());
         let stdio = Stdio {
             group: process.group,
             child: Some(process.child),

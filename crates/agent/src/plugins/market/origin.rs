@@ -186,9 +186,9 @@ pub(super) fn repo_ok(repo: &str) -> bool {
         return false;
     };
     !owner.starts_with('-')
-        && summonr_core::text::is_name(owner, "-")
+        && summonr_core::text::is_name(owner, summonr_core::text::Charset::Dash)
         && !matches!(name, "." | "..")
-        && summonr_core::text::is_name(name, "-_.")
+        && summonr_core::text::is_name(name, summonr_core::text::Charset::Dotted)
 }
 
 fn local(input: &str) -> bool {

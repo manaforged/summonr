@@ -302,7 +302,7 @@ fn reference(name: &str) -> bool {
 }
 
 pub(crate) fn valid(name: &str) -> bool {
-    summonr_core::text::is_name(name, "-_")
+    summonr_core::text::is_name(name, summonr_core::text::Charset::Word)
 }
 
 /// Each Markdown file under `dir`, named by its folder path and stem joined with `:`, such as `frontend:component`.

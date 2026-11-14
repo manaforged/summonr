@@ -102,10 +102,7 @@ fn run(
     stdin: Option<String>,
 ) -> Result<std::result::Result<String, SecurityExit>> {
     let limits = crate::limits::limits();
-    let deadline = Deadline {
-        after: limits.keychain(),
-        poll: limits.keychain_poll(),
-    };
+    let deadline = Deadline::new(limits.keychain(), limits.keychain_poll());
     let finished = process::output_within(
         Spec::new(tool, args),
         stdin.as_deref().map(str::as_bytes),

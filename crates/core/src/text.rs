@@ -129,26 +129,42 @@ pub fn squash(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Whether `name` is non-empty and holds only ASCII letters, digits, and characters in `extra`.
-#[must_use]
-pub fn is_name(name: &str, extra: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || extra.contains(c))
+/// The characters a name may hold besides ASCII letters and digits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Charset {
+    /// No other characters.
+    Plain,
+    /// `-`.
+    Dash,
+    /// `-` and `_`.
+    Word,
+    /// `-`, `_`, and `.`.
+    Dotted,
 }
 
-/// `name` with characters outside ASCII letters, digits, and `extra` set to `with`, cut to `max`.
-#[must_use]
-pub fn clean_name(name: &str, extra: &str, with: char, max: usize) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || extra.contains(c) {
-                c
-            } else {
-                with
+impl Charset {
+    fn holds(self, c: char) -> bool {
+        c.is_ascii_alphanumeric()
+            || match self {
+                Self::Plain => false,
+                Self::Dash => c == '-',
+                Self::Word => matches!(c, '-' | '_'),
+                Self::Dotted => matches!(c, '-' | '_' | '.'),
             }
-        })
+    }
+}
+
+/// Whether `name` is non-empty and holds only characters in `charset`.
+#[must_use]
+pub fn is_name(name: &str, charset: Charset) -> bool {
+    !name.is_empty() && name.chars().all(|c| charset.holds(c))
+}
+
+/// `name` with characters outside `charset` set to `with`, cut to `max`.
+#[must_use]
+pub fn clean_name(name: &str, charset: Charset, with: char, max: usize) -> String {
+    name.chars()
+        .map(|c| if charset.holds(c) { c } else { with })
         .take(max)
         .collect()
 }

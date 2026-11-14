@@ -4,10 +4,9 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 use serde::de::IntoDeserializer;
 use serde::de::value::{Error, StrDeserializer};
+use summonr_types::mcp::CLAUDE_PREFIX;
 
 use Argument::{Bare, Text, Value};
-
-const PROMPT_PREFIX: &str = summonr_types::mcp::CLAUDE_PREFIX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -213,7 +212,7 @@ pub(crate) enum PromptHead<'a> {
 #[must_use]
 pub(crate) fn prompt_head(head: &str) -> Option<PromptHead<'_>> {
     let name = head.strip_prefix('/')?;
-    if let Some(joined) = name.strip_prefix(PROMPT_PREFIX) {
+    if let Some(joined) = name.strip_prefix(CLAUDE_PREFIX) {
         return joined
             .contains(crate::mcp::SEPARATOR)
             .then_some(PromptHead::Joined(joined));

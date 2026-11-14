@@ -214,7 +214,12 @@ fn key(memory: &Path, workspace: &Path) -> String {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let name = summonr_core::text::clean_name(&base, "._-", '-', KEY_NAME_CHARS);
+    let name = summonr_core::text::clean_name(
+        &base,
+        summonr_core::text::Charset::Dotted,
+        '-',
+        KEY_NAME_CHARS,
+    );
     let hash = summonr_core::text::fnv64(identity.as_bytes());
     existing(memory, &hash).unwrap_or_else(|| format!("{name}-{hash}"))
 }

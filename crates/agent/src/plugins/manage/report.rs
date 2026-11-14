@@ -164,7 +164,7 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
     for (server, keys) in config_needs(plugin) {
         let tokens = keys
             .iter()
-            .map(|key| format!("${{user_config.{key}}}"))
+            .map(|key| format!("{USER_CONFIG}{key}}}"))
             .collect::<Vec<_>>()
             .join(" ");
         let table = format!("mcp.{}", server.name);
@@ -199,7 +199,7 @@ fn config_needs(plugin: &Plugin) -> Vec<(McpServer, Vec<String>)> {
 fn config_keys(text: &str) -> BTreeSet<String> {
     let keys = std::cell::RefCell::new(BTreeSet::new());
     scan(text, USER_CONFIG, |key| {
-        if summonr_core::text::is_name(key, "_-.") {
+        if summonr_core::text::is_name(key, summonr_core::text::Charset::Dotted) {
             keys.borrow_mut().insert(key.to_string());
         }
         None

@@ -2,15 +2,9 @@ use std::io::{Read, Write};
 
 use serde_json::{Value, json};
 
+use super::fixture::{endpoint, request_body};
 use super::{Client, CompletionRequest, Effort, Message, Partial, Role, ToolCall, ToolFunction};
 use crate::endpoint::{CacheTtl, Endpoint};
-
-pub(super) fn endpoint(name: &str, model: &str) -> Endpoint {
-    let mut endpoint =
-        crate::endpoint::resolve(Some(name), Some(model), crate::Requirement::Config).unwrap();
-    endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
-    endpoint
-}
 
 fn tool_round() -> Vec<Message> {
     let mut assistant = Message::user("");
@@ -37,19 +31,7 @@ fn tool_round() -> Vec<Message> {
 }
 
 pub(super) fn body(endpoint: &Endpoint, messages: &[Message], effort: Option<Effort>) -> Value {
-    let request = CompletionRequest::new(
-        "s".to_string(),
-        endpoint.model.clone(),
-        messages,
-        &[],
-        Some(16_000),
-        false,
-        effort,
-    );
-    Client::connect(endpoint)
-        .unwrap()
-        .request_body(&request, false)
-        .unwrap()
+    request_body(endpoint, messages, Some(16_000), effort)
 }
 
 #[test]

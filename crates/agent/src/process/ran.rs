@@ -25,10 +25,15 @@ impl Ran {
     /// Why the process failed: its trimmed stderr, or its exit code when stderr is blank.
     pub(crate) fn reason(&self) -> String {
         match self.stderr.trim() {
-            "" => format!("exited with {:?}", self.code),
+            "" => exited(self.code),
             reason => reason.to_string(),
         }
     }
+}
+
+/// How a process ended, by its exit code, for a report with no stderr.
+pub(crate) fn exited(code: Option<i32>) -> String {
+    format!("exited with {code:?}")
 }
 
 /// Feeds `input` to a started process and waits up to `limit`, keeping each stream within its cap.

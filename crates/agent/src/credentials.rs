@@ -26,7 +26,12 @@ impl Store for secret::Store {
     }
 
     fn claim(&self, name: &str) -> Result<Box<dyn Send>> {
-        let safe = summonr_core::text::clean_name(&login_slot(name), "-", '_', usize::MAX);
+        let safe = summonr_core::text::clean_name(
+            &login_slot(name),
+            summonr_core::text::Charset::Dash,
+            '_',
+            usize::MAX,
+        );
         summonr_core::dirs::summonr_home()
             .and_then(|home| crate::config::hold(&home.join("locks").join(safe)))
             .map(|file| Box::new(file) as Box<dyn Send>)
@@ -92,6 +97,43 @@ pub fn http(total: std::time::Duration) -> Result<leyline::Session> {
         summonr_auth::builder(total, crate::limits::limits().connect()),
         crate::limits::limits().retry_policy(crate::limits::Reach::Remote),
     )
+}
+
+/// GETs `url` and returns its body, or why it failed; with `cap`, refuses a body of `cap` bytes or more.
+pub async fn download(
+    http: &leyline::Session,
+    url: &str,
+    cap: Option<usize>,
+) -> std::result::Result<Vec<u8>, String> {
+    let failed = |why: String| format!("cannot download {url}: {why}");
+    let request = http.get(url);
+    let request = if cap.is_some() {
+        request.stream()
+    } else {
+        request
+    };
+    let response = request
+        .send()
+        .await
+        .map_err(|error| failed(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(failed(format!("HTTP {}", response.status().as_u16())));
+    }
+    let Some(cap) = cap else {
+        return response
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|error| failed(error.to_string()));
+    };
+    let (bytes, _) = response
+        .read_until(cap, |_, _| false)
+        .await
+        .map_err(|error| failed(error.to_string()))?;
+    if bytes.len() >= cap {
+        return Err(failed(format!("larger than {cap} bytes")));
+    }
+    Ok(bytes)
 }
 
 pub(crate) fn session(

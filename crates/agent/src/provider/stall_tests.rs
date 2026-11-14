@@ -226,7 +226,7 @@ async fn a_server_silent_before_its_headers_fails_after_the_idle_timeout() {
         drop(socket.set_read_timeout(Some(Duration::from_secs(30))));
         drop(socket.read(&mut [0u8; 1]));
     });
-    let mut endpoint = super::cache_tests::endpoint("deepseek", "deepseek-flash");
+    let mut endpoint = super::fixture::endpoint("deepseek", "deepseek-flash");
     endpoint.base_url = Some(base);
     endpoint.idle_timeout_secs = Some(1);
     let client = Client::connect(&endpoint).unwrap();

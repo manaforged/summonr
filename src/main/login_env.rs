@@ -7,10 +7,7 @@ use summonr_agent::process::{Deadline, Spec, output_within};
 
 const MARKER: &str = "__SUMMONR_LOGIN_ENV__";
 const SKIP: [&str; 4] = ["PWD", "OLDPWD", "SHLVL", "_"];
-const DEADLINE: Deadline = Deadline {
-    after: Duration::from_secs(10),
-    poll: Duration::from_millis(50),
-};
+const DEADLINE: Deadline = Deadline::new(Duration::from_secs(10), Duration::from_millis(50));
 
 #[expect(
     unsafe_code,

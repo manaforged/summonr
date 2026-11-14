@@ -15,7 +15,7 @@ pub(super) fn path_word(word: &str) -> &str {
     let Some((name, value)) = word.split_once('=') else {
         return word;
     };
-    if value.is_empty() || !summonr_core::text::is_name(name, "_-") {
+    if value.is_empty() || !summonr_core::text::is_name(name, summonr_core::text::Charset::Word) {
         return word;
     }
     let rooted = value.starts_with(['/', '~', '\\']) || value.as_bytes().get(1) == Some(&b':');

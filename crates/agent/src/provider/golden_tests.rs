@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use super::cache_tests::endpoint;
+use super::fixture::endpoint;
 use super::{
     Client, CompletionRequest, Message, Role, ToolCall, ToolDefinition, ToolFunction, ToolKind,
     ToolsJson,

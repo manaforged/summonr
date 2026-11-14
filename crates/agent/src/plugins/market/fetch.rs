@@ -152,42 +152,18 @@ pub(super) fn clone(url: &str, pin: &Pin<'_>, subdir: Option<&str>, dest: &Path)
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<()> {
-    crate::diff::git_within(root, args, deadline()).map(drop)
-}
-
-fn deadline() -> Deadline {
     let limits = crate::limits::limits();
-    Deadline {
-        after: limits.plugin_fetch(),
-        poll: limits.plugin_fetch_poll(),
-    }
+    let deadline = Deadline::new(limits.plugin_fetch(), limits.plugin_fetch_poll());
+    crate::diff::git_within(root, args, deadline).map(drop)
 }
 
 /// Downloads `url` within `plugin_fetch_secs`, refusing a body over `web_body_bytes`.
 pub(super) async fn download(url: &str) -> Result<Vec<u8>> {
-    let failed = |why: String| Error::Config(format!("cannot download {url}: {why}"));
     let limits = crate::limits::limits();
     let http = crate::credentials::http(limits.plugin_fetch())?;
-    let response = http
-        .get(url)
-        .stream()
-        .send()
+    crate::credentials::download(&http, url, Some(limits.web_body_bytes))
         .await
-        .map_err(|error| failed(error.to_string()))?;
-    if !response.status().is_success() {
-        return Err(failed(format!("HTTP {}", response.status().as_u16())));
-    }
-    let (bytes, _) = response
-        .read_until(limits.web_body_bytes, |_, _| false)
-        .await
-        .map_err(|error| failed(error.to_string()))?;
-    if bytes.len() >= limits.web_body_bytes {
-        return Err(failed(format!(
-            "larger than {} bytes",
-            limits.web_body_bytes
-        )));
-    }
-    Ok(bytes.to_vec())
+        .map_err(Error::Config)
 }
 
 /// Refuses a link under `dir` that names a directory or leaves `dir`, so a copy stays finite and local.

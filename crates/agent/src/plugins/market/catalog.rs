@@ -213,7 +213,7 @@ impl Entry {
 /// Whether `name` is a valid part of a `plugin@marketplace` id.
 pub(super) fn id_part(name: &str) -> bool {
     name.starts_with(|first: char| first.is_ascii_alphanumeric())
-        && summonr_core::text::is_name(name, "._-")
+        && summonr_core::text::is_name(name, summonr_core::text::Charset::Dotted)
         && !name.contains("..")
 }
 

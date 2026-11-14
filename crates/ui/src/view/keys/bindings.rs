@@ -147,7 +147,14 @@ impl When {
     }
 }
 
-pub(super) fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
+pub(super) fn with_bindings<R>(run: impl FnOnce(&[(Shortcut, When, KeyCommand)]) -> R) -> R {
+    thread_local! {
+        static TABLE: Vec<(Shortcut, When, KeyCommand)> = bindings();
+    }
+    TABLE.with(|table| run(table))
+}
+
+fn bindings() -> Vec<(Shortcut, When, KeyCommand)> {
     use KeyCommand as Do;
     let text = |key: &'static str| -> Shortcut { LogicalKey::character(key).into() };
     let ctrl = |key: &'static str| Shortcut::ctrl(LogicalKey::character(key));

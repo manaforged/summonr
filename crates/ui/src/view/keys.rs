@@ -8,7 +8,7 @@ pub(crate) mod bindings;
 mod nav;
 
 pub(crate) use bindings::KeyCommand;
-use bindings::bindings;
+use bindings::with_bindings;
 use sigil::prelude::Widget;
 
 impl App {
@@ -229,59 +229,77 @@ impl App {
 }
 
 pub(crate) fn shell(app: &App) -> NodeBuilder {
-    let mut shell = super::input::leader_shortcuts(
-        sigil::prelude::column()
-            .role(Role::Main)
-            .label("Summonr agent harness")
-            .gap(sigil::prelude::Space::None)
-            .fill_width()
-            .fill_height(),
-        app,
-    );
-    for (shortcut, when, command) in bindings() {
-        let app = app.clone();
-        let handler = move |event: &mut KeyEvent| {
-            let app = app.route(command);
-            if when.holds(&app) && app.run_key(command) {
-                event.stop_propagation();
-            }
-        };
-        shell = if matches!(command, KeyCommand::Recall(_)) {
-            shell.key(shortcut, handler)
-        } else {
-            shell.key_capture(shortcut, handler)
-        };
-    }
+    let capture = app.clone();
+    let bubble = app.clone();
     let scroll = app.clone();
-    let owner = app.clone();
-    let stray = app.clone();
-    let shell = shell
-        .key_any(move |event| stray.target().type_elsewhere(event))
-        .key_capture_any(move |event| {
-            let owner = owner.target();
-            if super::input::leader_plain(&owner, event) {
-                event.stop_propagation();
-                return;
+    sigil::prelude::column()
+        .role(Role::Main)
+        .label("Summonr agent harness")
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .fill_height()
+        .key_capture_any(move |event| capture_key(&capture, event))
+        .key_any(move |event| bubble_key(&bubble, event))
+        .scroll(move |event| scroll.target().wheel(event))
+}
+
+fn capture_key(app: &App, event: &mut KeyEvent) {
+    if super::input::leader_capture(app, event)
+        || binding_match(app, event, false)
+        || capture_fallback(&app.target(), event)
+        || super::input::tab_capture(app, event)
+        || super::input::composer_capture(app, event)
+    {
+        event.stop_propagation();
+        return;
+    }
+    super::input::hotkey_newline(app, event);
+}
+
+fn bubble_key(app: &App, event: &mut KeyEvent) {
+    if super::input::ctrl_letter(event) == Some('x') {
+        app.target().arm_leader();
+        event.stop_propagation();
+        return;
+    }
+    if binding_match(app, event, true) {
+        event.stop_propagation();
+        return;
+    }
+    app.target().type_elsewhere(event);
+}
+
+fn binding_match(app: &App, event: &KeyEvent, recall: bool) -> bool {
+    with_bindings(|rows| {
+        for (shortcut, when, command) in rows {
+            if matches!(command, KeyCommand::Recall(_)) != recall || !shortcut.matches(event) {
+                continue;
             }
-            let composer =
-                !owner.options_active() && !owner.editor_focused() && owner.pane_active().is_none();
-            if owner.form_hidden() && composer && event.key != Key::Tab.into() {
-                event.stop_propagation();
-                return;
+            let routed = app.route(*command);
+            if when.holds(&routed) && routed.run_key(*command) {
+                return true;
             }
-            let typed = event
-                .text
-                .as_ref()
-                .is_some_and(|text| !text.is_empty() && !text.chars().any(char::is_control))
-                && !crate::host::intake::chord(event.modifiers);
-            owner.settle.set(false);
-            if typed && owner.pane_active().is_some() {
-                event.stop_propagation();
-            }
-        })
-        .scroll(move |event| scroll.target().wheel(event));
-    let shell = super::input::tab_shortcuts(shell, app);
-    super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
+        }
+        false
+    })
+}
+
+fn capture_fallback(owner: &App, event: &mut KeyEvent) -> bool {
+    if super::input::leader_plain(owner, event) {
+        return true;
+    }
+    let composer =
+        !owner.options_active() && !owner.editor_focused() && owner.pane_active().is_none();
+    if owner.form_hidden() && composer && event.key != Key::Tab.into() {
+        return true;
+    }
+    let typed = event
+        .text
+        .as_ref()
+        .is_some_and(|text| !text.is_empty() && !text.chars().any(char::is_control))
+        && !crate::host::intake::chord(event.modifiers);
+    owner.settle.set(false);
+    typed && owner.pane_active().is_some()
 }
 
 impl App {

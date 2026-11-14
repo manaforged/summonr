@@ -1,94 +1,74 @@
 use super::*;
-use sigil::prelude::Widget;
 use summonr_agent::prefs::EditorKey;
 
-pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
+pub(super) fn composer_capture(app: &App, event: &mut KeyEvent) -> bool {
     for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {
-        node = node.key_capture(Shortcut::new(Key::Enter, modifier), |event| {
+        if Shortcut::new(Key::Enter, modifier).matches(event) {
             rewrite(event, Key::Enter);
-        });
+            return false;
+        }
     }
     for (key, end) in [(Key::Home, false), (Key::End, true)] {
         for extend in [false, true] {
-            let app = app.clone();
             let modifiers = if extend {
                 ModifiersState::CONTROL | ModifiersState::SHIFT
             } else {
                 ModifiersState::CONTROL
             };
-            node = node.key_capture(Shortcut::new(key, modifiers), move |event| {
-                if app.target().boundary(end, extend) {
-                    event.stop_propagation();
-                }
-            });
+            if Shortcut::new(key, modifiers).matches(event) {
+                return app.target().boundary(end, extend);
+            }
         }
     }
-    node
+    false
 }
 
-pub(super) fn tab_shortcuts(node: NodeBuilder, app: &App) -> NodeBuilder {
-    let complete = app.clone();
-    let mode = app.clone();
-    node.key_capture(
-        Shortcut::new(Key::Tab, ModifiersState::empty()),
-        move |event| {
-            let complete = complete.target();
-            let composer =
-                !complete.form_hidden() && (complete.complete() || complete.queue_draft());
-            if complete.overlay_tab(1) || composer {
-                event.stop_propagation();
-            } else if !canvas::is_window() {
-                event.stop_propagation();
-                complete.cycle_effort(1);
-            }
-        },
-    )
-    .key_capture(
-        Shortcut::new(Key::Tab, ModifiersState::SHIFT),
-        move |event| {
-            let mode = mode.target();
-            if mode.overlay_tab(-1) {
-                event.stop_propagation();
-            } else if !canvas::is_window() {
-                event.stop_propagation();
-                drop(mode.cmd.send(Cmd::ToggleApproval));
-            }
-        },
-    )
-}
-
-pub(super) fn leader_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
-    for key in 'a'..='z' {
-        let route = app.clone();
-        node = node.key_capture(
-            Shortcut::ctrl(LogicalKey::character(key.to_string())),
-            move |event| {
-                if apply_ctrl(&route.target(), key, event) {
-                    event.stop_propagation();
-                }
-            },
-        );
+pub(super) fn tab_capture(app: &App, event: &mut KeyEvent) -> bool {
+    if Shortcut::plain(Key::Tab).matches(event) {
+        let complete = app.target();
+        let composer = !complete.form_hidden() && (complete.complete() || complete.queue_draft());
+        if complete.overlay_tab(1) || composer {
+            return true;
+        }
+        if !canvas::is_window() {
+            complete.cycle_effort(1);
+            return true;
+        }
+    } else if Shortcut::new(Key::Tab, ModifiersState::SHIFT).matches(event) {
+        let mode = app.target();
+        if mode.overlay_tab(-1) {
+            return true;
+        }
+        if !canvas::is_window() {
+            drop(mode.cmd.send(Cmd::ToggleApproval));
+            return true;
+        }
     }
-    let fallback = app.clone();
-    node.key(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
-        fallback.target().arm_leader();
-        event.stop_propagation();
-    })
+    false
 }
 
-pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
-    for key in 'a'..='z' {
-        let route = app.clone();
-        node = node.key_capture(
-            Shortcut::ctrl(LogicalKey::character(key.to_string())),
-            move |event| {
-                if newline(&route.target(), key) {
-                    rewrite(event, Key::Enter);
-                }
-            },
-        );
+pub(super) fn ctrl_letter(event: &KeyEvent) -> Option<char> {
+    if event.normalized_modifiers() != ModifiersState::CONTROL {
+        return None;
     }
-    node
+    let LogicalKey::Character(value) = &event.key else {
+        return None;
+    };
+    let mut chars = value.chars();
+    let key = chars.next()?;
+    (chars.next().is_none() && key.is_ascii_lowercase()).then_some(key)
+}
+
+pub(super) fn leader_capture(app: &App, event: &mut KeyEvent) -> bool {
+    ctrl_letter(event).is_some_and(|key| apply_ctrl(&app.target(), key, event))
+}
+
+pub(super) fn hotkey_newline(app: &App, event: &mut KeyEvent) {
+    if let Some(key) = ctrl_letter(event)
+        && newline(&app.target(), key)
+    {
+        rewrite(event, Key::Enter);
+    }
 }
 
 pub(super) fn chord_letter(text: &str) -> Option<char> {

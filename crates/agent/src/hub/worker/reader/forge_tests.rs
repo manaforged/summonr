@@ -9,23 +9,6 @@ const FAKE: &str = "SUMMONR_TEST_FAKE_GH";
 const SIGNED_IN: &str = r#"{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com","login":"dev"}]}}"#;
 const SIGNED_OUT: &str = r#"{"hosts":{}}"#;
 const URL: &str = "https://github.com/owner/repo.git";
-const GH: &str = r#"#!/bin/sh
-dir="$SUMMONR_TEST_FAKE_GH"
-printf '%s\n' "$*" >> "$dir/argv.log"
-if [ -f "$dir/stall" ] && [ "$1 $2" = "pr list" ]; then exec sleep 30; fi
-case "$1 $2" in
-  "auth status") cat "$dir/auth.json" ;;
-  "repo view") printf '{"defaultBranchRef":{"name":"main"}}' ;;
-  "pr list")
-    if [ -f "$dir/created" ]; then
-      printf '[{"number":7,"url":"https://github.com/owner/repo/pull/7","state":"OPEN","reviewDecision":"","statusCheckRollup":[]}]'
-    else
-      printf '[]'
-    fi ;;
-  "pr create") touch "$dir/created"; echo "https://github.com/owner/repo/pull/7" ;;
-  *) echo "unexpected gh $*" >&2; exit 1 ;;
-esac
-"#;
 
 fn with_fake_gh(test: &str) -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os(FAKE) {
@@ -34,9 +17,7 @@ fn with_fake_gh(test: &str) -> Option<PathBuf> {
     let fake = tempfile::tempdir().unwrap();
     let bin = fake.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
-    let gh = bin.join("gh");
-    std::fs::write(&gh, GH).unwrap();
-    std::fs::set_permissions(&gh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    crate::fixture_tests::link("gh", &bin.join("gh"));
     let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     )))

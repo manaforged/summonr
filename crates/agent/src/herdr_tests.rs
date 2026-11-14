@@ -4,9 +4,7 @@ use std::path::Path;
 use super::*;
 
 fn fake_herdr() -> OsString {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/herdr")
-        .into_os_string()
+    crate::fixture_tests::path("herdr").into_os_string()
 }
 
 fn target_in(dir: &Path, session: &str) -> Target {

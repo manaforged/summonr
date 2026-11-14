@@ -1,37 +1,10 @@
-use std::os::unix::fs::PermissionsExt;
-
 use super::super::{Client, CompletionRequest, Message, Partial, Provider, Role, StopReason};
 use crate::provider::{ToolCall, ToolFunction, ToolKind};
 
 #[path = "agent_tests/auth_tests.rs"]
 mod auth_tests;
 
-const STUB: &str = r#"#!/bin/sh
-log="$0.log"
-printf '%s\n' "$@" > "$0.args"
-say() { printf '%s\n' "$1"; }
-take() { IFS= read -r line; printf '%s\n' "$line" >> "$log"; }
-mcp() { say "{\"type\":\"control_request\",\"request_id\":\"$1\",\"request\":{\"subtype\":\"mcp_message\",\"server_name\":\"summonr\",\"message\":$2}}"; }
-take
-mcp m0 '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{}}}'
-take
-mcp m1 '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-take
-mcp m2 '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-take
-say '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{"models":[]}}}'
-take
-say '{"type":"system","subtype":"init","session_id":"s"}'
-say '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"read"}}}'
-say '{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":2,"cache_read_input_tokens":40,"cache_creation_input_tokens":7,"output_tokens":1},"model":"m","content":[{"type":"text","text":"reading"},{"type":"tool_use","id":"toolu_1","name":"mcp__summonr__read","input":{"path":"a.txt"}}]}}'
-say '{"type":"control_request","request_id":"p1","request":{"subtype":"can_use_tool","tool_name":"mcp__summonr__read","mcp_server":{"name":"summonr","source":"sdk"},"input":{"path":"a.txt"},"tool_use_id":"toolu_1"}}'
-take
-mcp m3 '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"a.txt"},"_meta":{"claudecode/toolUseId":"toolu_1"}}}'
-take
-say '{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":1,"cache_read_input_tokens":50,"output_tokens":1},"model":"m","content":[{"type":"text","text":"done"}]}}'
-say '{"type":"result","subtype":"success","is_error":false,"result":"done","usage":{"input_tokens":3,"cache_read_input_tokens":90,"cache_creation_input_tokens":7,"output_tokens":5}}'
-take
-"#;
+const STUB: &str = "claude/stream";
 
 pub(super) fn read_tool() -> crate::provider::ToolDefinition {
     crate::tools::tool(
@@ -56,27 +29,10 @@ pub(super) fn ask<'a>(
     )
 }
 
-pub(super) const PLAIN: &str = r#"#!/bin/sh
-{ printf '%s\n' "$@"; echo ===; } >> "$0.args"
-echo $$ >> "$0.pids"
-take() { IFS= read -r line || exit 0; printf '%s\n' "$line" >> "$0.log"; }
-take
-printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
-while take; do
-  case $line in
-  *'"type":"user"'*)
-    case $line in *'"text":"HANG_ON"'*) sleep 20 ;; esac
-    printf '%s\n' '{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"ok"}]}}'
-    printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{}}'
-    ;;
-  esac
-done
-"#;
+pub(super) const PLAIN: &str = "claude/plain";
 
-pub(super) fn client_at(dir: &std::path::Path, script: &str) -> Client {
-    let stub = dir.join("claude");
-    std::fs::write(&stub, script).unwrap();
-    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+pub(super) fn client_at(dir: &std::path::Path, fixture: &str) -> Client {
+    let stub = crate::fixture_tests::link(fixture, &dir.join("claude"));
     let mut selection = crate::endpoint::resolve(
         Some("claude"),
         Some("claude-opus-5-5"),
@@ -282,14 +238,7 @@ async fn claude_code_never_sees_an_api_key() {
     assert_eq!(seen, "absent", "an unset variable was inherited");
 }
 
-const MALFORMED: &str = r#"#!/bin/sh
-take() { IFS= read -r line; printf '%s\n' "$line" >> "$0.log"; }
-take
-printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
-take
-printf '%s\n' '{"type":"control_request","request_id":"x","request":{"subtype":"mcp_message","server_name":"summonr"}}'
-sleep 20
-"#;
+const MALFORMED: &str = "claude/malformed";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_malformed_control_request_fails_the_turn() {

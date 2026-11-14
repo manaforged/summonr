@@ -145,3 +145,7 @@ pub fn revision() -> &'static str {
 #[cfg(test)]
 #[path = "fuzz_tests.rs"]
 pub(crate) mod fuzz_tests;
+
+#[cfg(all(test, unix))]
+#[path = "fixture_tests.rs"]
+pub(crate) mod fixture_tests;

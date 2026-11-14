@@ -1,30 +1,9 @@
-use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 
 use crate::provider::Client;
 
-const STUB: &str = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$0.calls"
-case "$*" in
-  'auth status --json') cat "$0.status" ;;
-  'auth login --claudeai')
-    printf 'Opening browser to sign in…\nIf the browser did not open, visit: https://auth.example.test/login\nPaste code here if prompted > '
-    case $(cat "$0.mode") in
-      fail) exit 7 ;;
-      code) IFS= read -r code; printf '%s' "$code" > "$0.code" ;;
-      browser) : ;;
-    esac
-    printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai"}' > "$0.status"
-    ;;
-  *) exit 22 ;;
-esac
-"#;
-
 fn endpoint(dir: &std::path::Path, mode: &str) -> crate::Endpoint {
-    let program = dir.join("claude");
-    std::fs::write(&program, STUB).expect("write the Claude Code fixture");
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
-        .expect("make the Claude Code fixture executable");
+    let program = crate::fixture_tests::link("claude/auth", &dir.join("claude"));
     std::fs::write(dir.join("claude.mode"), mode).expect("set the fixture login behavior");
     std::fs::write(
         dir.join("claude.status"),

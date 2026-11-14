@@ -1,0 +1,7 @@
+#!/bin/sh
+take() { IFS= read -r line; printf '%s\n' "$line" >> "$0.log"; }
+take
+printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
+take
+printf '%s\n' '{"type":"control_request","request_id":"x","request":{"subtype":"mcp_message","server_name":"summonr"}}'
+sleep 20

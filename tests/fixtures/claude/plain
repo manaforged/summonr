@@ -1,0 +1,26 @@
+#!/bin/sh
+{ printf '%s\n' "$@"; echo ===; } >> "$0.args"
+echo $$ >> "$0.pids"
+hang=$(cat "$0.hang" 2>/dev/null || echo HANG_ON)
+take() { IFS= read -r line || exit 0; printf '%s\n' "$line" >> "$0.log"; }
+wide() {
+  [ -f "$0.wide" ] || return 0
+  read -r kind size < "$0.wide"
+  big=$(head -c "$size" /dev/zero | tr '\0' x)
+  case $kind in
+  delta) printf '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"%s"}}}\n' "$big" ;;
+  system) printf '{"type":"system","subtype":"padding","pad":"%s"}\n' "$big" ;;
+  esac
+}
+take
+printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
+while take; do
+  case $line in
+  *'"type":"user"'*)
+    wide
+    case $line in *"\"text\":\"$hang\""*) sleep 20 ;; esac
+    printf '%s\n' '{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"ok"}]}}'
+    printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"ok","usage":{}}'
+    ;;
+  esac
+done

@@ -12,7 +12,8 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let shape = app.clone();
     let place = derived(move || {
         let (cols, rows) = shape.viewport.get();
-        (rows, scene::window_area(&shape, cols, rows))
+        let mode = shape.model.with(|model| model.prefs.splash);
+        (rows, scene::window_area(&shape, cols, rows), mode)
     });
     let splash = app.model.with(|model| model.prefs.splash);
     let backdrop = match splash {
@@ -36,7 +37,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .fill_width()
                 .fill_height()
                 .children_reactive(move || {
-                    let (rows, area) = place.get();
+                    let (rows, area, _mode) = place.get();
                     vec![untrack(|| window(app.clone(), rows, area))]
                 }),
         )
@@ -47,8 +48,9 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
     let spacer = app.clone();
     let inner = width.saturating_sub(4);
     let colours = scene::stage();
+    let paned = scene::paned(app.model.with(|model| model.prefs.splash));
     let tint = Color {
-        a: (colours.pane * 255.0) as u8,
+        a: if paned { (colours.pane * 255.0) as u8 } else { 0 },
         ..colours.plate
     };
     let mut clear = super::super::theme::style(super::super::theme::palette());
@@ -59,7 +61,7 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
             ..colours.plate
         }),
     );
-    sigil::prelude::column()
+    let pane = sigil::prelude::column()
         .gap(sigil::prelude::Space::None)
         .position(Position::Absolute)
         .inset_left(f32::from(x) * cell.w)
@@ -95,15 +97,18 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
                     inner,
                     surface::terminal_editor(app),
                 )),
-        )
-        .child(
-            container()
-                .position(Position::Absolute)
-                .inset(0.0)
-                .border_width(1)
-                .radius(sigil::prelude::Radius::Md)
-                .border_color(sigil::prelude::Token::Gray8),
-        )
+        );
+    if !paned {
+        return pane;
+    }
+    pane.child(
+        container()
+            .position(Position::Absolute)
+            .inset(0.0)
+            .border_width(1)
+            .radius(sigil::prelude::Radius::Md)
+            .border_color(sigil::prelude::Token::Gray8),
+    )
 }
 
 fn blank(width: u16, rows: u16) -> NodeBuilder {

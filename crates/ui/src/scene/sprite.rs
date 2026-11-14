@@ -42,12 +42,6 @@ impl Size {
         let rows = shape.grid.len() + shape.head + shape.foot;
         [shape.grid[0].len() as u16, rows.div_ceil(2) as u16]
     }
-
-    /// The terminal row, from the top of the frame, that holds the eyes.
-    pub(crate) fn eye_row(self) -> u16 {
-        let shape = self.shape();
-        ((shape.head as i32 + shape.eyes[1]) / 2) as u16
-    }
 }
 
 /// Frame `frame` of Will's idle loop, top row first; `still` holds the first frame.

@@ -8,7 +8,7 @@ use sigil::prelude::Space;
 use sigil::prelude::Widget;
 
 pub(super) const COMPOSER_ROWS: u16 = 7;
-const WORD_WIPE_MS: u64 = 480;
+pub(super) const WORD_WIPE_MS: u64 = 480;
 pub(super) const FADE_MS: u64 = 160;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,7 +46,7 @@ impl Card {
 }
 
 const LOCKUP_GAP: u16 = 5;
-const WORD_GAP: u16 = 2;
+pub(super) const WORD_GAP: u16 = 2;
 const LOCKUP_MARGIN: u16 = 10;
 pub(super) const FACT_LABEL: u16 = 9;
 
@@ -150,7 +150,7 @@ pub(crate) fn compose(cols: u16, rows: u16, app: &App, elapsed: u64) -> Composed
         );
     }
     if let Some((at, start)) = placed.word.zip(card_kind.word_start()) {
-        wordmark(&mut plate, at, elapsed.saturating_sub(start));
+        wordmark(&mut plate, at, elapsed.saturating_sub(start), stage().plate);
     }
     let shimmer = (card_kind.mark() == super::Mark::Lines)
         .then(|| super::mark::paint(&mut plate, placed.mark, super::Mark::Lines, elapsed))
@@ -176,14 +176,13 @@ pub(crate) fn shimmer_clock(app: &App) -> u64 {
     u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
 }
 
-fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64) {
+pub(super) fn wordmark(plate: &mut Plate, [x, y]: [u16; 2], elapsed: u64, tone: Color) {
     let face = palette().text;
-    let tone = stage().plate;
     let width = summonr_agent::splash::logo_width();
     for (row, text) in summonr_agent::splash::logo().iter().enumerate() {
         for (col, glyph) in text.chars().enumerate() {
             let at = [x + col as u16, y + row as u16];
-            let ink = bloom(col, width, elapsed, face);
+            let ink = bloom(col, width, elapsed, face, tone);
             if ink == tone {
                 continue;
             }
@@ -288,16 +287,15 @@ pub(crate) fn layout(cols: u16, rows: u16, body_width: u16, body_rows: u16) -> [
     ]
 }
 
-fn bloom(col: usize, width: usize, elapsed: u64, settled: Color) -> Color {
+fn bloom(col: usize, width: usize, elapsed: u64, settled: Color, tone: Color) -> Color {
     let appeared = col as u64 * WORD_WIPE_MS / width.saturating_sub(1).max(1) as u64;
     let age = elapsed.saturating_sub(appeared);
     let fade = Easing::SineOut.apply(age.min(FADE_MS) as f32 / FADE_MS as f32);
     let settle =
         Easing::SineInOut.apply(age.saturating_sub(FADE_MS).min(FADE_MS) as f32 / FADE_MS as f32);
-    let colours = stage();
     blend(
-        colours.plate,
-        blend(colours.star_bright, settled, settle),
+        tone,
+        blend(stage().star_bright, settled, settle),
         fade,
     )
 }

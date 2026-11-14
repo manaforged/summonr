@@ -94,7 +94,7 @@ pub(crate) fn inline_layer(app: App, cols: u16, editor: impl IntoNode + 'static)
         .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
-fn row(
+fn window_row(
     app: App,
     index: usize,
     spacing: (f32, f32),
@@ -117,18 +117,42 @@ fn row(
         .children_reactive(move || {
             let ((at, _), _) = current.get();
             prefs.with(|_| ());
-            if canvas::is_window() {
-                open.with(|_| ());
-                return untrack(|| app.window.row(&app, (at, index), open, spacing));
-            }
-            untrack(|| match at {
-                entry::Slot::Member => Vec::new(),
-                entry::Slot::Lead(range) if range.end - range.start > 1 => {
-                    vec![inset(group(&app, range), spacing)]
-                }
-                entry::Slot::Lead(_) | entry::Slot::Single => single(&app, index, spacing),
-            })
+            open.with(|_| ());
+            untrack(|| app.window.row(&app, (at, index), open, spacing))
         })
+}
+
+fn terminal_row(
+    app: App,
+    index: usize,
+    spacing: (f32, f32),
+    prefs: Signal<Prefs>,
+) -> NodeBuilder {
+    let probe = app.clone();
+    let current = derived(move || probe.model.with(|model| terminal_revision(model, index)));
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .min_width(0.0)
+        .min_height(0.0)
+        .children_reactive(move || {
+            let (_, _, stacked, _) = current.get();
+            prefs.with(|_| ());
+            let gap = (spacing.0, if stacked { 0.0 } else { spacing.1 });
+            untrack(|| single(&app, index, gap))
+        })
+}
+
+fn terminal_revision(model: &Model, index: usize) -> (entry::Revision, bool, bool, u64) {
+    let live = model.busy_since.is_some() && index + 1 == model.entries.len();
+    let stacked = model.entries.get(index).is_some_and(entry::subagents)
+        && model.entries.get(index + 1).is_some_and(entry::subagents);
+    (
+        entry::revision(&model.entries, index),
+        live,
+        stacked,
+        model.entries.stamp,
+    )
 }
 
 fn slot_revisions(
@@ -153,41 +177,6 @@ fn slot_revisions(
         })
         .collect();
     (at, revisions)
-}
-
-fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
-    let stacked = app
-        .model
-        .with(|model| model.entries.get(range.start).is_some_and(entry::subagents));
-    let (prefs, rows) = app.model.with(|model| {
-        let last = model.entries.len();
-        let live_turn = model.busy_since.is_some();
-        let rows = range
-            .map(|at| {
-                (
-                    at,
-                    model.entries.get(at).cloned(),
-                    live_turn && at + 1 == last,
-                )
-            })
-            .collect::<Vec<_>>();
-        (model.prefs.clone(), rows)
-    });
-    let mut column = sigil::prelude::column()
-        .fill_width()
-        .min_width(0.0)
-        .min_height(0.0)
-        .gap(if stacked {
-            Space::None
-        } else {
-            Space::raw(canvas::cell().h, "one terminal cell between entries")
-        });
-    for (at, item, live) in rows {
-        if let Some(item) = item {
-            column = column.child(entry::row(item, live, &prefs, app, at));
-        }
-    }
-    column
 }
 
 fn single(app: &App, index: usize, spacing: (f32, f32)) -> Vec<NodeBuilder> {
@@ -267,10 +256,12 @@ pub(crate) fn transcript(
             )
         })
     });
-    let shape = derived(move || model.with(|model| (model.entries.len(), model.entries.stamp)));
-    let table = derived(move || {
-        shape.with(|_| ());
-        untrack(|| model.with(|model| Rc::<[entry::Slot]>::from(entry::slots(&model.entries))))
+    let table = canvas::is_window().then(|| {
+        let shape = derived(move || model.with(|model| (model.entries.len(), model.entries.stamp)));
+        derived(move || {
+            shape.with(|_| ());
+            untrack(|| model.with(|model| Rc::<[entry::Slot]>::from(entry::slots(&model.entries))))
+        })
     });
     let jump = follow(&app);
     let settle = app.settle;
@@ -302,8 +293,9 @@ pub(crate) fn transcript(
                 .min_width(0.0)
                 .min_height(0.0)
                 .child(
-                    virtual_list(keys, move |index, _: &u64| {
-                        row(live.clone(), index, spacing, prefs, table)
+                    virtual_list(keys, move |index, _: &u64| match table {
+                        Some(table) => window_row(live.clone(), index, spacing, prefs, table),
+                        None => terminal_row(live.clone(), index, spacing, prefs),
                     })
                     .key_by(|_, key| *key)
                     .measured()

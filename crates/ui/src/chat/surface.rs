@@ -29,6 +29,8 @@ struct RowPrefs {
 pub(crate) fn layer(app: App, editor: impl Fn(App) -> NodeBuilder + 'static) -> NodeBuilder {
     let width_app = app.clone();
     let width = derived(move || canvas::inner_cols(usize::from(width_app.chat_cols())));
+    let edge_app = app.clone();
+    let edge = derived(move || canvas::edge(edge_app.viewport.get().1));
     let transcript_app = app.clone();
     let status_app = app.clone();
     let bands_app = app.clone();
@@ -42,6 +44,7 @@ pub(crate) fn layer(app: App, editor: impl Fn(App) -> NodeBuilder + 'static) -> 
             canvas::edge(app.viewport.peek().1),
             "one terminal cell on a roomy screen",
         ))
+        .drive(sigil::animation::Property::PaddingY, edge)
         .gap(Space::None)
         .child(fit(app.clone()).child(node(move || {
             let hint_app = transcript_app.clone();

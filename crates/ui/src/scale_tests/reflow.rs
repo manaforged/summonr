@@ -59,3 +59,18 @@ fn a_wrapped_answer_keeps_every_word_after_the_terminal_narrows() {
     let fresh = frames(&[(100, 30)]);
     assert_eq!(resized, fresh);
 }
+
+#[test]
+fn a_wrapped_answer_matches_fresh_layout_when_narrowing_within_wide_fit() {
+    let resized = frames(&[(160, 48), (110, 30)]);
+    let fresh = frames(&[(110, 30)]);
+    assert_eq!(resized, fresh);
+}
+
+#[test]
+fn a_wrapped_answer_updates_edge_padding_across_roomy_rows() {
+    let shrunk = frames(&[(100, 30), (100, 20)]);
+    assert_eq!(shrunk, frames(&[(100, 20)]));
+    let grown = frames(&[(100, 20), (100, 30)]);
+    assert_eq!(grown, frames(&[(100, 30)]));
+}

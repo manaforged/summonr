@@ -141,11 +141,13 @@ fn assistant(body: sigil::prelude::Signal<String>, app: &App) -> NodeBuilder {
                     .min_height(0.0)
                     .child(shown),
             )
-            .child(
-                button("⧉").ghost().square().activate(move || copy_app.copy.set(Some(body.peek())))
+            .child(sigil::prelude::node(move || {
+                button("⧉")
                     .ghost()
-                    .accessible("Copy reply"),
-            ),
+                    .square()
+                    .activate(move || copy_app.copy.set(Some(body.peek())))
+                    .accessible("Copy reply")
+            })),
     )
 }
 

@@ -338,9 +338,15 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         let mut screen = sigil::terminal::Screen::new(80, 24);
         let panics = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let seen = std::sync::Arc::clone(&panics);
-        let previous = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |_| {
-            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let previous = std::sync::Arc::new(std::panic::take_hook());
+        let others = std::sync::Arc::clone(&previous);
+        let test = std::thread::current().id();
+        std::panic::set_hook(Box::new(move |info| {
+            if std::thread::current().id() == test {
+                seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            } else {
+                others(info);
+            }
         }));
         let reveal =
             summonr_agent::limits::limits()
@@ -358,7 +364,7 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
             std::thread::park_timeout(summonr_agent::limits::limits().animation());
         }
         screen.frame(&mut host, [], (80, 24)).unwrap();
-        std::panic::set_hook(previous);
+        std::panic::set_hook(Box::new(move |info| previous(info)));
         assert!(app.splash_revealed.peek(), "the reveal never finished");
         assert_eq!(
             panics.load(std::sync::atomic::Ordering::SeqCst),

@@ -10,6 +10,7 @@ impl Worker {
             }
         };
         let notice = self.ui.clone();
+        let linked = self.ui.clone();
         let asking = self.ui.clone();
         let (answers, typed) = tokio::sync::mpsc::unbounded_channel::<String>();
         let typed = std::sync::Arc::new(tokio::sync::Mutex::new(typed));
@@ -24,7 +25,15 @@ impl Worker {
                     typed.lock().await.recv().await
                 })
             },
-        );
+        )
+        .with_link(move |url, code| {
+            drop(linked.send(Msg::Fact(Fact::LoginStep {
+                text: String::new(),
+                url: url.to_string(),
+                code: code.to_string(),
+                asking: false,
+            })));
+        });
         let login = crate::provider::Client::login(&endpoint, &mut prompt);
         drop(self.ui.send(Msg::Fact(Fact::Busy(Some(Activity::Login)))));
         let outcome = self.wait(Some(answers), login).await;
@@ -121,16 +130,10 @@ impl Worker {
 }
 
 fn step(line: &str, asking: bool) -> Msg {
-    let rest = line.strip_prefix("open ").unwrap_or_default();
-    let (url, code) = rest.split_once(" and enter ").unwrap_or((rest, ""));
     Msg::Fact(Fact::LoginStep {
-        text: if rest.is_empty() {
-            line.to_string()
-        } else {
-            String::new()
-        },
-        url: url.to_string(),
-        code: code.to_string(),
+        text: line.to_string(),
+        url: String::new(),
+        code: String::new(),
         asking,
     })
 }

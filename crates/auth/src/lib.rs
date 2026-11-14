@@ -56,6 +56,7 @@ pub type Answer = std::pin::Pin<Box<dyn std::future::Future<Output = Option<Stri
 pub struct Prompt {
     say: Box<dyn FnMut(&str) + Send>,
     ask: Box<dyn FnMut(String) -> Answer + Send>,
+    link: Option<Box<dyn FnMut(&str, &str) + Send>>,
 }
 
 impl Prompt {
@@ -67,7 +68,15 @@ impl Prompt {
         Self {
             say: Box::new(say),
             ask: Box::new(ask),
+            link: None,
         }
+    }
+
+    /// Shows sign-in links with `link(url, code)` instead of as a line of text.
+    #[must_use]
+    pub fn with_link(mut self, link: impl FnMut(&str, &str) + Send + 'static) -> Self {
+        self.link = Some(Box::new(link));
+        self
     }
 
     /// A prompt that shows lines and never gets an answer.
@@ -78,6 +87,15 @@ impl Prompt {
     /// Shows `line` to the person.
     pub fn notice(&mut self, line: &str) {
         (self.say)(line);
+    }
+
+    /// Shows the sign-in `url` and the `code` to enter there, which may be empty.
+    pub fn open(&mut self, url: &str, code: &str) {
+        match &mut self.link {
+            Some(link) => link(url, code),
+            None if code.is_empty() => (self.say)(&format!("open {url}")),
+            None => (self.say)(&format!("open {url} and enter {code}")),
+        }
     }
 
     /// Asks with `line` and returns the trimmed answer, or fails when none came.

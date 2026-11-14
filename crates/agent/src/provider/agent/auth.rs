@@ -89,7 +89,7 @@ impl AgentClient {
             .split_whitespace()
             .find(|word| word.starts_with("https://"));
         if let Some(url) = url {
-            prompt.notice(&format!("open {url}"));
+            prompt.open(url, "");
         }
         let _stdout = Tail::spawn(Some(stdout), Cap::Head(0));
         let status = if output.last() == Some(&b'>') {

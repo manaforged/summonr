@@ -36,12 +36,7 @@ pub(super) async fn login(
         authorize, parts, client, &redirect, &verifier, &state, &nonce,
     )?;
 
-    super::open_browser(
-        prompt,
-        asked.as_str(),
-        &format!("open {asked}"),
-        "open the link above",
-    );
+    super::open_browser(prompt, asked.as_str(), "", "open the link above");
 
     let back = returned(listener.as_ref(), prompt, &state).await?;
     same_client(issued.as_deref(), back.client.as_deref())?;

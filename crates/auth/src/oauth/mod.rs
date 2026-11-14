@@ -138,8 +138,8 @@ impl TryFrom<&summonr_types::oauth::OAuth> for Spec {
     }
 }
 
-pub(super) fn open_browser(prompt: &mut Prompt, uri: &str, notice: &str, fallback: &str) {
-    prompt.notice(notice);
+pub(super) fn open_browser(prompt: &mut Prompt, uri: &str, code: &str, fallback: &str) {
+    prompt.open(uri, code);
     if let Err(error) = crate::open::external(uri) {
         prompt.notice(&format!("the browser did not open ({error}); {fallback}"));
     }

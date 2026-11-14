@@ -54,6 +54,7 @@ pub(super) fn replay_transcript(
 fn journal(path: &Path) -> Vec<Event> {
     let mut out = Vec::new();
     let mut last_work = None;
+    let mut reads = Reads::default();
     for record in log::records(path, 0) {
         let line = match record {
             Ok(line) => line,
@@ -63,7 +64,12 @@ fn journal(path: &Path) -> Vec<Event> {
                 }];
             }
         };
+        if let Line::Session { workspace, .. } = &line {
+            reads.workspace.clone_from(workspace);
+        }
+        let start = out.len();
         restore_line(line, &mut last_work, &mut out);
+        reads.compact(&mut out[start..]);
     }
     if let Some(progress) = Work::progress_from(path, last_work) {
         out.push(Event::Work {
@@ -114,6 +120,41 @@ fn restore_line(line: Line, last_work: &mut Option<Work>, out: &mut Vec<Event>) 
                 out.push(Event::Note {
                     text: "Partial answer · interrupted".to_string(),
                 });
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct Reads {
+    workspace: std::path::PathBuf,
+    open: std::collections::HashMap<String, String>,
+}
+
+impl Reads {
+    fn compact(&mut self, events: &mut [Event]) {
+        for event in events {
+            match event {
+                Event::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                } if crate::tools::Builtin::is(name, crate::tools::Builtin::Read) => {
+                    self.open
+                        .insert(id.clone(), crate::display::tool_arg(arguments));
+                }
+                Event::ToolResult {
+                    id,
+                    success: true,
+                    output,
+                    patch: None,
+                    ..
+                } => {
+                    if let Some(arg) = self.open.remove(id.as_str()) {
+                        crate::tools::compact_read(&arg, output, &self.workspace);
+                    }
+                }
+                _ => {}
             }
         }
     }

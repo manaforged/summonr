@@ -1,8 +1,5 @@
 use std::borrow::Cow;
-use std::fmt::Write as _;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 use super::*;
 
@@ -67,75 +64,17 @@ impl Call {
         if self.expanded || self.patch.is_some() || !matches!(self.state, ToolState::Ok) {
             return;
         }
-        let Some((header, body)) = self.output.split_once('\n') else {
-            return;
-        };
-        if body.is_empty()
-            || !header.starts_with(self.arg.as_str())
-            || header.contains("already shown")
-            || body.contains("[truncated ")
-            || body.contains("[invalid UTF-8 replaced]")
-            || summonr_agent::tools::read_span(header).is_none()
-            || !read_path(workspace, header).is_some_and(|path| path.is_file())
-        {
-            return;
-        }
-        self.output.truncate(header.len());
-        self.output.shrink_to_fit();
-        self.compacted = true;
+        self.compacted = summonr_agent::tools::compact_read(&self.arg, &mut self.output, workspace);
     }
 
     pub(crate) fn resolved_output(&self, workspace: &Path) -> Cow<'_, str> {
         if !self.compacted || workspace.as_os_str().is_empty() {
             return Cow::Borrowed(&self.output);
         }
-        rehydrate_read(workspace, &self.output)
+        summonr_agent::tools::rehydrate_read(workspace, &self.output)
             .map(Cow::Owned)
             .unwrap_or(Cow::Borrowed(&self.output))
     }
-}
-
-fn read_path(workspace: &Path, header: &str) -> Option<PathBuf> {
-    if workspace.as_os_str().is_empty() {
-        return None;
-    }
-    let rel = header.split("  lines ").next()?.trim();
-    if rel.is_empty() {
-        return None;
-    }
-    let path = Path::new(rel);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
-    {
-        return None;
-    }
-    Some(workspace.join(path))
-}
-
-fn rehydrate_read(workspace: &Path, header: &str) -> Option<String> {
-    let (from, to) = summonr_agent::tools::read_span(header)?;
-    if from == 0 || to < from {
-        return None;
-    }
-    let path = read_path(workspace, header)?;
-    let reader = BufReader::new(File::open(path).ok()?);
-    let mut out = String::with_capacity(header.len() + (to - from + 1) * 64);
-    out.push_str(header);
-    let mut kept = 0_usize;
-    for (index, line) in reader.lines().enumerate() {
-        let number = index + 1;
-        if number > to {
-            break;
-        }
-        let line = line.ok()?;
-        if number >= from {
-            write!(out, "\n{number}:{line}").expect("write to String");
-            kept += 1;
-        }
-    }
-    (kept > 0).then_some(out)
 }
 
 pub(crate) fn entry_markdown_in(entry: &Entry, workspace: &Path) -> String {

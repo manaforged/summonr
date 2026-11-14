@@ -161,3 +161,69 @@ pub fn read_span(text: &str) -> Option<(usize, usize)> {
     let (a, b) = range.split_once('-')?;
     Some((a.parse().ok()?, b.parse().ok()?))
 }
+
+/// Drops the body of a read result whose lines can be read again from `workspace`; true when the result is compact.
+pub fn compact_read(arg: &str, output: &mut String, workspace: &std::path::Path) -> bool {
+    let (header, body) = output.split_once('\n').unwrap_or((output.as_str(), ""));
+    if !header.starts_with(arg)
+        || header.contains("already shown")
+        || body.contains("[truncated ")
+        || body.contains("[invalid UTF-8 replaced]")
+        || read_span(header).is_none()
+        || !read_path(workspace, header).is_some_and(|path| path.is_file())
+    {
+        return false;
+    }
+    let keep = header.len();
+    if keep < output.len() {
+        output.truncate(keep);
+        output.shrink_to_fit();
+    }
+    true
+}
+
+/// The read result a compact `header` stands for, read again from `workspace`.
+pub fn rehydrate_read(workspace: &std::path::Path, header: &str) -> Option<String> {
+    use std::fmt::Write as _;
+    use std::io::BufRead as _;
+    let (from, to) = read_span(header)?;
+    if from == 0 || to < from {
+        return None;
+    }
+    let path = read_path(workspace, header)?;
+    let reader = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+    let mut out = String::with_capacity(header.len() + (to - from + 1) * 64);
+    out.push_str(header);
+    let mut kept = 0_usize;
+    for (index, line) in reader.lines().enumerate() {
+        let number = index + 1;
+        if number > to {
+            break;
+        }
+        let line = line.ok()?;
+        if number >= from {
+            write!(out, "\n{number}:{line}").ok()?;
+            kept += 1;
+        }
+    }
+    (kept > 0).then_some(out)
+}
+
+fn read_path(workspace: &std::path::Path, header: &str) -> Option<std::path::PathBuf> {
+    if workspace.as_os_str().is_empty() {
+        return None;
+    }
+    let rel = header.split("  lines ").next()?.trim();
+    if rel.is_empty() {
+        return None;
+    }
+    let path = std::path::Path::new(rel);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    Some(workspace.join(path))
+}

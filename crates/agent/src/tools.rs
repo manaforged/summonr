@@ -15,7 +15,7 @@ mod catalog;
 mod dedup;
 pub(crate) use catalog::shaped;
 pub use catalog::{Builtin, readonly, retired_op};
-pub use dedup::read_span;
+pub use dedup::{compact_read, read_span, rehydrate_read};
 pub mod command;
 mod lsp;
 mod paths;

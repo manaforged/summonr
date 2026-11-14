@@ -2,9 +2,11 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+#[path = "support/stub.rs"]
+mod stub;
 
 const REPLY: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
 
@@ -73,22 +75,15 @@ impl Home {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        let calls = dir.path().join("git-calls");
-        let tail = if forward {
-            format!("exec '{}' \"$@\"", real_git().display())
-        } else {
-            "exit 1".to_string()
-        };
-        let shim = bin.join("git");
-        std::fs::write(
-            &shim,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n{tail}\n",
-                calls.display()
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let shim = stub::link("git", &bin.join("git"));
+        let calls = stub::state(&shim, "calls");
+        if forward {
+            std::fs::write(
+                stub::state(&shim, "real"),
+                real_git().as_os_str().as_encoded_bytes(),
+            )
+            .unwrap();
+        }
         std::fs::create_dir_all(dir.path().join(".summonr")).unwrap();
         std::fs::write(
             dir.path().join(".summonr/config.toml"),

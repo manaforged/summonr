@@ -4,6 +4,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+#[path = "support/stub.rs"]
+mod stub;
+
 fn panel(home: &Path, global: &[&str], args: &[&str]) -> (i32, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .args(global)
@@ -138,14 +141,7 @@ fn a_plugin_panel_runs_a_program_from_the_plugin() {
     let bin = source.join("bin");
     std::fs::create_dir_all(&panels).expect("panels");
     std::fs::create_dir_all(&bin).expect("bin");
-    let script = bin.join("show");
-    std::fs::write(
-        &script,
-        "#!/bin/sh\nprintf '{\"view\":\"text\",\"text\":\"hi\"}'\n",
-    )
-    .expect("script");
-    let mode = std::os::unix::fs::PermissionsExt::from_mode(0o755);
-    std::fs::set_permissions(&script, mode).expect("mode");
+    stub::link("panel/text", &bin.join("show"));
     std::fs::write(
         panels.join("from-plugin.toml"),
         "command = [\"bin/show\"]\n",

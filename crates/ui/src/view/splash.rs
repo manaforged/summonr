@@ -48,10 +48,10 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
     let spacer = app.clone();
     let inner = width.saturating_sub(4);
     let colours = scene::stage();
-    let tint = Color {
+    let tint = scene::panel(app.model.with(|model| model.prefs.splash)).unwrap_or(Color {
         a: (colours.pane * 255.0) as u8,
         ..colours.plate
-    };
+    });
     let mut clear = super::super::theme::style(super::super::theme::palette());
     clear.register_token(
         "surface",

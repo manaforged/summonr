@@ -103,6 +103,14 @@ pub(crate) fn window_area(cols: u16, rows: u16, facts: &[(&str, String)]) -> [u1
     plan(cols, rows, facts).card
 }
 
+/// The one solid colour the lockup card and composer share, when `splash` has no glass.
+pub(crate) fn panel(splash: Splash) -> Option<Color> {
+    match splash {
+        Splash::Plain | Splash::Motes | Splash::Atmosphere => Some(ground(splash)),
+        Splash::Off | Splash::Classic | Splash::Sky => None,
+    }
+}
+
 /// The colour behind the lockup for `splash`.
 pub(crate) fn ground(splash: Splash) -> Color {
     match splash {

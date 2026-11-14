@@ -149,8 +149,9 @@ async fn acp(args: &Args) -> Result<i32> {
     summonr_agent::acp::serve(
         args.endpoint.as_deref(),
         args.model.as_deref(),
-        |endpoint, client, cwd| {
-            build(args, endpoint, client, cwd, None, SessionAction::Create)
+        |endpoint, client, cwd, resume| {
+            let action = resume.map_or(SessionAction::Create, SessionAction::Resume);
+            build(args, endpoint, client, cwd, None, action)
                 .map(summonr_agent::Loop::with_interactive)
         },
     )

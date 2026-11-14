@@ -49,10 +49,9 @@ pub(super) fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) 
                 .map(|todo| json!({"content": todo.text, "priority": "medium", "status": todo.status.acp()}))
                 .collect::<Vec<_>>(),
         }),
-        Event::Note { text } | Event::Aborted { reason: text, .. } => json!({
-            "sessionUpdate": "agent_thought_chunk",
-            "content": {"type": "text", "text": text},
-        }),
+        Event::Note { text } | Event::Aborted { reason: text, .. } => {
+            chunk("agent_thought_chunk", text)
+        }
         Event::Assistant { .. }
         | Event::Usage { .. }
         | Event::Unreported { .. }
@@ -75,6 +74,20 @@ pub(super) fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) 
         | Event::Dismissed => return,
     };
     drop(out.send(frame_line(&update(session, content))));
+}
+
+pub(super) fn replay(out: &UnboundedSender<String>, session: &str, event: &Event) {
+    let content = match event {
+        Event::User { text, .. } => chunk("user_message_chunk", text),
+        Event::Assistant { text } => chunk("agent_message_chunk", text),
+        Event::Reasoning { text } => chunk("agent_thought_chunk", text),
+        _live => return emit(out, session, event),
+    };
+    drop(out.send(frame_line(&update(session, content))));
+}
+
+pub(super) fn chunk(kind: &str, text: &str) -> Value {
+    json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}})
 }
 
 pub(super) fn usage(out: &UnboundedSender<String>, session: &str, window: Option<u32>, used: u64) {

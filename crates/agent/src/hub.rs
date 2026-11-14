@@ -12,6 +12,7 @@ mod message;
 mod replay;
 mod run;
 mod worker;
+pub(crate) use worker::journal;
 
 pub use channel::{Activity, client};
 pub use channel::{Inbox, Ui, channel};

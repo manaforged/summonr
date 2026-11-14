@@ -182,7 +182,7 @@ Markdown on stdout. It is not JSON.
 
 ### `summonr acp`
 
-JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1` with no auth methods, and `authenticate` answers an empty object. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
+JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1` with no auth methods, and `authenticate` answers an empty object. The methods are `session/new` (needs `cwd`), `session/load` (needs `sessionId` and `cwd`), and `session/prompt`. `initialize` advertises `loadSession: true`. `session/load` replays the stored conversation as `session/update` notifications (`user_message_chunk`, `agent_message_chunk`, `tool_call`, `tool_call_update`) and then answers; an unknown `sessionId` answers -32002. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
 
 ## Conventions
 

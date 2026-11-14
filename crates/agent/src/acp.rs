@@ -6,18 +6,15 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncWriteExt, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
-use crate::UserInput;
 use crate::endpoint::{self, Endpoint};
 use crate::provider::Client;
 use crate::rpc::{self, Ask, Frame, Read};
-use crate::runtime::{GrantAnswer, Loop, Steering};
+use crate::runtime::{Loop, Steering};
 use crate::tools::Event;
 use summonr_core::error::{Error, Result};
 
 type Input = rpc::Lines<Stdin>;
 type Reply = std::result::Result<Value, (i64, String)>;
-
-const PERMISSION: &str = "permission-";
 
 mod codes {
     pub(super) const INVALID: i64 = -32602;
@@ -27,36 +24,9 @@ mod codes {
 }
 
 mod config;
+mod permission;
 mod update;
-use update::{emit, update, usage};
-
-struct Choice {
-    id: &'static str,
-    name: &'static str,
-    kind: &'static str,
-    answer: GrantAnswer,
-}
-
-const CHOICES: [Choice; 3] = [
-    Choice {
-        id: "allow-once",
-        name: "Allow once",
-        kind: "allow_once",
-        answer: GrantAnswer::Allow,
-    },
-    Choice {
-        id: "allow-always",
-        name: "Always allow",
-        kind: "allow_always",
-        answer: GrantAnswer::Always,
-    },
-    Choice {
-        id: "reject-once",
-        name: "Reject",
-        kind: "reject_once",
-        answer: GrantAnswer::Deny,
-    },
-];
+use update::{chunk, emit, update, usage};
 
 struct Seat {
     agent: Loop<Client>,
@@ -78,7 +48,7 @@ struct Server<F> {
 
 pub async fn serve<F>(name: Option<&str>, model: Option<&str>, build: F) -> Result<i32>
 where
-    F: FnMut(&Endpoint, Client, &Path) -> Result<Loop<Client>>,
+    F: FnMut(&Endpoint, Client, &Path, Option<PathBuf>) -> Result<Loop<Client>>,
 {
     let (out, mut queue) = unbounded_channel::<String>();
     let writer = tokio::spawn(async move {
@@ -112,7 +82,7 @@ where
 
 impl<F> Server<F>
 where
-    F: FnMut(&Endpoint, Client, &Path) -> Result<Loop<Client>>,
+    F: FnMut(&Endpoint, Client, &Path, Option<PathBuf>) -> Result<Loop<Client>>,
 {
     async fn handle(&mut self, line: &str, input: &mut Input) {
         let Ok(Frame::Request { id, method, params }) = rpc::parse(line) else {
@@ -122,14 +92,15 @@ where
             Ask::Initialize => Ok(json!({
                 "protocolVersion": 1,
                 "agentCapabilities": {
-                    "loadSession": false,
+                    "loadSession": true,
                     "mcpCapabilities": {"http": false, "sse": false}
                 },
                 "agentInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")},
                 "authMethods": []
             })),
             Ask::Authenticate => Ok(json!({})),
-            Ask::SessionNew => self.open(&params).await,
+            Ask::SessionNew => self.open(&params, "session/new", None).await,
+            Ask::SessionLoad => self.load(&params).await,
             Ask::SessionSetConfigOption => self.configure(&params),
             Ask::SessionPrompt => self.prompt(&params, input).await,
             Ask::Roots
@@ -155,29 +126,42 @@ where
         )
     }
 
-    async fn open(&mut self, params: &Value) -> Reply {
+    async fn load(&mut self, params: &Value) -> Reply {
+        let id = params
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if self.sessions.contains_key(id) {
+            return Err((codes::INVALID, format!("session {id} is already open")));
+        }
+        let path = crate::session::resolve_id(id).map_err(|_unknown| missing(id))?;
+        self.open(params, "session/load", Some(path)).await
+    }
+
+    async fn open(&mut self, params: &Value, method: &str, resume: Option<PathBuf>) -> Reply {
         let cwd = params
             .get("cwd")
             .and_then(Value::as_str)
             .map(PathBuf::from)
-            .ok_or_else(|| (codes::INVALID, "session/new needs cwd".to_string()))?;
+            .ok_or_else(|| (codes::INVALID, format!("{method} needs cwd")))?;
         let servers = update::servers(params)?;
         if !servers.is_empty() {
             return Err((
                 codes::INVALID,
                 format!(
-                    "session/new mcpServers ({}) are not supported yet",
+                    "{method} mcpServers ({}) are not supported yet",
                     servers.join(", ")
                 ),
             ));
         }
+        let replay = resume.is_some();
         let endpoint = self
             .endpoint
             .clone()
             .map_err(|error| (codes::INTERNAL, error))?;
         let tag = Arc::new(OnceLock::new());
         let client = self.connect(&endpoint, &tag).map_err(failure)?;
-        let mut session = (self.build)(&endpoint, client, &cwd).map_err(failure)?;
+        let mut session = (self.build)(&endpoint, client, &cwd, resume).map_err(failure)?;
         let (fallbacks, skipped) =
             endpoint::fallbacks(&endpoint, |fallback| self.connect(fallback, &tag));
         for note in skipped {
@@ -190,6 +174,11 @@ where
         let options = config::options(session.effort());
         let id = session.session_id();
         drop(tag.set(id.clone()));
+        if replay {
+            for event in crate::hub::journal(session.session_path()) {
+                update::replay(&self.out, &id, &event);
+            }
+        }
         self.sessions.insert(
             id.clone(),
             Seat {
@@ -225,8 +214,7 @@ where
         let tag = tag.clone();
         move |text: &str| {
             let session = tag.get().map_or("", String::as_str);
-            let content = json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}});
-            drop(out.send(frame_line(&update(session, content))));
+            drop(out.send(frame_line(&update(session, chunk(kind, text)))));
         }
     }
 
@@ -275,7 +263,7 @@ where
                                 let busy = Err((codes::BUSY, "a prompt is already running".to_string()));
                                 drop(out.send(frame_line(&rpc::answer(&id, busy))));
                             }
-                            Ok(Frame::Response { id, result, .. }) => answer(steering, &id, result.as_ref()),
+                            Ok(Frame::Response { id, result, .. }) => permission::answer(steering, &id, result.as_ref()),
                             Ok(Frame::Notification { .. }) | Err(_) => {}
                         }
                     }
@@ -318,41 +306,9 @@ impl Updates {
     }
 
     fn ask(&self, detail: &str, call: Option<&str>, persist: bool, dialog: u64) {
-        let options = CHOICES
-            .iter()
-            .filter(|choice| persist || choice.answer != GrantAnswer::Always)
-            .map(|choice| json!({"optionId": choice.id, "name": choice.name, "kind": choice.kind}))
-            .collect::<Vec<_>>();
-        let call = call.unwrap_or_default();
-        let params = json!({
-            "sessionId": self.session,
-            "toolCall": {"toolCallId": call, "title": detail},
-            "options": options,
-        });
-        let id = json!(format!("{PERMISSION}{dialog}"));
-        let request = rpc::request(&id, "session/request_permission", params);
+        let request = permission::request(&self.session, detail, call, persist, dialog);
         drop(self.out.send(frame_line(&request)));
     }
-}
-
-fn answer(steering: &Steering, id: &Value, result: Option<&Value>) {
-    let Some(dialog) = id
-        .as_str()
-        .and_then(|id| id.strip_prefix(PERMISSION))
-        .and_then(|dialog| dialog.parse::<u64>().ok())
-    else {
-        return;
-    };
-    let outcome = result.and_then(|result| result.get("outcome"));
-    let picked = outcome
-        .filter(|outcome| outcome.get("outcome").and_then(Value::as_str) == Some("selected"))
-        .and_then(|outcome| outcome.get("optionId"))
-        .and_then(Value::as_str);
-    let decision = CHOICES
-        .iter()
-        .find(|choice| Some(choice.id) == picked)
-        .map_or(GrantAnswer::Deny, |choice| choice.answer);
-    steering.answer(dialog, UserInput::from(decision.token()));
 }
 
 async fn next_line(input: &mut Input) -> Option<String> {

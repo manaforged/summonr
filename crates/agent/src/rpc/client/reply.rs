@@ -152,6 +152,7 @@ impl Client {
             Ask::Initialize
             | Ask::Authenticate
             | Ask::SessionNew
+            | Ask::SessionLoad
             | Ask::SessionPrompt
             | Ask::SessionCancel
             | Ask::SessionSetConfigOption

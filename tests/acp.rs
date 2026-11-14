@@ -18,7 +18,7 @@ const WAIT: Duration = Duration::from_secs(60);
 
 struct Editor {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     lines: Receiver<Value>,
     seen: Vec<Value>,
 }
@@ -76,15 +76,27 @@ impl Editor {
         });
         Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             lines,
             seen: Vec::new(),
         }
     }
 
     fn send(&mut self, frame: &Value) {
-        writeln!(self.stdin, "{frame}").unwrap();
-        self.stdin.flush().unwrap();
+        let stdin = self.stdin.as_mut().expect("stdin is open until quit");
+        writeln!(stdin, "{frame}").expect("write a frame");
+        stdin.flush().expect("flush a frame");
+    }
+
+    fn quit(mut self) {
+        drop(self.stdin.take());
+        let status = self.child.wait().expect("summonr acp exits on stdin close");
+        assert!(status.success(), "summonr acp exited with {status}");
+    }
+
+    fn load(&mut self, id: u64, session: &str, cwd: &std::path::Path) -> Value {
+        let params = json!({"sessionId": session, "cwd": cwd, "mcpServers": []});
+        self.call(id, "session/load", params)
     }
 
     fn until(&mut self, what: &str, done: impl Fn(&Value) -> bool) -> Value {
@@ -356,7 +368,7 @@ fn initialize_advertises_only_stdio_mcp_and_unadvertised_transports_are_refused(
         json!({"http": false, "sse": false}),
         "{init}"
     );
-    assert_eq!(caps["loadSession"], false, "{init}");
+    assert_eq!(caps["loadSession"], true, "{init}");
     let http =
         json!({"type": "http", "name": "web", "url": "http://127.0.0.1:9/mcp", "headers": []});
     let reply = editor.call(
@@ -365,4 +377,63 @@ fn initialize_advertises_only_stdio_mcp_and_unadvertised_transports_are_refused(
         json!({"cwd": home.path(), "mcpServers": [http]}),
     );
     assert_eq!(reply["error"]["code"], -32602, "{reply}");
+}
+
+fn replayed(seen: &[Value], kind: &str, text: &str) -> bool {
+    seen.iter().any(|frame| {
+        frame["method"] == "session/update"
+            && frame["params"]["update"]["sessionUpdate"] == kind
+            && frame["params"]["update"]["content"]["text"]
+                .as_str()
+                .is_some_and(|said| said.contains(text))
+    })
+}
+
+#[test]
+fn a_new_process_loads_a_session_and_replays_it_before_answering() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(vec![
+        Step::Text("the lighthouse is red"),
+        Step::Text("still red"),
+    ]);
+    let mut first = Editor::open(home.path(), &model);
+    let session = first.session(home.path());
+    first.prompt(&session, "what colour is the lighthouse?");
+    assert_eq!(reply(&mut first)["result"]["stopReason"], "end_turn");
+    first.quit();
+
+    let mut editor = Editor::open(home.path(), &model);
+    editor.initialize();
+    let loaded = editor.load(2, &session, home.path());
+    assert!(loaded["result"].is_object(), "{loaded}");
+    let before = &editor.seen[..editor.seen.len() - 1];
+    assert!(
+        replayed(
+            before,
+            "user_message_chunk",
+            "what colour is the lighthouse?"
+        ),
+        "no replayed user chunk in {before:#?}"
+    );
+    assert!(
+        replayed(before, "agent_message_chunk", "the lighthouse is red"),
+        "no replayed agent chunk in {before:#?}"
+    );
+    editor.prompt(&session, "and now?");
+    assert_eq!(reply(&mut editor)["result"]["stopReason"], "end_turn");
+    assert!(
+        replayed(&editor.seen, "agent_message_chunk", "still red"),
+        "{:#?}",
+        editor.seen
+    );
+}
+
+#[test]
+fn loading_an_unknown_session_is_resource_not_found() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    editor.initialize();
+    let reply = editor.load(2, "nope", home.path());
+    assert_eq!(reply["error"]["code"], -32002, "{reply}");
 }

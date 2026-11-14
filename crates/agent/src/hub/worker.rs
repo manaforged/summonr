@@ -19,6 +19,7 @@ mod export;
 pub(super) use export::export_session;
 mod execution;
 mod history;
+pub(crate) use history::journal;
 mod reader;
 mod settings;
 #[cfg(test)]

@@ -51,7 +51,7 @@ pub(super) fn replay_transcript(
     }
 }
 
-fn journal(path: &Path) -> Vec<Event> {
+pub(crate) fn journal(path: &Path) -> Vec<Event> {
     let mut out = Vec::new();
     let mut last_work = None;
     let mut reads = Reads::default();

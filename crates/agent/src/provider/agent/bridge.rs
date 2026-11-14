@@ -22,6 +22,7 @@ pub(super) fn mcp(message: &Value, tools: &[Value]) -> Value {
         | Ask::Ping
         | Ask::Authenticate
         | Ask::SessionNew
+        | Ask::SessionLoad
         | Ask::SessionPrompt
         | Ask::SessionCancel
         | Ask::SessionSetConfigOption

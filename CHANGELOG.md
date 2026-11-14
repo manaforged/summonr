@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+These entries are for the desktop app, `summonr-desktop`, which ships separately from the 0.2.0 CLI.
+
 ### Added
 
 - `summonr-desktop` is the Summonr desktop app, a separate program that runs the same agent in a native window. On macOS `scripts/package-macos.sh` packs it as `Summonr.app` in `Summonr.dmg`.
@@ -23,12 +25,23 @@
 - A `[metric]` table in the workspace check file makes `--goal` climb a number: summonr measures a baseline first, then measures each turn after the checks, keeps it only when it beats the best by more than `noise`, and otherwise reverts it to the start of the turn. A turn that changes a file listed in `protect` is reverted unmeasured. The goal ends at `target` or at a budget, and the ledger shows every attempt.
 - The native `task` tool accepts `endpoint` to select a configured worker endpoint without changing the orchestrator's model.
 - Naming a task starts a persistent background worker that accepts follow-up messages through `send`.
-- `plugins/researchr` is research mode: `/researchr:research SPEC` runs any number of native workers on one measured goal in delta lanes, records each worker's child id and model through a `post_tool` hook, stores findings in SQLite, and imports messages and provider-returned reasoning for audit. It replaces `plugins/lanes`.
 - Custom panel files are validated by `summonr panel check NAME` and listed by `summonr panel list`.
 - `--skills NAME` and `[skills] default` choose a named set of skills per session; resumed sessions and children keep the set, and usage splits spend by set.
 - A second running agent in the same checkout gets its own worktree, and each new worktree runs workspace setup scripts on its own port block.
 - `summonr endpoint usage` reads configured plan usage windows and caches them across runs.
 - `summonr session children` lists a lead session's children.
+- Claude Code skills and slash commands run as written: `` !`cmd` `` and fenced `!` blocks run through the `run_command` policy, `@file` references attach through the read policy, and plugin skills are called as `/plugin:skill`.
+- Hooks fire on 14 Claude Code events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PreCompact`, `PostCompact`, `Stop`, `SessionEnd`, `PermissionRequest`, `Notification`, `SubagentStart`, `SubagentStop`, and `StopFailure`. A `Stop` hook can continue the turn, and a `PermissionRequest` hook can answer an approval prompt.
+- Claude Code plugins load their skills, commands, agents, hooks, MCP servers and language servers. `summonr plugin marketplace add|list|remove|update` manages marketplaces, and `summonr plugin install NAME@MARKET` installs from one without running plugin code at install time.
+- `.mcp.json` and Claude Code MCP entries are read with `type`, `headersHelper` and millisecond timeouts, each server comes whole from the first scope that names it, and an unset `${VAR}` stays as written. Claude Code instruction files load in the documented order: `.claude/CLAUDE.md`, `CLAUDE.local.md`, parent-folder files, `.claude/rules`, and `@` imports.
+- Subagent files apply `tools` and `disallowedTools` to MCP tools as well, preload the skills they name, and map `model` aliases only when the lead's endpoint resolves them.
+- Claude Code output styles load from `~/.claude/output-styles`, project `.claude/output-styles` and plugins; `output_style` in config or `/output-style` picks one.
+- `import_claude_settings = true` reads Claude Code's `settings.json` files and maps hooks, deny and ask rules, `env` and `outputStyle`. Allow rules and `defaultMode` are never imported, and `summonr doctor` lists the files read.
+- `summonr session search TEXT` searches past sessions, newest first.
+- `summonr session export ID --json` streams the complete journal records and the session's mail audit as JSONL, ending with a counted trailer.
+- `summonr mail send --json` prints the message id and the number of inboxes it reached; `--reply-to ID` records the original message.
+- `summonr cron add NAME --wake SESSION -p PROMPT` delivers the prompt to a live session's inbox without starting a model run.
+- `summonr tool run NAME [JSON]` runs one tool in the current directory and prints its result.
 
 ### Changed
 
@@ -37,6 +50,10 @@
 - `summonr --gui` exits 1 and names `summonr-desktop`, and `summonr` never opens a window. Source installs name the package: `cargo install --git https://github.com/manaforged/summonr --locked summonr`.
 - A goal with no workspace check file asks the model to write a contract of check commands to `contract.toml` beside it before it changes code. At least one command must fail on first run, then the judge reads the contract; once accepted, the commands decide completion, later edits to the file change nothing, and a change to a file listed under `protect` fails the check.
 - The `memory` module is off by default; `memory = true` under `[modules]` turns it on.
+- Commands take a `noun verb` form, and one parser reads every noun. The old spellings still work as hidden aliases; see Migration.
+- The binary runs one tokio worker instead of two. On the bench, first-token CPU fell to 0.957x and first-turn time to 0.949x; memory was flat.
+- Idle blocking-pool threads exit after 1 s (`thread_keep_alive_ms`), and replayed read outputs are compacted while the journal loads. On the heavy-reads resume bench, footprint fell to 0.827x at open and 0.828x after a turn.
+- Each built-in tool schema is held once as raw JSON. Idle CLI footprint fell to 0.968x; wire bytes are unchanged.
 
 ### Fixed
 
@@ -55,7 +72,23 @@
 ### Migration
 
 - `SUMMONR_CAPTURE_DIR` now writes schema-1 audit envelopes under each session id, with one file per exchange; decode `record.body` from base64 instead of reading a flat text `body`. Capture failures now stop the affected call rather than silently omitting evidence.
-- Internal provider implementations change `Provider::child()` from `Option<Self>` to `Provider::child(Option<&Endpoint>)` returning `Result<Option<Self>>`; `None` inherits the provider, and `Some` selects the child's endpoint.
+- Command renames. The old spelling still runs:
+
+  | Old | New |
+  | --- | --- |
+  | `summonr sessions` | `summonr session list` |
+  | `summonr resume` | `summonr session resume` |
+  | `summonr export` | `summonr session export` |
+  | `summonr profile` | `summonr session profile` |
+  | `summonr diff` | `summonr session diff` |
+  | `summonr endpoints` | `summonr endpoint list` |
+  | `summonr worktrees` | `summonr worktree list` |
+  | `summonr modules` | `summonr module list` |
+  | `summonr workflows` | `summonr workflow list` |
+  | `summonr install` | `summonr plugin install` |
+  | `summonr uninstall` | `summonr plugin remove` |
+
+- Plugin MCP tools are named `mcp__plugin_<plugin>_<server>__<tool>`; an existing `[mcp.<plugin>-<server>]` table still applies. Plugin command arguments count from 0, so `$1` is now the second word.
 
 ## 0.1.1
 

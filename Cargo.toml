@@ -2,7 +2,7 @@
 name = "summonr"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version.workspace = true
 license = "MIT"
 authors = ["Manaforge Technologies LLC"]
 description = "Terminal coding agent in Rust"
@@ -58,7 +58,6 @@ tempfile = "3"
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 leyline = { workspace = true }
 crossterm = "0.29"
-libc = "0.2"
 dunce = { workspace = true }
 jiff = "0.2.38"
 

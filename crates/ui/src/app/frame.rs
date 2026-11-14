@@ -145,7 +145,7 @@ impl App {
     }
 
     pub(crate) fn persist(&self, prefs: &Prefs) {
-        if let Err(error) = save(self.prefs_path.as_deref(), prefs) {
+        if let Err(error) = save(self.info.config.as_deref(), prefs) {
             self.push_entry(Entry::Error(error));
         }
     }

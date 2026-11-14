@@ -18,7 +18,7 @@ thread_local! {
 
 /// Reopens the saved panes and terminals, then saves each later change.
 pub(super) fn install(main: &App) {
-    if main.prefs_path.is_none() {
+    if main.info.config.is_none() {
         return;
     }
     let saved = Layout::load();

@@ -52,7 +52,7 @@ fn attach(main: &App) -> App {
         commands: command_rx,
         ui,
     })));
-    let mut app = App::new(main.info.clone(), main.workspace(), commands);
+    let mut app = App::new(std::rc::Rc::clone(&main.info), main.workspace(), commands);
     app.window.share(&main.window);
     app.settings_open = main.settings_open;
     app.settings_group = main.settings_group;

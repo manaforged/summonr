@@ -120,10 +120,9 @@ pub(super) struct App {
     pub(super) search: super::search::Picker,
     pub(super) help: super::help::View,
     pub(super) cmd: UnboundedSender<Cmd>,
-    pub(super) info: Info,
+    pub(super) info: Rc<Info>,
     pub(super) place: Signal<Place>,
     pub(super) window: crate::window::Window,
-    pub(super) prefs_path: Option<PathBuf>,
     pub(super) max_scroll: Signal<f32>,
     pub(super) content_height: Signal<f32>,
     pub(super) scroll_y: Signal<f32>,
@@ -238,7 +237,12 @@ impl Attachment {
 }
 
 impl App {
-    pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
+    pub(super) fn new(
+        info: impl Into<Rc<Info>>,
+        workspace: PathBuf,
+        cmd: UnboundedSender<Cmd>,
+    ) -> Self {
+        let info: Rc<Info> = info.into();
         let mut initial = Model::new(&info);
         initial.workspace = workspace.clone();
         let model = signal(Rc::new(initial));
@@ -342,7 +346,6 @@ impl App {
             pasted_text: Rc::new(RefCell::new(Vec::new())),
             place: signal(Place::at(&workspace)),
             window: crate::window::Window::new(),
-            prefs_path: info.config.clone(),
             info,
         };
         app.cancel_secret_on_close();

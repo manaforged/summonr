@@ -25,3 +25,17 @@ fn transcript_replay_notifies_model_subscribers_once() {
         assert_eq!(app.model.with(|model| model.entries.len()), 50);
     });
 }
+
+#[test]
+fn app_clone_shares_info_rc() {
+    sigil::reactive::Owner::scope("app-info-rc", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = unbounded_channel();
+        let mut details = info();
+        details.config = Some(workspace.path().join("config.toml"));
+        let app = App::new(details, workspace.path().to_owned(), commands);
+        let cloned = app.clone();
+        assert!(Rc::ptr_eq(&app.info, &cloned.info));
+        assert_eq!(cloned.info.config, app.info.config);
+    });
+}

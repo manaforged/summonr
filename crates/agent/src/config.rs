@@ -206,10 +206,15 @@ const fn events_on() -> bool {
     true
 }
 
-const NAME: &str = "config.toml";
+pub(crate) const NAME: &str = "config.toml";
 
 pub(crate) fn path() -> Result<PathBuf> {
     Ok(summonr_home()?.join(NAME))
+}
+
+/// The user config path as shown to people, or the bare file name when the home is unknown.
+pub(crate) fn shown() -> String {
+    path().map_or_else(|_| NAME.to_string(), |path| tilde(&path))
 }
 
 pub(crate) fn file() -> Result<Arc<File>> {

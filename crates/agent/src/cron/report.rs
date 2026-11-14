@@ -174,7 +174,7 @@ fn desktop(text: &str) {
 #[cfg(target_os = "linux")]
 fn desktop(text: &str) {
     if let Some(program) = crate::askpass::on_path("notify-send") {
-        quiet(crate::process::Spec::new(program, ["summonr", text]));
+        quiet(crate::process::Spec::new(program, [crate::PRODUCT, text]));
     }
 }
 

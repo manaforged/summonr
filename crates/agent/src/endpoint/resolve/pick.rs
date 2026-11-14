@@ -54,7 +54,7 @@ pub(crate) fn choose(
 }
 
 fn remembered(file: &File, last: Option<(String, String)>) -> Chosen {
-    let config = config_shown();
+    let config = crate::config::shown();
     let candidates = [
         last.map(|(name, model)| (name, Some(model), Origin::LastUsed)),
         file.default

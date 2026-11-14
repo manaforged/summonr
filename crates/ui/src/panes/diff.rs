@@ -104,9 +104,14 @@ pub(super) fn diff(app: App, mut column: NodeBuilder, cols: u16) -> NodeBuilder 
         column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
     }
     drop(model);
-    let listed: BTreeSet<String> = app.diff_rows().into_iter().map(|row| row.path).collect();
+    let rows = app.pane_rows(Pane::Diff);
+    let listed: BTreeSet<String> = if window {
+        rows.iter().map(|row| row.path.clone()).collect()
+    } else {
+        BTreeSet::new()
+    };
     let below = window.then_some(file_actions as Extra);
-    column = listing(&app, Pane::Diff, column, &NO_CHANGES, (None, below));
+    column = listing(&app, Pane::Diff, rows, column, &NO_CHANGES, (None, below));
     undo_rows(&app, column, None, &listed)
 }
 

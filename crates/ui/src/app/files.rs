@@ -128,26 +128,29 @@ pub(crate) fn file_rows(files: &[String], expanded: &[String]) -> Vec<PaneRow> {
     let mut sorted: Vec<&String> = files.iter().collect();
     sorted.sort();
     for file in sorted {
-        let parts: Vec<&str> = file.split('/').filter(|part| !part.is_empty()).collect();
+        let mut parts = file.split('/').filter(|part| !part.is_empty()).peekable();
         let mut prefix = String::new();
-        let mut hidden = false;
-        for (depth, part) in parts.iter().enumerate() {
-            let last = depth + 1 == parts.len();
+        let mut depth = 0;
+        while let Some(part) = parts.next() {
+            let last = parts.peek().is_none();
             let path = if prefix.is_empty() {
-                (*part).to_string()
+                part.to_string()
             } else {
                 format!("{prefix}/{part}")
             };
             let shut = !last && !expanded.contains(path.as_str());
-            if !hidden && seen.insert(path.clone()) {
+            if seen.insert(path.clone()) {
                 rows.push(PaneRow {
                     depth,
                     dir: !last,
-                    ..PaneRow::flat(path.clone(), (*part).to_string(), !shut)
+                    ..PaneRow::flat(path.clone(), part.to_string(), !shut)
                 });
             }
-            hidden |= shut;
+            if shut {
+                break;
+            }
             prefix = path;
+            depth += 1;
         }
     }
     rows

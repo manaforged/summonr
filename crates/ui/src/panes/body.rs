@@ -11,6 +11,7 @@ use sigil::prelude::container;
 use sigil::prelude::context_menu;
 use sigil::prelude::button;
 use sigil::prelude::list_row;
+use sigil::prelude::virtual_list;
 
 use super::{App, Pane, PaneRow, diff, todos, tree_actions, view};
 use crate::canvas;
@@ -84,7 +85,8 @@ pub(crate) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
 }
 
 fn listed(app: &App, pane: Pane, column: NodeBuilder) -> NodeBuilder {
-    let shown = app.pane_rows(pane).len();
+    let rows = app.pane_rows(pane);
+    let shown = rows.len();
     let (title, note, none, trailing): (String, String, &Empty, Option<Extra>) = match pane {
         Pane::Worktrees => (
             "Worktrees".to_string(),
@@ -112,17 +114,17 @@ fn listed(app: &App, pane: Pane, column: NodeBuilder) -> NodeBuilder {
         ),
     };
     let column = column.child(header(app, title, note));
-    listing(app, pane, column, none, (trailing, None))
+    listing(app, pane, rows, column, none, (trailing, None))
 }
 
 pub(super) fn listing(
     app: &App,
     pane: Pane,
+    rows: Vec<PaneRow>,
     mut column: NodeBuilder,
     none: &Empty,
     (trailing, below): (Option<Extra>, Option<Extra>),
 ) -> NodeBuilder {
-    let rows = app.pane_rows(pane);
     if rows.is_empty() {
         return column.child(empty(none));
     }
@@ -132,33 +134,33 @@ pub(super) fn listing(
         .get()
         .min(rows.len().saturating_sub(1));
     let tree = App::pane_tree(pane);
-    for (index, row) in rows.into_iter().enumerate() {
-        let (menu, point) = (app.clone(), app.clone());
-        let disclosure = match (row.dir, row.open) {
-            (true, true) => Disclosure::Expanded,
-            (true, false) => Disclosure::Collapsed,
-            (false, _) if tree => Disclosure::Leaf,
-            (false, _) => Disclosure::None,
+    if below.is_none() {
+        let list_state = app.pane_list(pane);
+        let row_app = app.clone();
+        let estimate = if canvas::is_window() {
+            28.0
+        } else {
+            canvas::cell().h
         };
-        let slots = ListRowSlots {
-            depth: u16::try_from(row.depth).unwrap_or(u16::MAX),
-            disclosure,
-            status: (!row.status.is_empty()).then(|| row.status.clone().into()),
-            badge: row.badge.clone().map(|(label, tone)| (label.into(), tone)),
-            ..ListRowSlots::default()
-        };
-        let mut item = list_row(index == cursor, row.name.clone(), slots);
-        if let Some(extra) = trailing {
-            item = item.child(extra(app, &row));
+        let viewport_h = f32::from(app.viewport.peek().1).max(1.0) * canvas::cell().h;
+        let list = virtual_list(rows, move |index, row: &PaneRow| {
+            let item = row_node(&row_app, pane, index, row, cursor, tree, trailing);
+            attach_extras(item, row)
+        })
+        .measured()
+        .estimate(estimate)
+        .viewport_height(viewport_h)
+        .fill()
+        .keyboard(false)
+        .scroll_bind(list_state.scroll)
+        .follow_row(list_state.cursor);
+        if canvas::is_window() {
+            column = column.fill_height();
         }
-        let item = item.pointer_down(move |event| {
-            if event.button == Some(MouseButton::Right) {
-                return point.pane_point(pane, index);
-            }
-            point.pane_click(pane, index);
-            event.stop_propagation();
-        });
-        column = column.child(context_menu(item, move || menu.row_menu(pane, index)));
+        return column.child(list);
+    }
+    for (index, row) in rows.into_iter().enumerate() {
+        column = column.child(row_node(app, pane, index, &row, cursor, tree, trailing));
         if let Some(note) = row.note.clone() {
             column = column.child(dim(note));
         }
@@ -170,6 +172,60 @@ pub(super) fn listing(
         }
     }
     column
+}
+
+fn row_node(
+    app: &App,
+    pane: Pane,
+    index: usize,
+    row: &PaneRow,
+    cursor: usize,
+    tree: bool,
+    trailing: Option<Extra>,
+) -> NodeBuilder {
+    let (menu, point) = (app.clone(), app.clone());
+    let disclosure = match (row.dir, row.open) {
+        (true, true) => Disclosure::Expanded,
+        (true, false) => Disclosure::Collapsed,
+        (false, _) if tree => Disclosure::Leaf,
+        (false, _) => Disclosure::None,
+    };
+    let slots = ListRowSlots {
+        depth: u16::try_from(row.depth).unwrap_or(u16::MAX),
+        disclosure,
+        status: (!row.status.is_empty()).then(|| row.status.clone().into()),
+        badge: row.badge.clone().map(|(label, tone)| (label.into(), tone)),
+        ..ListRowSlots::default()
+    };
+    let mut item = list_row(index == cursor, row.name.clone(), slots);
+    if let Some(extra) = trailing {
+        item = item.child(extra(app, row));
+    }
+    let item = item.pointer_down(move |event| {
+        if event.button == Some(MouseButton::Right) {
+            return point.pane_point(pane, index);
+        }
+        point.pane_click(pane, index);
+        event.stop_propagation();
+    });
+    context_menu(item, move || menu.row_menu(pane, index))
+}
+
+fn attach_extras(node: NodeBuilder, row: &PaneRow) -> NodeBuilder {
+    if row.note.is_none() && row.detail.is_empty() {
+        return node;
+    }
+    let mut col = sigil::prelude::column()
+        .fill_width()
+        .gap(Space::Sm)
+        .child(node);
+    if let Some(note) = row.note.as_ref() {
+        col = col.child(dim(note.clone()));
+    }
+    if !row.detail.is_empty() {
+        col = col.child(detail(row.detail.iter().cloned()));
+    }
+    col
 }
 
 pub(super) fn count(items: usize) -> String {

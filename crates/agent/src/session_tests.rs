@@ -385,3 +385,22 @@ fn a_session_in_a_newer_format_is_refused_by_name() {
     let export = export(&path).expect_err("export refuses a newer format");
     assert_eq!(export.to_string(), message);
 }
+
+#[test]
+fn a_newer_format_with_a_changed_header_is_still_refused() {
+    let home = tempfile::tempdir().expect("session home");
+    let id = journal_with(home.path(), None);
+    let path = log::session_path(home.path(), id);
+    let newer = FORMAT + 1;
+    let header = format!(
+        "{{\"kind\":\"session\",\"id\":\"{id}\",\"model\":{{\"name\":\"m\"}},\"format\":{newer}}}\n"
+    );
+    std::fs::write(&path, header).expect("write session journal");
+    let export = export(&path).expect_err("export refuses a newer format");
+    assert!(
+        export
+            .to_string()
+            .contains(&format!("session format {newer}")),
+        "{export}"
+    );
+}

@@ -189,10 +189,17 @@ pub(crate) fn unversioned() -> u32 {
 
 /// Fails when the journal at `path` was written in a format newer than [`FORMAT`].
 pub(crate) fn readable(path: &Path) -> summonr_core::error::Result<()> {
-    let Some(Ok(Line::Session { format, .. })) = records::<Line>(path, 0).next() else {
+    let Some(Ok(header)) = records::<serde_json::Value>(path, 0).next() else {
         return Ok(());
     };
-    if format <= FORMAT {
+    if header.get("kind").and_then(serde_json::Value::as_str) != Some("session") {
+        return Ok(());
+    }
+    let format = header
+        .get("format")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(u64::from(UNVERSIONED));
+    if format <= u64::from(FORMAT) {
         return Ok(());
     }
     Err(summonr_core::error::Error::Config(format!(

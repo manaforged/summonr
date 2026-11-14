@@ -123,6 +123,7 @@ pub struct Loop<P> {
     tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
     price: Option<Price>,
     system_prompt: String,
+    style: crate::style::Switch,
     mode: crate::WorkKind,
     tools: ToolRegistry,
     schema: Option<Arc<mail::Advertised>>,

@@ -35,6 +35,8 @@ pub enum SlashCommand {
     Agents,
     Memory,
     Skills,
+    #[serde(rename = "output-style")]
+    OutputStyle,
     Permissions,
     Fork,
     Usage,

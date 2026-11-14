@@ -121,6 +121,7 @@ impl<P: Provider> Loop<P> {
             turn_started: 0,
             summary_wait: 0,
             outputs_cleared: false,
+            style: crate::style::Switch::default(),
             job_watch: Vec::new(),
             job_known: HashSet::new(),
             judge_turns: crate::limits::limits().judge_turns,

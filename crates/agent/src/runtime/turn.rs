@@ -188,6 +188,9 @@ impl<P: Provider> Loop<P> {
         let mut input = self.expand_mcp(input, &mut events, &mut emit).await?;
         self.tools.fold_unseen_images(&mut input).await?;
         Box::pin(self.admit(&mut input, trigger == Trigger::User, &mut emit)).await?;
+        if let Some(note) = self.style.take_note() {
+            input.text = format!("{note}\n\n{}", input.text);
+        }
         self.begin_turn(input, trigger)?;
         let result = self.run_opened(&mut events, &mut emit).await;
         if result.is_err() {

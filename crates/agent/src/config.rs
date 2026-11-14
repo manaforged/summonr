@@ -51,6 +51,7 @@ pub(crate) struct File {
     #[serde(default)]
     pub write_roots: Vec<String>,
     pub workflow: Option<String>,
+    pub output_style: Option<String>,
     #[serde(default)]
     pub workflows: BTreeMap<String, BTreeMap<String, ModelSelectionRow>>,
     #[serde(default)]

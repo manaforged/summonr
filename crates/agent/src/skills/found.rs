@@ -197,10 +197,7 @@ fn walk(dir: &Path, folder: &str, depth: usize, plugin: Option<&Plugin>, out: &m
                 };
                 walk(&path, &inner, depth - 1, plugin, out);
             }
-        } else if plugin.is_none()
-            && folder.is_empty()
-            && path.extension().is_some_and(|ext| ext == "md")
-        {
+        } else if plugin.is_none() && folder.is_empty() && super::is_markdown(&path) {
             let stem = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())

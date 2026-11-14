@@ -201,7 +201,8 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     Some(out)
 }
 
-fn project_dirs(workspace: &Path) -> Vec<PathBuf> {
+/// Each `.claude` directory from `workspace` up to its repository root, closest first.
+pub(crate) fn project_dirs(workspace: &Path) -> Vec<PathBuf> {
     let top = crate::diff::layout(workspace).map(|layout| layout.top);
     let start = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
     let mut dirs = Vec::new();
@@ -232,7 +233,7 @@ pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
     plugin
         .files(DIR)
         .iter()
-        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .filter(|path| skills::is_markdown(path))
         .filter_map(|path| {
             let stem = path.file_stem()?.to_str()?.to_string();
             skills::markdown_file(path, stem, build)

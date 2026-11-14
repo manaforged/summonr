@@ -6,9 +6,15 @@ use super::super::{
     HOOKS, LSP, MCP, McpServer, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json, scan,
 };
 
-const COMPONENTS: [&str; 5] = ["skills", "agents", HOOKS, MCP.key, LSP.key];
-const MANIFEST_SKIPPED: [(&str, &str); 5] = [
-    ("outputStyles", "output styles"),
+const COMPONENTS: [&str; 6] = [
+    "skills",
+    "agents",
+    HOOKS,
+    MCP.key,
+    LSP.key,
+    crate::style::MANIFEST_KEY,
+];
+const MANIFEST_SKIPPED: [(&str, &str); 4] = [
     ("workflows", "workflows"),
     ("experimental", "themes, monitors, or evals"),
     ("channels", "channels"),
@@ -115,6 +121,15 @@ pub fn describe(plugin: &Plugin) -> Vec<String> {
             crate::plugins::lsp::of(plugin, &plugin.dir)
                 .into_iter()
                 .filter_map(|server| server.key.split_once(':').map(|(_, name)| name.to_string())),
+        ),
+    );
+    push_names(
+        &mut parts,
+        "styles",
+        &sorted(
+            crate::style::of_plugin(plugin)
+                .into_iter()
+                .map(|style| style.name),
         ),
     );
     let hooks = plugin.hooks().names();

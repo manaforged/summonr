@@ -51,6 +51,7 @@ pub mod scripts;
 pub mod secret;
 pub mod session;
 pub mod skills;
+mod style;
 pub mod supervise;
 pub mod tools;
 mod verify;

@@ -53,6 +53,11 @@ impl Reader {
         }
     }
 
+    /// Whether the workspace is trusted, so its project files load.
+    pub(super) fn trusted(&self) -> bool {
+        self.trust
+    }
+
     fn load_slot(&self, command: &Cmd) -> Option<Arc<Load>> {
         if matches!(command, Cmd::Diff(_)) {
             return Some(Arc::clone(&self.diff_load));

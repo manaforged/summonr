@@ -64,3 +64,17 @@ fn an_mcp_prompt_runs_in_either_spelling() {
     assert_eq!(joined_prompt("github__", "github"), None);
     assert_eq!(joined_prompt("gitlab__list", "github"), None);
 }
+
+#[test]
+fn output_style_takes_a_style_name_with_spaces() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    assert_eq!(
+        parse_command("/output-style"),
+        Some(SlashCommand::OutputStyle)
+    );
+    assert_eq!(argument("/output-style", workspace.path()), Ok(None));
+    assert_eq!(
+        argument("/output-style Diagrams first", workspace.path()),
+        Ok(Some("Diagrams first"))
+    );
+}

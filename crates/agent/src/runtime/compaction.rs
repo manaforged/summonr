@@ -125,6 +125,7 @@ impl<P: Provider> Loop<P> {
         let tail = self.session.history()[keep_from..].to_vec();
         self.session.compact(&summary, &tail)?;
         self.tools.forget_reads();
+        self.restyle();
         self.outputs_cleared = false;
         self.compacted(&summary, trigger, events, emit).await?;
         Ok(Some(summary))

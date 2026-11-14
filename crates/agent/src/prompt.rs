@@ -4,6 +4,8 @@ use std::path::Path;
 
 use summonr_core::dirs::{claude, summonr_home};
 
+use crate::style::{Pick, Style};
+
 mod imports;
 mod rules;
 
@@ -12,6 +14,13 @@ const PROJECT_TAG: &str = "project_context";
 const AGENTS_MD: &str = "AGENTS.md";
 const CLAUDE_MD: &str = "CLAUDE.md";
 const LOCAL_MD: &str = "CLAUDE.local.md";
+
+const PARAGRAPH: &str = "\n\n";
+const CWD_OPEN: &str = "\n\n<cwd>";
+const STYLE_OPEN: &str = "<output_style name=\"";
+const STYLE_NAME_END: &str = "\">\n";
+const STYLE_CLOSE: &str = "</output_style>";
+const DEFAULT_NOTE: &str = "No output style is selected.";
 
 const IMAGE_SECTION: (&str, &str) = ("<image_input>", "</image_input>");
 const IMAGE_ON: &str = "<image_input>\nThe model accepts image input.\n</image_input>";
@@ -32,7 +41,19 @@ pub fn system_prompt(workspace: &Path, sources: Sources) -> String {
     compose(workspace, summonr_home().ok().as_deref(), sources)
 }
 
+/// The system prompt for `workspace` with the output style a new session starts with.
 pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -> String {
+    let pick = crate::style::active(workspace, sources.trust);
+    styled(workspace, home, sources, pick.style())
+}
+
+/// The system prompt `compose` builds, with `style` as its output style.
+pub(crate) fn styled(
+    workspace: &Path,
+    home: Option<&Path>,
+    sources: Sources,
+    style: Option<&Style>,
+) -> String {
     let Sources {
         trust,
         skills,
@@ -49,7 +70,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     let mut parts = Vec::new();
     let replaced = home.is_some_and(|home| push_file(&mut parts, &home.join("SYSTEM.md")));
     if !replaced {
-        parts.push(DEFAULT.to_string());
+        parts.push(preamble(true));
     }
     if trust {
         push_file(&mut parts, &workspace.join("SYSTEM.md"));
@@ -79,7 +100,66 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     }
     parts.push(format!("<cwd>{}</cwd>", workspace.display()));
     parts.push(image_section(images).to_string());
-    parts.join("\n\n")
+    restyle(&parts.join(PARAGRAPH), style)
+}
+
+fn preamble(coding: bool) -> String {
+    if coding {
+        format!("{IDENTITY}{PARAGRAPH}<rules>\n{TOOL_RULES}\n{CODING_RULES}\n</rules>")
+    } else {
+        format!("<rules>\n{TOOL_RULES}\n</rules>")
+    }
+}
+
+fn style_block(name: &str, text: &str) -> String {
+    format!("{STYLE_OPEN}{name}{STYLE_NAME_END}{text}\n{STYLE_CLOSE}")
+}
+
+/// `system` with the output style section before `<cwd>` set to `style`, and the coding rules kept only when it asks; a prompt without `<cwd>` is unchanged.
+pub(crate) fn restyle(system: &str, style: Option<&Style>) -> String {
+    let Some(at) = system.rfind(CWD_OPEN) else {
+        return system.to_string();
+    };
+    let (head, tail) = system.split_at(at);
+    let head = match head.rfind(STYLE_OPEN) {
+        Some(start) if head.ends_with(STYLE_CLOSE) => {
+            let before = &head[..start];
+            before.strip_suffix(PARAGRAPH).unwrap_or(before)
+        }
+        Some(_) | None => head,
+    };
+    let (full, bare) = (preamble(true), preamble(false));
+    let lead = match style {
+        Some(style) if !style.keep_coding => &bare,
+        Some(_) | None => &full,
+    };
+    let rest = head
+        .strip_prefix(full.as_str())
+        .or_else(|| head.strip_prefix(bare.as_str()));
+    let mut out = rest.map_or_else(|| head.to_string(), |rest| format!("{lead}{rest}"));
+    if let Some(style) = style {
+        out.push_str(PARAGRAPH);
+        out.push_str(&style_block(&style.name, &style.instructions));
+    }
+    out.push_str(tail);
+    out
+}
+
+/// The name of the output style `system` carries, if any.
+pub(crate) fn style_name(system: &str) -> Option<&str> {
+    let head = system[..system.rfind(CWD_OPEN)?].strip_suffix(STYLE_CLOSE)?;
+    let start = head.rfind(STYLE_OPEN)? + STYLE_OPEN.len();
+    head[start..]
+        .split_once(STYLE_NAME_END)
+        .map(|(name, _)| name)
+}
+
+/// The message that carries a mid-session switch to `pick` into the conversation.
+pub(crate) fn style_note(pick: &Pick) -> String {
+    match pick.style() {
+        Some(style) => style_block(&style.name, &style.instructions),
+        None => style_block(crate::style::DEFAULT, DEFAULT_NOTE),
+    }
 }
 
 fn image_section(images: bool) -> &'static str {
@@ -268,18 +348,16 @@ fn dedup_sections(text: &str, seen: &mut HashSet<u64>) -> Option<String> {
     (!kept.is_empty()).then(|| kept.join("\n\n"))
 }
 
-const DEFAULT: &str = "You are an expert coding assistant running inside summonr, a terminal coding harness.
-
-<rules>
-- To add a panel, chart or dashboard tab to the summonr desktop app, read `summonr panel --help`, write the file it describes, and run `summonr panel check NAME`.
+const IDENTITY: &str =
+    "You are an expert coding assistant running inside summonr, a terminal coding harness.";
+const TOOL_RULES: &str = "- To add a panel, chart or dashboard tab to the summonr desktop app, read `summonr panel --help`, write the file it describes, and run `summonr panel check NAME`.
 - Use search to find text in files or files by name, anywhere on disk; read for files and directories; run_command for builds, tests, and git
 - Unsure of a tool's options? call it with op=help for the full reference
 - A tool missing from the schemas is an off or empty module: web (search, fetch), mail (agents, send, inbox, board), MCP, skills, LSP, jobs, child tasks. Name the step (`summonr module list`, `summonr mcp add NAME -- CMD`, `~/.summonr/skills/<name>/SKILL.md`) instead of hunting the harness
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
-- write is for new files and complete rewrites
-- Be concise in your responses
-- Finish the whole request before you reply, unless only the user can decide the next step
-</rules>";
+- write is for new files and complete rewrites";
+const CODING_RULES: &str = "- Be concise in your responses
+- Finish the whole request before you reply, unless only the user can decide the next step";
 
 #[cfg(test)]
 #[path = "prompt_tests.rs"]

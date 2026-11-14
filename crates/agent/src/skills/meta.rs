@@ -85,7 +85,8 @@ fn heading(body: &str) -> String {
         .collect()
 }
 
-fn flag(front: &Frontmatter<'_>, key: &str, default: bool) -> bool {
+/// The boolean `key` sets, or `default` when it is unset or not a boolean word.
+pub(crate) fn flag(front: &Frontmatter<'_>, key: &str, default: bool) -> bool {
     let Some(value) = front.get(key).map(str::to_ascii_lowercase) else {
         return default;
     };

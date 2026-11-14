@@ -12,7 +12,7 @@ mod meta;
 pub(crate) use found::plugin_files;
 use found::{Found, found};
 pub(crate) use inject::{Body, Piece, Scope};
-pub(crate) use meta::Meta;
+pub(crate) use meta::{Meta, flag};
 
 const SKILL: &str = "SKILL.md";
 /// The mark between a namespace and a name, as in `plugin:skill` or `frontend:component`.
@@ -305,6 +305,11 @@ pub(crate) fn valid(name: &str) -> bool {
     summonr_core::text::is_name(name, summonr_core::text::Charset::Word)
 }
 
+/// Whether `path` names a `.md` file.
+pub(crate) fn is_markdown(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension == "md")
+}
+
 /// Each Markdown file under `dir`, named by its folder path and stem joined with `:`, such as `frontend:component`.
 pub(crate) fn markdown_tree<T>(
     dir: &Path,
@@ -347,7 +352,7 @@ fn markdown<T>(
         };
         if folder && depth > 1 && valid(leaf) {
             out.extend(markdown(&path, &name, depth - 1, build));
-        } else if !folder && path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
+        } else if !folder && path.is_file() && is_markdown(&path) {
             out.extend(markdown_file(&path, name, build));
         }
     }

@@ -55,6 +55,23 @@ impl<P: Provider> Loop<P> {
         self.system_prompt = prompt.into();
     }
 
+    /// Switches the output style from the next turn; the system prompt keeps its cached text until history is rewritten.
+    pub(crate) fn choose_style(&mut self, pick: crate::style::Pick) {
+        self.style.choose(pick);
+    }
+
+    /// The name of the output style this session runs with.
+    pub(crate) fn style_name(&self) -> String {
+        self.style.current(&self.system_prompt)
+    }
+
+    /// Moves a mid-session style switch into the system prompt once the cached history is gone.
+    pub(crate) fn restyle(&mut self) {
+        if let Some(prompt) = self.style.rewritten(&self.system_prompt) {
+            self.system_prompt = prompt;
+        }
+    }
+
     pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {
         self.session.set_agent(endpoint.agent());
         self.set_context_window(endpoint.context_window);

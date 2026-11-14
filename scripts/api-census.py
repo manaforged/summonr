@@ -255,7 +255,7 @@ def command_drift() -> list[str]:
     }
     doc = set(
         re.findall(
-            r"^\| `(/[a-z]+(?: accept| reject)?)[ `]",
+            r"^\| `(/[a-z][a-z-]*(?: accept| reject)?)[ `]",
             (ROOT / "docs/guide/reference.md").read_text(),
             re.M,
         )

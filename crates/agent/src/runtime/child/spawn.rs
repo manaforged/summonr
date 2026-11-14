@@ -91,11 +91,12 @@ impl<P: Provider> Loop<P> {
         let workspace = tree
             .as_ref()
             .map_or_else(|| self.workspace.clone(), |tree| tree.path.clone());
+        let system = crate::prompt::restyle(&self.system_prompt, None);
         let driver = SessionDriver::open(
             home,
             &workspace,
             &model,
-            &self.system_prompt,
+            &system,
             Some(Parent::Task(self.session.id())),
         )?;
         let opener = self.child_opener(&args, agent.as_ref(), tree.as_ref(), &workspace);
@@ -103,7 +104,7 @@ impl<P: Provider> Loop<P> {
             provider,
             model.clone(),
             &workspace,
-            self.system_prompt.clone(),
+            system,
             driver,
             Policy::builtin(),
             None,

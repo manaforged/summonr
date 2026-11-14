@@ -128,6 +128,7 @@ impl Worker {
             crate::SlashCommand::Undo => self.undo_command(argument),
             crate::SlashCommand::Agents => self.agents(),
             crate::SlashCommand::Memory => self.memory(),
+            crate::SlashCommand::OutputStyle => self.output_style(argument),
             crate::SlashCommand::Skills => {
                 let skills = crate::skills::list(self.loop_.workspace())
                     .into_iter()
@@ -143,6 +144,28 @@ impl Worker {
             }
             _ => self.unknown(line).unwrap_or(true),
         }
+    }
+
+    fn output_style(&mut self, argument: Option<&str>) -> bool {
+        let styles =
+            crate::style::Roots::of(self.loop_.workspace(), self.reader.trusted()).styles();
+        let Some(typed) = argument else {
+            self.system(&crate::style::listing(&styles, &self.loop_.style_name()));
+            return true;
+        };
+        match crate::style::named(&styles, typed) {
+            Some(pick) => {
+                let name = pick.name().to_string();
+                self.loop_.choose_style(pick);
+                self.system(&format!(
+                    "output style {name} applies from your next message"
+                ));
+            }
+            None => self.fail(&format!(
+                "unknown output style `{typed}`; /output-style lists them"
+            )),
+        }
+        true
     }
 
     fn usage(&mut self, argument: Option<&str>) -> bool {

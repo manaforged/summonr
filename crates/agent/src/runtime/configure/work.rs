@@ -115,6 +115,7 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn clear_history(&mut self) -> Result<()> {
         self.session.clear()?;
         self.tools.forget_reads();
+        self.restyle();
         Ok(())
     }
 

@@ -22,9 +22,8 @@ pub(crate) use manage::off::{unknown_off, warn_unknown_off};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
 pub(super) const HOOKS: &str = "hooks";
-pub(super) const UNSUPPORTED: [(&str, &str); 4] = [
+pub(super) const UNSUPPORTED: [(&str, &str); 3] = [
     ("monitors", "monitors"),
-    ("output-styles", "output styles"),
     ("workflows", "workflows"),
     ("themes", "themes"),
 ];

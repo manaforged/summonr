@@ -133,6 +133,33 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
 }
 
 #[tokio::test]
+async fn a_child_runs_without_the_parent_output_style() {
+    let (mut parent, _dirs) = parent(vec![Reply::Text("hello")]);
+    parent.turn("hi").await.unwrap();
+    let workspace = parent.workspace().to_path_buf();
+    let plain = crate::prompt::styled(&workspace, None, crate::Sources::default(), None);
+    let style = crate::style::Style {
+        name: "Terse".to_string(),
+        description: String::new(),
+        instructions: "TERSE RULES".to_string(),
+        keep_coding: false,
+        force: false,
+        origin: crate::plugins::agents::Origin::User,
+    };
+    parent.set_system_prompt(crate::prompt::restyle(&plain, Some(&style)));
+    let budget = parent.task_budget(1).unwrap();
+    let run = parent
+        .task_start_in(
+            args("find the config loader", "research", false),
+            &budget,
+            None,
+        )
+        .unwrap();
+    assert!(parent.system_prompt.contains("TERSE RULES"));
+    assert_eq!(run.child.system_prompt, plain);
+}
+
+#[tokio::test]
 async fn an_implement_child_keeps_the_browser() {
     let (mut parent, _dirs) = browser_parent(vec![Reply::Text("done")]);
     let budget = parent.task_budget(1).unwrap();

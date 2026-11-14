@@ -197,11 +197,11 @@ fn plugin(server: &Server) -> Result<Launch> {
     Ok(Launch {
         origin: Origin::Plugin,
         key: server.key.clone(),
-        root: None,
+        root: server.root.clone(),
         argv: server.argv.clone(),
         env: server.env.clone().into_iter().collect(),
         languages: server.languages.clone(),
-        options: json!({}),
+        options: server.options.clone(),
     })
 }
 

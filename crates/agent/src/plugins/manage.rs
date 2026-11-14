@@ -1,14 +1,15 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use super::{
-    MANIFEST, Plugin as Loaded, data_dir, installed, json_file, require_tree, root, unknown_off,
-};
+use super::{MANIFEST, Plugin as Loaded, data_dir, installed, json_file, root, unknown_off};
 use crate::skills;
 use summonr_core::error::{Error, Result};
 
+mod check;
+pub(super) mod off;
 pub mod report;
 
+use check::require_tree;
 use report::{describe, report, servers, settings_servers, skipped};
 
 /// A plugin copied into the user plugin directory.

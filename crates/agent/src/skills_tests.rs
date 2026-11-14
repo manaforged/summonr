@@ -229,3 +229,154 @@ fn a_folder_path_picks_its_skills_with_no_set_in_config() {
         .to_string();
     assert!(missing.contains("skill folder"), "{missing}");
 }
+
+fn write(path: &std::path::Path, text: &str) {
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("skill directory");
+    std::fs::write(path, text).expect("skill body");
+}
+
+fn typed(workspace: &std::path::Path, line: &str) -> Option<String> {
+    crate::plugins::commands::expand(line, workspace, None).expect("slash expansion")
+}
+
+#[test]
+fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
+    let plugins = summonr_core::dirs::summonr_home().unwrap().join("plugins");
+    let plugin = plugins.join("probe-plug");
+    write(
+        &plugin.join("skills/probe-same/SKILL.md"),
+        "---\ndescription: plugin same\n---\nroot ${CLAUDE_PLUGIN_ROOT} dir ${CLAUDE_SKILL_DIR} data ${CLAUDE_PLUGIN_DATA} $ARGUMENTS",
+    );
+    write(
+        &plugin.join("skills/probe-dir/SKILL.md"),
+        "---\nname: probe-plug:probe-fancy\n---\nfancy body",
+    );
+    write(
+        &plugins.join("probe-solo/SKILL.md"),
+        "---\ndescription: solo\n---\nsolo body",
+    );
+    let workspace = tempfile::tempdir().unwrap();
+    write(
+        &workspace.path().join(".claude/skills/probe-same/SKILL.md"),
+        "---\ndescription: local same\n---\nlocal body",
+    );
+    let names: Vec<String> = super::list(workspace.path())
+        .into_iter()
+        .map(|(name, _)| name)
+        .filter(|name| name.contains("probe-"))
+        .collect();
+    for name in [
+        "probe-same",
+        "probe-plug:probe-same",
+        "probe-plug:probe-fancy",
+        "probe-fancy",
+        "probe-solo:probe-solo",
+        "probe-solo",
+    ] {
+        assert_eq!(
+            names.iter().filter(|seen| *seen == name).count(),
+            1,
+            "{name}: {names:?}"
+        );
+    }
+    let data = summonr_core::dirs::summonr_home()
+        .unwrap()
+        .join("plugin-data/probe-plug");
+    assert_eq!(
+        typed(workspace.path(), "/probe-plug:probe-same go").as_deref(),
+        Some(
+            format!(
+                "root {} dir {} data {} go",
+                plugin.display(),
+                plugin.join("skills/probe-same").display(),
+                data.display()
+            )
+            .as_str()
+        )
+    );
+    assert_eq!(
+        typed(workspace.path(), "/probe-same").as_deref(),
+        Some("local body")
+    );
+    assert!(
+        super::load(workspace.path(), None, "probe-fancy")
+            .unwrap()
+            .contains("fancy body")
+    );
+    assert_eq!(
+        typed(workspace.path(), "/probe-solo").as_deref(),
+        Some("solo body")
+    );
+}
+
+#[test]
+fn invocation_flags_split_the_model_catalog_from_the_slash_menu() {
+    let workspace = tempfile::tempdir().unwrap();
+    let skills = workspace.path().join(".claude/skills");
+    write(
+        &skills.join("probe-manual/SKILL.md"),
+        "---\ndescription: manual\ndisable-model-invocation: true\n---\nmanual body",
+    );
+    write(
+        &skills.join("probe-quiet/SKILL.md"),
+        "---\ndescription: quiet\nuser-invocable: off\n---\nquiet body",
+    );
+    let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
+    assert!(!catalog.contains("probe-manual"), "{catalog}");
+    assert!(catalog.contains("probe-quiet: quiet"), "{catalog}");
+    let refused = super::load(workspace.path(), None, "probe-manual")
+        .expect_err("model invocation is off")
+        .to_string();
+    assert!(refused.contains("/probe-manual"), "{refused}");
+    assert_eq!(
+        typed(workspace.path(), "/probe-manual").as_deref(),
+        Some("manual body")
+    );
+    assert!(
+        super::list(workspace.path())
+            .iter()
+            .all(|(name, _)| name != "probe-quiet")
+    );
+    assert_eq!(typed(workspace.path(), "/probe-quiet now"), None);
+    assert!(
+        super::load(workspace.path(), None, "probe-quiet")
+            .unwrap()
+            .contains("quiet body")
+    );
+}
+
+#[test]
+fn frontmatter_names_the_skill_and_declares_its_arguments() {
+    let workspace = tempfile::tempdir().unwrap();
+    let file = workspace
+        .path()
+        .join(".claude/skills/probe-folder-name/SKILL.md");
+    write(
+        &file,
+        "---\nname: probe-named\ndescription: Short.\nwhen_to_use: When asked.\narguments: [issue, branch]\nallowed-tools: Bash(git add *) Read\nmodel: probe-model\n---\nFix $issue on $branch",
+    );
+    write(
+        &workspace.path().join(".claude/skills/probe-plain/SKILL.md"),
+        "Plain body",
+    );
+    let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
+    assert!(
+        catalog.contains("probe-named: Short. When asked."),
+        "{catalog}"
+    );
+    assert_eq!(
+        typed(workspace.path(), "/probe-named 12").as_deref(),
+        Some("Fix 12 on ")
+    );
+    assert_eq!(
+        typed(workspace.path(), "/probe-folder-name 12 main").as_deref(),
+        Some("Fix 12 on main")
+    );
+    assert_eq!(
+        typed(workspace.path(), "/probe-plain extra words").as_deref(),
+        Some("Plain body\n\nARGUMENTS: extra words")
+    );
+    let meta = super::Meta::read(&file);
+    assert_eq!(meta.allowed_tools, ["Bash(git add *)", "Read"]);
+    assert_eq!(meta.model.as_deref(), Some("probe-model"));
+}

@@ -129,3 +129,84 @@ fn procedure(path: &std::path::Path) -> String {
         .map(|(_, rest)| format!("The change stays{rest}"))
         .unwrap_or_else(|| panic!("{} has no procedure", path.display()))
 }
+
+fn tree(files: &[(&str, &str)]) -> (tempfile::TempDir, Plugin) {
+    let dir = tempfile::tempdir().unwrap();
+    for (path, text) in files {
+        let path = dir.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let plugin = Plugin::at("demo".to_string(), dir.path().to_path_buf());
+    (dir, plugin)
+}
+
+#[test]
+fn skills_accept_the_root_and_paths_without_the_dot_prefix() {
+    let (dir, plugin) = tree(&[
+        (
+            MANIFEST,
+            r#"{"name": "demo", "skills": [".", "extra", "../outside"]}"#,
+        ),
+        ("SKILL.md", "---\nname: demo\n---\nBody."),
+        ("extra/one/SKILL.md", "---\nname: one\n---\nBody."),
+    ]);
+    assert_eq!(
+        plugin.skill_dirs(),
+        [dir.path().to_path_buf(), dir.path().join("extra")]
+    );
+    assert_eq!(
+        plugin.declared("skills").unwrap()[2],
+        Source::Outside("../outside".to_string())
+    );
+}
+
+#[test]
+fn a_hooks_array_loads_files_and_inline_maps() {
+    let command = |text: &str| {
+        let handler = serde_json::json!({"type": "command", "command": text});
+        serde_json::json!({"PreToolUse": [{"matcher": "Bash", "hooks": [handler]}]})
+    };
+    let manifest =
+        serde_json::json!({"name": "demo", "hooks": ["./extra.json", command("inline")]});
+    let (_dir, plugin) = tree(&[
+        (MANIFEST, &manifest.to_string()),
+        (
+            "extra.json",
+            &serde_json::json!({"hooks": command("file")}).to_string(),
+        ),
+    ]);
+    let hooks = plugin.hooks();
+    let commands: Vec<&str> = hooks
+        .of(HookEvent::PreTool)
+        .iter()
+        .map(|hook| hook.command.as_str())
+        .collect();
+    assert_eq!(commands, ["file", "inline"]);
+}
+
+#[test]
+fn mcp_servers_merge_in_order_and_take_the_documented_name() {
+    let manifest = serde_json::json!({"name": "demo", "mcpServers": [
+        "./servers.json",
+        {"db": {"command": "inline-db"}},
+        "./bundle.mcpb"
+    ]});
+    let (_dir, plugin) = tree(&[
+        (MANIFEST, &manifest.to_string()),
+        (
+            ".mcp.json",
+            r#"{"mcpServers": {"db": {"command": "default-db"}, "api": {"command": "api"}}}"#,
+        ),
+        (
+            "servers.json",
+            r#"{"mcpServers": {"db": {"command": "file-db"}}}"#,
+        ),
+    ]);
+    let servers = plugin.mcp();
+    assert_eq!(servers["db"]["command"], "inline-db");
+    assert_eq!(servers["api"]["command"], "api");
+    assert_eq!(plugin.mcp_name("db"), "plugin_demo_db");
+    assert_eq!(plugin.mcp_name("my.server"), "plugin_demo_my_server");
+    assert_eq!(plugin.legacy_mcp_name("db"), "demo-db");
+}

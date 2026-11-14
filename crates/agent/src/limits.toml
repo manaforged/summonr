@@ -16,6 +16,7 @@ clear_tokens = 100000
 clear_keep = 3
 clear_at_least_percent = 100
 summary_retry_rounds = 8
+stop_hook_streak = 8
 job_wait_secs = 120
 command_wait_secs = 120
 tool_yield_secs = 2

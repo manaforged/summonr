@@ -1,8 +1,11 @@
+use super::hooks::note_event;
 use super::turn::WaitError;
 use super::*;
+use crate::hooks::{Compaction, HookEvent};
 use crate::workflow;
 
 mod clear;
+mod hook;
 mod window;
 
 pub(super) use clear::force_compact;
@@ -57,11 +60,15 @@ impl<P: Provider> Loop<P> {
         &mut self,
         system: &str,
         slice: &[Message],
+        instructions: &str,
     ) -> Result<Option<AssistantMessage>> {
         let mut request_messages = Vec::with_capacity(slice.len() + 2);
         request_messages.push(Message::system(system.to_string()));
         request_messages.extend_from_slice(slice);
-        request_messages.push(Message::user(SUMMARY_ASK.to_string()));
+        request_messages.push(Message::user(crate::session::decorate(
+            instructions,
+            SUMMARY_ASK,
+        )));
         let advertised = self.advertised_tools();
         match self
             .side_call(
@@ -95,13 +102,15 @@ impl<P: Provider> Loop<P> {
     async fn summarize_until(
         &mut self,
         keep_from: usize,
+        hooked: (Compaction, &str),
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<String>> {
+        let (trigger, instructions) = hooked;
         let system = self.system_prompt.clone();
         let slice = self.session.history()[..keep_from].to_vec();
-        let Some(reply) = self.summarize(&system, &slice).await? else {
+        let Some(reply) = self.summarize(&system, &slice, instructions).await? else {
             return Ok(None);
         };
         usage.add(&reply.usage);
@@ -109,11 +118,15 @@ impl<P: Provider> Loop<P> {
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
-        let summary = reply.content.unwrap_or_default();
+        let mut summary = reply.content.unwrap_or_default();
+        if let Some(context) = self.restarted(events, emit).await? {
+            summary = crate::session::decorate(&context, &summary);
+        }
         let tail = self.session.history()[keep_from..].to_vec();
         self.session.compact(&summary, &tail)?;
         self.tools.forget_reads();
         self.outputs_cleared = false;
+        self.compacted(&summary, trigger, events, emit).await?;
         Ok(Some(summary))
     }
 
@@ -164,7 +177,21 @@ impl<P: Provider> Loop<P> {
         if self.elide_stale(&size)? {
             return Ok(true);
         }
-        let Some(summary) = self.summarize_until(keep_from, usage, events, emit).await? else {
+        let instructions = match self.pre_compact(Compaction::Auto, events, emit).await? {
+            Ok(instructions) => instructions,
+            Err(reason) => {
+                self.summary_wait = crate::limits::limits().summary_retry_rounds;
+                let text = format!("skipped auto-compaction: {reason}");
+                self.push_event(events, emit, note_event(HookEvent::PreCompact, &text))?;
+                return Ok(false);
+            }
+        };
+        let hooked = (Compaction::Auto, instructions.as_str());
+        if self
+            .summarize_until(keep_from, hooked, usage, events, emit)
+            .await?
+            .is_none()
+        {
             self.summary_wait = crate::limits::limits().summary_retry_rounds;
             self.push_event(
                 events,
@@ -178,8 +205,7 @@ impl<P: Provider> Loop<P> {
                 },
             )?;
             return Ok(false);
-        };
-        self.compact_hook(&summary, events, emit).await?;
+        }
         Ok(true)
     }
 
@@ -207,29 +233,6 @@ impl<P: Provider> Loop<P> {
         self.prompt_parts
     }
 
-    async fn compact_hook(
-        &mut self,
-        summary: &str,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        let payload = serde_json::json!({"event": "compact", "summary": summary});
-        if let Some(note) = self
-            .hook(crate::hooks::HookEvent::Compact, None, payload)
-            .await
-            .note()
-        {
-            self.push_event(
-                events,
-                emit,
-                Event::Note {
-                    text: format!("compact hook: {note}"),
-                },
-            )?;
-        }
-        Ok(())
-    }
-
     pub(super) fn estimated_prompt_tokens(&self, message_chars: usize, tool_bytes: usize) -> usize {
         estimate(message_chars + tool_bytes, self.context_sample)
     }
@@ -248,8 +251,17 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(false);
         };
+        let mut events = Vec::new();
+        let instructions = self
+            .pre_compact(Compaction::Manual, &mut events, &mut emit)
+            .await?
+            .map_err(|reason| {
+                Error::Denied(format!("the pre_compact hook blocked compaction: {reason}"))
+            })?;
+        let hooked = (Compaction::Manual, instructions.as_str());
+        let mut usage = Usage::default();
         if self
-            .summarize_until(keep_from, &mut Usage::default(), &mut Vec::new(), &mut emit)
+            .summarize_until(keep_from, hooked, &mut usage, &mut events, &mut emit)
             .await?
             .is_none()
         {

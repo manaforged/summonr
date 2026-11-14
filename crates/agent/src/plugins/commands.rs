@@ -1,18 +1,25 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use super::{Plugin, enabled};
+use serde_json::Value;
+
+use super::{Plugin, Source, enabled};
 use crate::mcp::{Offer, OfferKind};
-use crate::skills;
+use crate::skills::{self, Meta, SEPARATOR};
 use summonr_core::error::Result;
+use summonr_core::text::Frontmatter;
+
+pub(crate) use super::expand::content;
 
 const DIR: &str = "commands";
+const KEY: &str = "commands";
+const SOURCE: &str = "source";
+const CONTENT: &str = "content";
 const DESCRIPTION: &str = "description";
-const HINT: &str = "argument-hint";
-const SIGIL: char = '$';
-const ARGUMENTS: &str = "ARGUMENTS";
-const FIRST: u8 = b'1';
-const LAST: u8 = b'9';
+const HINT: &str = "argumentHint";
+const MODEL: &str = "model";
+const TOOLS: &str = "allowedTools";
+const MARKDOWN: &str = "md";
 const PROJECT: &str = "project";
 const USER: &str = "user";
 
@@ -20,28 +27,34 @@ const USER: &str = "user";
 pub(crate) struct Command {
     pub(crate) plugin: Plugin,
     pub(crate) name: String,
-    pub(crate) description: String,
-    pub(crate) hint: String,
+    pub(crate) meta: Meta,
     pub(crate) template: String,
+    folder: bool,
 }
 
 impl Command {
+    fn new(plugin: &Plugin, name: String, front: &Frontmatter<'_>) -> Option<Self> {
+        name.split(SEPARATOR).all(skills::valid).then(|| Self {
+            plugin: plugin.clone(),
+            name,
+            meta: Meta::parse(front),
+            template: front.body.trim().to_string(),
+            folder: false,
+        })
+    }
+
     pub(crate) fn qualified(&self) -> String {
-        format!("/{}:{}", self.plugin.name, self.name)
+        format!("/{}", self.plugin.scoped(&self.name))
     }
 
     pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> String {
-        fill(
-            &super::expand(&self.template, &self.plugin.vars(workspace)),
-            arguments,
+        let filled = skills::fill(&self.template, arguments, &self.meta.arguments);
+        content(
+            &filled,
+            (!self.folder).then_some(&self.plugin),
+            None,
+            workspace,
         )
-    }
-
-    fn about(&self) -> String {
-        if self.hint.is_empty() {
-            return self.description.clone();
-        }
-        format!("{} {}", self.description, self.hint)
     }
 }
 
@@ -50,9 +63,14 @@ pub(crate) fn commands(workspace: &Path) -> Vec<Command> {
     let mut all: Vec<Command> = folders(workspace)
         .iter()
         .flat_map(load)
+        .map(|command| Command {
+            folder: true,
+            ..command
+        })
         .filter(|command| seen.insert(command.name.clone()))
         .collect();
     all.extend(enabled().iter().flat_map(load));
+    all.retain(|command| command.meta.user_invocable);
     all
 }
 
@@ -76,43 +94,16 @@ fn folders(workspace: &Path) -> Vec<Plugin> {
 pub(crate) fn find(head: &str, workspace: &Path) -> Option<Command> {
     let head = head.strip_prefix('/')?;
     let all = commands(workspace);
-    if let Some((plugin, name)) = head.split_once(':') {
-        return all
-            .into_iter()
-            .find(|command| command.plugin.name == plugin && command.name == name);
+    if let Some((plugin, name)) = head.split_once(SEPARATOR)
+        && let Some(command) = all
+            .iter()
+            .find(|command| command.plugin.name == plugin && command.name == name)
+    {
+        return Some(command.clone());
     }
     bare(&all, head)
         .then(|| all.into_iter().find(|command| command.name == head))
         .flatten()
-}
-
-/// Substitutes `$ARGUMENTS` and `$1`..`$9` in a command or skill template.
-fn fill(template: &str, arguments: &str) -> String {
-    let words = crate::policy::shell_words(arguments);
-    let mut out = String::with_capacity(template.len() + arguments.len());
-    let mut rest = template;
-    while let Some(at) = rest.find(SIGIL) {
-        out.push_str(&rest[..at]);
-        let tail = &rest[at + SIGIL.len_utf8()..];
-        if let Some(after) = tail.strip_prefix(ARGUMENTS) {
-            out.push_str(arguments);
-            rest = after;
-            continue;
-        }
-        match tail.as_bytes().first() {
-            Some(&digit @ FIRST..=LAST) => {
-                let index = usize::from(digit - FIRST);
-                out.push_str(words.get(index).map_or("", String::as_str));
-                rest = &tail[1..];
-            }
-            Some(_) | None => {
-                out.push(SIGIL);
-                rest = tail;
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 pub(crate) fn named(line: &str, workspace: &Path) -> bool {
@@ -133,62 +124,51 @@ pub(crate) fn expand(
     if crate::parse_command(head).is_some() {
         return Ok(None);
     }
+    let Some(name) = head.strip_prefix('/') else {
+        return Ok(None);
+    };
     let task = match rest.trim() {
         "" => previous.unwrap_or_default().trim(),
         given => given,
     };
-    if let Some(command) = find(head, workspace) {
-        let text = command.render(task, workspace);
-        return Ok(Some(crate::secret::shield::scrub_found(&text, workspace)));
-    }
-    let Some(name) = head.strip_prefix('/').filter(|name| {
-        skills::list(workspace)
-            .iter()
-            .any(|(known, _)| known.as_str() == *name)
-    }) else {
-        return Ok(None);
+    let text = match (skills::typed(workspace, name), find(head, workspace)) {
+        (Some(skill), Some(command)) if skill.alias => command.render(task, workspace),
+        (Some(skill), _) => skill.render(task, workspace)?,
+        (None, Some(command)) => command.render(task, workspace),
+        (None, None) => return Ok(None),
     };
-    let body = skills::load(workspace, None, name)?;
-    let body = crate::secret::shield::scrub_found(&body, workspace);
-    Ok(Some(if body.contains(&format!("{SIGIL}{ARGUMENTS}")) {
-        fill(&body, task)
-    } else if task.is_empty() {
-        body
-    } else {
-        format!("{body}\n\nSkill arguments:\n{task}")
-    }))
+    Ok(Some(crate::secret::shield::scrub_found(&text, workspace)))
 }
 
 pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {
+    let skills = skills::entries(workspace);
+    let skill = |alias: bool| {
+        skills
+            .iter()
+            .filter(move |entry| entry.alias == alias)
+            .map(|entry| (format!("/{}", entry.name), entry.offer.clone()))
+            .filter(|(insert, _)| crate::parse_command(insert).is_none())
+    };
     let all = commands(workspace);
-    let mut offers = Vec::new();
+    let mut wanted: Vec<(String, String)> = skill(false).collect();
     for command in &all {
-        let about = command.about();
+        let about = command.meta.offer();
         if bare(&all, &command.name) {
-            offers.push(Offer {
-                kind: OfferKind::Prompt,
-                insert: format!("/{}", command.name),
-                about: about.clone(),
-            });
+            wanted.push((format!("/{}", command.name), about.clone()));
         }
-        offers.push(Offer {
+        wanted.push((command.qualified(), about));
+    }
+    wanted.extend(skill(true));
+    let mut seen = HashSet::new();
+    wanted
+        .into_iter()
+        .filter(|(insert, _)| seen.insert(insert.clone()))
+        .map(|(insert, about)| Offer {
             kind: OfferKind::Prompt,
-            insert: command.qualified(),
+            insert,
             about,
-        });
-    }
-    let offered: HashSet<_> = offers.iter().map(|offer| offer.insert.clone()).collect();
-    for (name, about) in skills::list(workspace) {
-        let insert = format!("/{name}");
-        if crate::parse_command(&insert).is_none() && !offered.contains(&insert) {
-            offers.push(Offer {
-                kind: OfferKind::Prompt,
-                insert,
-                about,
-            });
-        }
-    }
-    offers
+        })
+        .collect()
 }
 
 fn bare(all: &[Command], name: &str) -> bool {
@@ -196,18 +176,65 @@ fn bare(all: &[Command], name: &str) -> bool {
         && crate::parse_command(&format!("/{name}")).is_none()
 }
 
+/// The commands `plugin` ships: the manifest `commands` key when set, else every file under `commands/`.
 pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
-    let mut commands = skills::markdown_entries(&plugin.dir.join(DIR), |name, front| {
-        skills::valid(&name).then(|| Command {
-            plugin: plugin.clone(),
-            name,
-            description: front.get(DESCRIPTION).unwrap_or_default().to_string(),
-            hint: front.get(HINT).unwrap_or_default().to_string(),
-            template: front.body.trim().to_string(),
-        })
-    });
+    let build = |name: String, front: Frontmatter<'_>| Command::new(plugin, name, &front);
+    let mut commands: Vec<Command> = match plugin.declared(KEY) {
+        Some(sources) => sources
+            .into_iter()
+            .flat_map(|source| match source {
+                Source::File(path) => listed(&path, build),
+                Source::Inline(Value::Object(map)) => map
+                    .iter()
+                    .filter_map(|(name, entry)| mapped(plugin, name, entry))
+                    .collect(),
+                Source::Inline(_) | Source::Outside(_) => Vec::new(),
+            })
+            .collect(),
+        None => skills::markdown_tree(&plugin.dir.join(DIR), build),
+    };
     commands.sort_by(|left, right| left.name.cmp(&right.name));
+    commands.dedup_by(|left, right| left.name == right.name);
     commands
+}
+
+fn listed(path: &Path, build: impl Fn(String, Frontmatter<'_>) -> Option<Command>) -> Vec<Command> {
+    if path.is_dir() {
+        return skills::markdown_tree(path, build);
+    }
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|_| path.extension().is_some_and(|ext| ext == MARKDOWN))
+        .and_then(|stem| skills::markdown_file(path, stem.to_owned(), build))
+        .into_iter()
+        .collect()
+}
+
+fn mapped(plugin: &Plugin, name: &str, entry: &Value) -> Option<Command> {
+    let field = |key: &str| entry.get(key).and_then(Value::as_str);
+    let text = match (field(SOURCE), field(CONTENT)) {
+        (Some(source), None) => std::fs::read_to_string(plugin.inside(source)?).ok()?,
+        (None, Some(content)) => content.to_owned(),
+        (Some(_), Some(_)) | (None, None) => return None,
+    };
+    let mut command = Command::new(plugin, name.to_owned(), &Frontmatter::parse(&text))?;
+    if let Some(about) = field(DESCRIPTION) {
+        about.clone_into(&mut command.meta.about);
+    }
+    if let Some(hint) = field(HINT) {
+        hint.clone_into(&mut command.meta.hint);
+    }
+    if let Some(model) = field(MODEL) {
+        command.meta.model = Some(model.to_owned());
+    }
+    if let Some(tools) = entry.get(TOOLS).and_then(Value::as_array) {
+        command.meta.allowed_tools = tools
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+    }
+    Some(command)
 }
 
 #[cfg(test)]

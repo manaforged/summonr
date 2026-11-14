@@ -66,6 +66,7 @@ table! {
     clear_keep: usize,
     clear_at_least_percent: usize,
     summary_retry_rounds: usize,
+    stop_hook_streak: usize,
     job_wait_secs: u64 => job_wait(Duration::from_secs),
     command_wait_secs: u64 => command_wait(Duration::from_secs),
     tool_yield_secs: u64 => tool_yield(Duration::from_secs),

@@ -9,6 +9,8 @@ fn plugin_claiming(extensions: &[&str]) -> Server {
             .iter()
             .map(|extension| ((*extension).to_string(), (*extension).to_string()))
             .collect(),
+        options: serde_json::Value::Null,
+        root: None,
     }
 }
 

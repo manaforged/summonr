@@ -84,7 +84,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 | --- | --- |
 | A skill | `~/.summonr/skills/NAME/SKILL.md`; Claude Code skills in `~/.claude/skills` and `.claude/skills` load as they are |
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
-| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
+| A hook | `[hooks]` in `~/.summonr/config.toml`: `session_start`, `user_prompt`, `pre_tool`, `post_tool`, `post_tool_failure`, `pre_compact`, `compact`, `stop`, or `session_end`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A panel | A tab in the desktop's right panel: `summonr panel --help` has the file format, and `summonr panel check NAME` validates it |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |
 | A plugin | `summonr plugin install PATH` for a Claude Code layout directory: skills, commands, agents, MCP servers, hooks, language servers, and `bin/` |

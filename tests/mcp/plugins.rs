@@ -48,7 +48,7 @@ fn plugin_with(session: &Session, hooks: &Value, env: &Value, manifest: &str) ->
     );
     write(
         &dir.join("commands/hello.md"),
-        "---\ndescription: greet someone\n---\nGreet $1 warmly. Everyone: $ARGUMENTS",
+        "---\ndescription: greet someone\n---\nGreet $0 warmly. Everyone: $ARGUMENTS",
     );
     write(
         &dir.join("agents/reviewer.md"),
@@ -73,7 +73,7 @@ pub(crate) fn a_claude_code_plugin_installs_and_every_part_loads() {
     let session = Session::new();
     let seen = session.file("hook-input.json");
     let hooks = json!({"PreToolUse": [{
-        "matcher": "mcp__demo-fx__write",
+        "matcher": "mcp__plugin_demo_fx__write",
         "hooks": [{"type": "command", "command": format!("cat > '{}'; echo blocked by plugin >&2; exit 2", seen.display())}]
     }]});
     let installed = install(&session, &plugin(&session, &hooks));
@@ -82,14 +82,17 @@ pub(crate) fn a_claude_code_plugin_installs_and_every_part_loads() {
     let model = Model::start(vec![
         Step::Call("fixture1__never", json!({})),
         Step::Call("run_command", json!({"command": "command -v serve"})),
-        Step::Call("demo-fx__write", json!({})),
-        Step::Call("demo-fx__echo", json!({"text": "through"})),
+        Step::Call("plugin_demo_fx__write", json!({})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "through"})),
         Step::Text("ok"),
     ]);
     session.run(&model, "", &[]);
     let first = model.requests()[0].clone();
     let tools = advertised(&first);
-    assert!(tools.contains(&"demo-fx__echo".to_string()), "{tools:?}");
+    assert!(
+        tools.contains(&"plugin_demo_fx__echo".to_string()),
+        "{tools:?}"
+    );
     assert!(
         first.to_string().contains("say hello politely"),
         "no skill in the prompt"
@@ -100,7 +103,11 @@ pub(crate) fn a_claude_code_plugin_installs_and_every_part_loads() {
     assert!(results[3].contains("through"), "{results:?}");
     let input: Value = serde_json::from_str(&std::fs::read_to_string(&seen).unwrap()).unwrap();
     assert_eq!(input["hook_event_name"], json!("PreToolUse"), "{input}");
-    assert_eq!(input["tool_name"], json!("mcp__demo-fx__write"), "{input}");
+    assert_eq!(
+        input["tool_name"],
+        json!("mcp__plugin_demo_fx__write"),
+        "{input}"
+    );
 }
 
 #[cfg(unix)]
@@ -111,7 +118,7 @@ pub(crate) fn an_uninstalled_or_disabled_plugin_does_not_load() {
     session.run(&disabled, "[plugins]\noff = [\"demo\"]\n", &[]);
     let tools = advertised(&disabled.requests()[0]);
     assert!(
-        !tools.iter().any(|tool| tool.starts_with("demo-")),
+        !tools.iter().any(|tool| tool.starts_with("plugin_demo_")),
         "{tools:?}"
     );
     let (removed, text) = session.cli(&["uninstall", "demo"]);
@@ -120,7 +127,7 @@ pub(crate) fn an_uninstalled_or_disabled_plugin_does_not_load() {
     session.run(&gone, "", &[]);
     let tools = advertised(&gone.requests()[0]);
     assert!(
-        !tools.iter().any(|tool| tool.starts_with("demo-")),
+        !tools.iter().any(|tool| tool.starts_with("plugin_demo_")),
         "{tools:?}"
     );
     let (_, listed) = session.cli(&["install", "--list"]);
@@ -132,13 +139,13 @@ pub(crate) fn a_claude_hook_blocks_only_on_exit_two_or_a_deny() {
     let session = Session::new();
     let deny = json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "denied by json"}});
     let hooks = json!({"PreToolUse": [
-        {"matcher": "mcp__demo-fx__echo", "hooks": [{"type": "command", "command": "echo not fatal >&2; exit 1"}]},
-        {"matcher": "mcp__demo-fx__write", "hooks": [{"type": "command", "command": format!("echo '{deny}'")}]}
+        {"matcher": "mcp__plugin_demo_fx__echo", "hooks": [{"type": "command", "command": "echo not fatal >&2; exit 1"}]},
+        {"matcher": "mcp__plugin_demo_fx__write", "hooks": [{"type": "command", "command": format!("echo '{deny}'")}]}
     ]});
     install(&session, &plugin(&session, &hooks));
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "kept"})),
-        Step::Call("demo-fx__write", json!({})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "kept"})),
+        Step::Call("plugin_demo_fx__write", json!({})),
         Step::Text("ok"),
     ]);
     session.run(&model, "", &[]);
@@ -186,11 +193,11 @@ pub(crate) fn a_legacy_bundle_installs_and_an_unreachable_server_fails_it() {
     );
     let (installed, text) = session.cli(&["install", &bundle.display().to_string()]);
     assert!(!installed, "{text}");
-    assert!(text.contains("demo-bundled: not reachable:"), "{text}");
+    assert!(text.contains("plugin_demo_bundled: not reachable:"), "{text}");
     assert!(text.contains("kept in"), "{text}");
     assert!(session.home.path().join("plugins/demo").is_dir(), "{text}");
     let (_, listed) = session.cli(&["mcp", "list"]);
-    assert!(listed.contains("demo-bundled"), "{listed}");
+    assert!(listed.contains("plugin_demo_bundled"), "{listed}");
 }
 
 #[cfg(unix)]
@@ -228,12 +235,12 @@ pub(crate) fn plugin_settings_and_data_are_handled() {
     assert!(installed.contains("skipped\tuserConfig"), "{installed}");
     assert!(
         installed.contains(
-            "warning\tmcp fx uses ${user_config.api_token}; set [mcp.demo-fx.user_config] or env in [mcp.demo-fx]"
+            "warning\tmcp fx uses ${user_config.api_token}; set [mcp.plugin_demo_fx.user_config] or env in [mcp.plugin_demo_fx]"
         ),
         "{installed}"
     );
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "x"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
         Step::Text("ok"),
     ]);
     session.run(&model, "", &[]);

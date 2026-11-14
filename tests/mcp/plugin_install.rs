@@ -150,7 +150,7 @@ pub(crate) fn plugin_user_config_reaches_the_server() {
     ]);
     assert!(ok, "{text}");
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "x"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
         Step::Text("ok"),
     ]);
     session.run(
@@ -170,7 +170,7 @@ pub(crate) fn plugin_user_env_replaces_the_server_env() {
     ]);
     assert!(ok, "{text}");
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "x"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
         Step::Text("ok"),
     ]);
     session.run(&model, "[mcp.demo-fx.env]\nTOKEN = \"from-env\"\n", &[]);
@@ -211,7 +211,7 @@ pub(crate) fn plugin_non_command_hook_is_skipped_and_does_not_run() {
         "{list_text}"
     );
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "ran"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "ran"})),
         Step::Text("ok"),
     ]);
     session.run(&model, "", &[]);
@@ -240,7 +240,7 @@ pub(crate) fn plugin_install_skips_a_server_turned_off_in_config() {
     );
     let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
     assert!(ok, "{text}");
-    assert!(text.contains("demo-fx: off in config"), "{text}");
+    assert!(text.contains("plugin_demo_fx: off in config"), "{text}");
 }
 
 pub(crate) fn plugin_install_counts_only_language_servers_that_load() {

@@ -1,11 +1,20 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 
-use super::{Plugin, Vars, enabled, expand, read_json};
+use super::{LSP, Plugin, Vars, enabled, expand};
 
-const FILE: &str = ".lsp.json";
+const USED: [&str; 7] = [
+    "command",
+    "args",
+    "extensionToLanguage",
+    "env",
+    "initializationOptions",
+    "workspaceFolder",
+    "transport",
+];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +26,8 @@ struct Entry {
     extension_to_language: BTreeMap<String, String>,
     #[serde(default)]
     env: BTreeMap<String, String>,
+    initialization_options: Option<Value>,
+    workspace_folder: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -25,6 +36,8 @@ pub(crate) struct Server {
     pub(crate) argv: Vec<String>,
     pub(crate) env: BTreeMap<String, String>,
     pub(crate) languages: BTreeMap<String, String>,
+    pub(crate) options: Value,
+    pub(crate) root: Option<PathBuf>,
 }
 
 impl Server {
@@ -43,7 +56,6 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
 }
 
 pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
-    let maps = [read_json(&plugin.dir.join(FILE))];
     let user_config = BTreeMap::new();
     let vars = Vars {
         user_config: Some(&user_config),
@@ -51,7 +63,12 @@ pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
     };
     let fill = |text: String| expand(&text, &vars);
     plugin
-        .servers(&maps, ":", workspace, |_entry: &mut Entry| Vec::new())
+        .servers(
+            plugin.merged(LSP),
+            |server| plugin.scoped(server),
+            workspace,
+            |_entry: &mut Entry| Vec::new(),
+        )
         .into_iter()
         .map(|(key, entry)| Server {
             key,
@@ -71,6 +88,30 @@ pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
                     (extension.trim_start_matches('.').to_string(), language)
                 })
                 .collect(),
+            options: entry
+                .initialization_options
+                .unwrap_or_else(|| serde_json::json!({})),
+            root: entry
+                .workspace_folder
+                .map(|folder| workspace.join(fill(folder))),
+        })
+        .collect()
+}
+
+/// Install-report lines for the language server fields summonr does not apply.
+pub(super) fn unused(plugin: &Plugin) -> Vec<String> {
+    plugin
+        .merged(LSP)
+        .iter()
+        .flat_map(|(server, entry)| {
+            entry
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter(|(field, _)| !USED.contains(&field.as_str()))
+                .map(move |(field, _)| {
+                    format!("skipped\tlsp {server} {field} (summonr does not apply it)")
+                })
         })
         .collect()
 }

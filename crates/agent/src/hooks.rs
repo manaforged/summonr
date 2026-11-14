@@ -3,7 +3,13 @@ use serde_json::Value;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 
-pub(crate) use summonr_types::hooks::{Call, Dialect, Hook, HookEvent, Hooks, Matcher, builtin};
+mod judge;
+
+pub(crate) use judge::Verdict;
+use judge::{Outcome, failed, judge};
+pub(crate) use summonr_types::hooks::{
+    Call, Compaction, Dialect, End, Hook, HookEvent, Hooks, Matcher, Permission, Start, builtin,
+};
 
 #[must_use]
 pub(crate) fn with_plugins(mut hooks: Hooks, plugins: &[crate::plugins::Plugin]) -> Hooks {
@@ -66,7 +72,9 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
             stderr: stderr.text().trim().to_string(),
         })
     };
-    let limit = crate::limits::limits().job_wait();
+    let limit = hook
+        .timeout
+        .unwrap_or_else(|| crate::limits::limits().job_wait());
     let finished = crate::limits::within(limit, format!("hook `{}`", hook.command), work).await;
     drop(group);
     finished
@@ -74,56 +82,13 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
         .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
 }
 
-pub(crate) enum Verdict {
-    Allow,
-    Block(String),
-    Note(String),
-}
-
 pub(crate) async fn run(hook: &Hook, call: &Call<'_>) -> Verdict {
     let body = match hook.dialect {
         Dialect::Summonr => call.payload.clone(),
         Dialect::Claude => hook.claude_payload(call),
     };
-    let outcome = match execute(hook, call.workspace, &body).await {
-        Ok(outcome) => outcome,
-        Err(error) if call.event == HookEvent::PreTool => return Verdict::Block(error),
-        Err(error) => return Verdict::Note(error),
-    };
-    judge(hook.dialect, call.event, outcome)
-}
-
-struct Outcome {
-    code: Option<i32>,
-    stdout: String,
-    stderr: String,
-}
-
-fn judge(dialect: Dialect, event: HookEvent, outcome: Outcome) -> Verdict {
-    let reason = if outcome.stderr.is_empty() {
-        format!("exited with {:?}", outcome.code)
-    } else {
-        outcome.stderr.clone()
-    };
-    match (dialect, outcome.code) {
-        (Dialect::Summonr, Some(0)) => Verdict::Allow,
-        (Dialect::Summonr, Some(_) | None) => Verdict::Block(reason),
-        (Dialect::Claude, Some(2)) if event == HookEvent::PreTool => Verdict::Block(reason),
-        (Dialect::Claude, Some(0)) => {
-            denied(&outcome.stdout).map_or(Verdict::Allow, Verdict::Block)
-        }
-        (Dialect::Claude, Some(_) | None) => Verdict::Note(reason),
+    match execute(hook, call.workspace, &body).await {
+        Ok(outcome) => judge(hook.dialect, call.event, &outcome),
+        Err(error) => failed(hook.dialect, call.event, error),
     }
-}
-
-fn denied(stdout: &str) -> Option<String> {
-    let value: Value = serde_json::from_str(stdout).ok()?;
-    let output = value.get("hookSpecificOutput")?;
-    (output.get("permissionDecision")?.as_str()? == "deny").then(|| {
-        output
-            .get("permissionDecisionReason")
-            .and_then(Value::as_str)
-            .unwrap_or("denied by a plugin hook")
-            .to_string()
-    })
 }

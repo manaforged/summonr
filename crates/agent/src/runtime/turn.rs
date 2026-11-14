@@ -5,7 +5,6 @@ use crate::ProviderFailureKind;
 use crate::durable::driver::{Purpose, Verdict};
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
-use crate::hooks::HookEvent;
 use crate::workflow;
 use std::future::Future;
 use std::time::Duration;
@@ -14,7 +13,6 @@ use crate::mail::{envelope, is_mail_tool};
 use crate::policy::Grant;
 use crate::prompt::{Harness, harness_section};
 use crate::provider::StopReason;
-use crate::session::decorate;
 use crate::tools::{Abort, ToolOutput, needed_grant, readonly};
 use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, scout, verify};
 
@@ -33,6 +31,21 @@ impl GrantAnswer {
             Self::Allow => "y",
             Self::Always => "always",
         }
+    }
+}
+
+fn joined(earlier: Turn, later: Turn) -> Turn {
+    let mut events = earlier.events;
+    events.extend(later.events);
+    let mut usage = earlier.usage;
+    usage.add(&later.usage);
+    Turn {
+        text: later.text,
+        events,
+        rounds: earlier.rounds.saturating_add(later.rounds),
+        usage,
+        checks: later.checks,
+        aborted: later.aborted,
     }
 }
 
@@ -174,6 +187,7 @@ impl<P: Provider> Loop<P> {
         self.tools.set_model_images(images);
         let mut input = self.expand_mcp(input, &mut events, &mut emit).await?;
         self.tools.fold_unseen_images(&mut input).await?;
+        Box::pin(self.admit(&mut input, trigger == Trigger::User, &mut emit)).await?;
         self.begin_turn(input, trigger)?;
         let result = self.run_opened(&mut events, &mut emit).await;
         if result.is_err() {
@@ -187,6 +201,46 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Turn> {
+        let mut earlier: Option<Turn> = None;
+        let cap = crate::limits::limits().stop_hook_streak;
+        let mut streak = 0;
+        loop {
+            let (latest, finished) = Box::pin(self.run_timed(events, emit)).await?;
+            if latest.rounds > 1 {
+                streak = 0;
+            }
+            let active = earlier.is_some();
+            let turn = match earlier.take() {
+                Some(earlier) => joined(earlier, latest),
+                None => latest,
+            };
+            if !finished {
+                return Ok(turn);
+            }
+            let Some(reason) = Box::pin(self.stop_hook(&turn, active, emit)).await else {
+                return Ok(turn);
+            };
+            if turn.aborted {
+                return Ok(turn);
+            }
+            if streak >= cap {
+                emit(&Event::Note {
+                    text: format!("stop hook: kept the turn going {cap} times in a row; ending it"),
+                });
+                return Ok(turn);
+            }
+            streak += 1;
+            let text = format!("Harness: a stop hook kept the turn going: {reason}");
+            self.begin_turn(UserInput::from(text), Trigger::Mail)?;
+            earlier = Some(turn);
+        }
+    }
+
+    async fn run_timed(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<(Turn, bool)> {
         let progress = self.work_progress()?;
         self.push_event(events, emit, Event::Work { progress })?;
         self.measure_baseline(events, emit).await?;
@@ -205,30 +259,20 @@ impl<P: Provider> Loop<P> {
             hub.cancel_inflight().await;
         }
         self.sync_usage(emit);
-        if let Ok(Ok(turn)) = &result {
-            let payload = serde_json::json!({
-                "event": "stop",
-                "text": turn.text,
-                "aborted": turn.aborted,
-            });
-            if let Some(note) = self.hook(HookEvent::Stop, None, payload).await.note() {
-                emit(&Event::Note {
-                    text: format!("stop hook: {note}"),
-                });
-            }
-        }
         match result {
-            Ok(result) => result,
+            Ok(result) => Ok((result?, true)),
             Err(_timeout) => {
-                self.abort_turn(
-                    Abort::time_limit(),
-                    events,
-                    emit,
-                    &mut usage,
-                    rounds,
-                    &mut pre,
-                )
-                .await
+                let turn = self
+                    .abort_turn(
+                        Abort::time_limit(),
+                        events,
+                        emit,
+                        &mut usage,
+                        rounds,
+                        &mut pre,
+                    )
+                    .await?;
+                Ok((turn, false))
             }
         }
     }

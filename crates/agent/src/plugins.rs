@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::hooks::{Dialect, Hook, HookEvent, Hooks, Matcher};
+use crate::hooks::{Hook, HookEvent, Hooks};
 use crate::skills;
 use summonr_core::dirs::summonr_home;
 use summonr_core::error::{Error, Result};
@@ -12,18 +12,47 @@ use summonr_core::error::{Error, Result};
 pub(crate) mod agents;
 pub(crate) mod commands;
 mod expand;
+mod hooks;
 pub(crate) mod lsp;
 pub mod manage;
 
 pub(crate) use expand::{USER_CONFIG, Vars, expand};
+pub(crate) use manage::off::{unknown_off, warn_unknown_off};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
+pub(super) const HOOKS: &str = "hooks";
 pub(super) const UNSUPPORTED: [(&str, &str); 4] = [
     ("monitors", "monitors"),
     ("output-styles", "output styles"),
     ("workflows", "workflows"),
     ("themes", "themes"),
 ];
+pub(super) const MCP: Merge = Merge {
+    file: ".mcp.json",
+    key: "mcpServers",
+    wrapped: true,
+};
+pub(super) const LSP: Merge = Merge {
+    file: ".lsp.json",
+    key: "lspServers",
+    wrapped: false,
+};
+
+/// A server map a plugin keeps in a default file and may extend from its manifest.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Merge {
+    pub(crate) file: &'static str,
+    pub(crate) key: &'static str,
+    wrapped: bool,
+}
+
+/// One value a manifest component key declares.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Source {
+    File(PathBuf),
+    Inline(Value),
+    Outside(String),
+}
 
 #[derive(Clone, Debug)]
 pub struct Plugin {
@@ -43,46 +72,88 @@ impl Plugin {
     }
 
     fn inside(&self, relative: &str) -> Option<PathBuf> {
-        let relative = relative.strip_prefix("./")?;
-        let path = self.dir.join(relative);
-        (!relative.split('/').any(|part| part == "..")).then_some(path)
+        let relative = relative.strip_prefix("./").unwrap_or(relative);
+        let relative = if relative == "." { "" } else { relative };
+        let escapes = Path::new(relative).is_absolute()
+            || relative.split(['/', '\\']).any(|part| part == "..");
+        (!escapes).then(|| {
+            if relative.is_empty() {
+                self.dir.clone()
+            } else {
+                self.dir.join(relative)
+            }
+        })
     }
 
-    fn paths(&self, key: &str) -> Vec<PathBuf> {
-        match self.manifest.get(key) {
-            Some(Value::String(one)) => self.inside(one).into_iter().collect(),
-            Some(Value::Array(many)) => many
+    /// Each value the manifest declares under `key`, or `None` when the key is absent.
+    pub(crate) fn declared(&self, key: &str) -> Option<Vec<Source>> {
+        let value = self.manifest.get(key)?;
+        let items = match value {
+            Value::Array(many) => many.as_slice(),
+            one => std::slice::from_ref(one),
+        };
+        Some(
+            items
                 .iter()
-                .filter_map(Value::as_str)
-                .filter_map(|one| self.inside(one))
+                .map(|item| match item {
+                    Value::String(path) => self
+                        .inside(path)
+                        .map_or_else(|| Source::Outside(path.clone()), Source::File),
+                    other => Source::Inline(other.clone()),
+                })
                 .collect(),
-            Some(_) | None => Vec::new(),
-        }
+        )
     }
 
-    fn hook_files(&self) -> Vec<PathBuf> {
+    pub(crate) fn files(&self, key: &str) -> Vec<PathBuf> {
+        self.declared(key)
+            .into_iter()
+            .flatten()
+            .filter_map(|source| match source {
+                Source::File(path) => Some(path),
+                Source::Inline(_) | Source::Outside(_) => None,
+            })
+            .collect()
+    }
+
+    fn hook_docs(&self) -> Vec<Value> {
         let mut files = vec![self.dir.join("hooks/hooks.json")];
-        files.extend(self.paths("hooks"));
-        let mut seen = BTreeSet::new();
-        files.retain(|file| seen.insert(file.clone()));
+        let mut inline = Vec::new();
+        for source in self.declared(HOOKS).into_iter().flatten() {
+            match source {
+                Source::File(file) if !files.contains(&file) => files.push(file),
+                Source::Inline(map) => inline.push(serde_json::json!({ HOOKS: map })),
+                Source::File(_) | Source::Outside(_) => {}
+            }
+        }
         files
+            .iter()
+            .map(|file| read_json(file))
+            .chain(inline)
+            .collect()
     }
 
     pub(super) fn skipped_mods(&self) -> Vec<String> {
-        let mut lines = Vec::new();
-        for file in self.hook_files() {
-            note_mods(&read_json(&file), &mut lines);
-        }
-        if let Some(inline) = self.manifest.get("hooks").filter(|value| value.is_object()) {
-            note_mods(&serde_json::json!({ "hooks": inline }), &mut lines);
-        }
-        lines
+        let docs = self.hook_docs();
+        docs.iter()
+            .flat_map(hooks::handlers)
+            .filter(|(_, _, handler)| handler["type"] != "command")
+            .map(|(event, _, handler)| {
+                let kind = handler["type"].as_str().unwrap_or("hook");
+                format!(
+                    "skipped\t{} {kind} (summonr runs command hooks only)",
+                    event.claude()
+                )
+            })
+            .collect()
     }
 
     pub(crate) fn skill_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = vec![self.dir.join("skills")];
-        dirs.extend(self.paths("skills"));
-        dirs.into_iter().filter(|dir| dir.is_dir()).collect()
+        dirs.extend(self.files("skills"));
+        let mut seen = BTreeSet::new();
+        dirs.retain(|dir| dir.is_dir() && seen.insert(dir.clone()));
+        dirs
     }
 
     pub(crate) fn bin(&self) -> Option<PathBuf> {
@@ -97,58 +168,87 @@ impl Plugin {
         }
     }
 
-    pub(crate) fn mcp_json(&self) -> Vec<Value> {
-        let mut maps = vec![read_json(&self.dir.join(".mcp.json"))["mcpServers"].clone()];
-        match self.manifest.get("mcpServers") {
-            Some(Value::String(path)) => maps.extend(self.inside(path).map(|path| {
-                let file = read_json(&path);
-                file.get("mcpServers").cloned().unwrap_or(file)
-            })),
-            Some(inline @ Value::Object(_)) => maps.push(inline.clone()),
-            Some(_) | None => {}
-        }
-        maps
+    /// The `plugin:name` identifier Claude Code gives a component of this plugin.
+    pub(crate) fn scoped(&self, name: &str) -> String {
+        format!("{}:{name}", self.name)
     }
 
-    pub(crate) fn mcp_toml(&self) -> Option<toml::Value> {
-        let text = std::fs::read_to_string(self.dir.join("mcp.toml")).ok()?;
-        toml::from_str::<toml::Value>(&text)
-            .ok()?
-            .get("mcp")
-            .cloned()
+    /// The MCP server name Claude Code gives `server`, which also prefixes its tools.
+    pub(crate) fn mcp_name(&self, server: &str) -> String {
+        summonr_core::text::clean_name(
+            &format!("plugin_{}_{server}", self.name),
+            "_-",
+            '_',
+            usize::MAX,
+        )
+    }
+
+    /// The `<plugin>-<server>` name earlier releases used, still read from config keys.
+    pub(crate) fn legacy_mcp_name(&self, server: &str) -> String {
+        format!("{}-{server}", self.name)
+    }
+
+    /// Server configs keyed by name: the default file, then each manifest declaration in order.
+    pub(crate) fn merged(&self, merge: Merge) -> BTreeMap<String, Value> {
+        let default = read_json(&self.dir.join(merge.file));
+        let mut maps = vec![if merge.wrapped {
+            default[merge.key].clone()
+        } else {
+            default
+        }];
+        for source in self.declared(merge.key).into_iter().flatten() {
+            match source {
+                Source::File(path) if is_json(&path) => {
+                    let file = read_json(&path);
+                    maps.push(file.get(merge.key).cloned().unwrap_or(file));
+                }
+                Source::Inline(map) => maps.push(map),
+                Source::File(_) | Source::Outside(_) => {}
+            }
+        }
+        maps.iter()
+            .filter_map(Value::as_object)
+            .flatten()
+            .map(|(name, entry)| (name.clone(), entry.clone()))
+            .collect()
+    }
+
+    /// Every MCP server config this plugin declares, `mcp.toml` last.
+    pub(crate) fn mcp(&self) -> BTreeMap<String, Value> {
+        let mut servers = self.merged(MCP);
+        let native = std::fs::read_to_string(self.dir.join("mcp.toml")).ok();
+        let native = native
+            .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+            .and_then(|file| serde_json::to_value(file.get("mcp")?).ok());
+        if let Some(Value::Object(table)) = native {
+            servers.extend(table);
+        }
+        servers
     }
 
     pub(crate) fn servers<T: DeserializeOwned>(
         &self,
-        maps: &[Value],
-        separator: &str,
+        map: BTreeMap<String, Value>,
+        name: impl Fn(&str) -> String,
         workspace: &Path,
         fields: impl Fn(&mut T) -> Vec<&mut String>,
     ) -> Vec<(String, T)> {
-        maps.iter()
-            .filter_map(Value::as_object)
-            .flatten()
-            .filter_map(|(name, entry)| Some((name.clone(), T::deserialize(entry).ok()?)))
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .map(|(name, mut entry)| {
+        map.into_iter()
+            .filter_map(|(server, entry)| {
+                let mut entry = T::deserialize(entry).ok()?;
                 for text in fields(&mut entry) {
                     *text = expand(text, &self.vars(workspace));
                 }
-                (format!("{}{separator}{name}", self.name), entry)
+                Some((name(&server), entry))
             })
             .collect()
     }
 
     pub(crate) fn hooks(&self) -> Hooks {
-        let inline = self.manifest.get("hooks").filter(|value| value.is_object());
-        let files = self.hook_files();
-        let mut files: Vec<Value> = files.iter().map(|file| read_json(file)).collect();
-        files.extend(inline.map(|inline| serde_json::json!({ "hooks": inline })));
         let native = std::fs::read_to_string(self.dir.join("hooks.toml")).ok();
         let native = native.and_then(|text| toml::from_str::<Hooks>(&text).ok());
         let mut hooks = Hooks::default();
-        for source in files.iter().map(claude_hooks).chain(native) {
+        for source in self.hook_docs().iter().map(hooks::claude).chain(native) {
             for event in HookEvent::ALL {
                 for hook in source.of(event) {
                     hooks.push(
@@ -165,58 +265,9 @@ impl Plugin {
     }
 }
 
-fn claude_hooks(file: &Value) -> Hooks {
-    let mut hooks = Hooks::default();
-    for event in HookEvent::ALL {
-        for group in file["hooks"][event.claude()]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
-            let matcher = group["matcher"].as_str().and_then(Matcher::parse);
-            for handler in group["hooks"].as_array().into_iter().flatten() {
-                if handler["type"] != "command" {
-                    continue;
-                }
-                let Some(command) = handler["command"].as_str() else {
-                    continue;
-                };
-                hooks.push(
-                    event,
-                    Hook {
-                        command: command.to_string(),
-                        dialect: Dialect::Claude,
-                        matcher: matcher.clone(),
-                        root: None,
-                    },
-                );
-            }
-        }
-    }
-    hooks
-}
-
-fn note_mods(file: &Value, lines: &mut Vec<String>) {
-    for event in HookEvent::ALL {
-        let Some(groups) = file["hooks"][event.claude()].as_array() else {
-            continue;
-        };
-        for group in groups {
-            let Some(handlers) = group["hooks"].as_array() else {
-                continue;
-            };
-            for handler in handlers {
-                if handler["type"] == "command" {
-                    continue;
-                }
-                let kind = handler["type"].as_str().unwrap_or("hook");
-                lines.push(format!(
-                    "skipped\t{} {kind} (summonr runs command hooks only)",
-                    event.claude()
-                ));
-            }
-        }
-    }
+pub(super) fn is_json(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "json")
 }
 
 pub(super) fn read_json(path: &Path) -> Value {
@@ -226,55 +277,26 @@ pub(super) fn read_json(path: &Path) -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// Parses `path` when it holds text; a missing or blank file is `None`.
+pub(crate) fn read_parsed<T, E: std::fmt::Display>(
+    path: &Path,
+    parse: impl FnOnce(&str) -> std::result::Result<T, E>,
+) -> Result<Option<T>> {
+    let failed =
+        |error: &dyn std::fmt::Display| Error::Config(format!("{}: {error}", path.display()));
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(failed(&error)),
+    };
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    parse(&text).map(Some).map_err(|error| failed(&error))
+}
+
 pub(super) fn json_file(path: &Path) -> Result<Value> {
-    let Some(text) = read_text(path)? else {
-        return Ok(Value::Null);
-    };
-    serde_json::from_str(&text)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
-}
-
-pub(super) fn require_tree(plugin: &Plugin) -> Result<()> {
-    for path in [
-        plugin.dir.join(".mcp.json"),
-        plugin.dir.join("hooks/hooks.json"),
-        plugin.dir.join(".lsp.json"),
-    ] {
-        json_file(&path)?;
-    }
-    parsed(&plugin.dir.join("mcp.toml"), |text| {
-        toml::from_str::<toml::Value>(text)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    })?;
-    parsed(&plugin.dir.join("hooks.toml"), |text| {
-        toml::from_str::<Hooks>(text)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-    })?;
-    for path in plugin.paths("mcpServers") {
-        json_file(&path)?;
-    }
-    for path in plugin.paths("hooks") {
-        json_file(&path)?;
-    }
-    Ok(())
-}
-
-fn parsed(path: &Path, parse: impl FnOnce(&str) -> std::result::Result<(), String>) -> Result<()> {
-    let Some(text) = read_text(path)? else {
-        return Ok(());
-    };
-    parse(&text).map_err(|error| Error::Config(format!("{}: {error}", path.display())))
-}
-
-fn read_text(path: &Path) -> Result<Option<String>> {
-    match std::fs::read_to_string(path) {
-        Ok(text) if text.trim().is_empty() => Ok(None),
-        Ok(text) => Ok(Some(text)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(Error::Config(format!("{}: {error}", path.display()))),
-    }
+    Ok(read_parsed(path, |text: &str| serde_json::from_str::<Value>(text))?.unwrap_or(Value::Null))
 }
 
 pub(super) fn root() -> Result<PathBuf> {
@@ -310,38 +332,6 @@ pub fn enabled() -> Vec<Plugin> {
         .into_iter()
         .filter(|plugin| !off.contains(&plugin.name))
         .collect()
-}
-
-static WARNED_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-pub(crate) fn unknown_off(off: &[String]) -> Option<String> {
-    if off.is_empty() {
-        return None;
-    }
-    let installed = installed();
-    let known: BTreeSet<&str> = installed
-        .iter()
-        .map(|plugin| plugin.name.as_str())
-        .collect();
-    let unknown: Vec<&str> = off
-        .iter()
-        .filter(|name| !known.contains(name.as_str()))
-        .map(String::as_str)
-        .collect();
-    (!unknown.is_empty()).then(|| {
-        format!(
-            "[plugins] off names plugins that are not installed: {}; `summonr plugin remove NAME` removes the name",
-            unknown.join(", ")
-        )
-    })
-}
-
-pub(crate) fn warn_unknown_off(off: &[String]) {
-    if let Some(note) = unknown_off(off)
-        && !WARNED_OFF.swap(true, std::sync::atomic::Ordering::Relaxed)
-    {
-        eprintln!("summonr: {note}");
-    }
 }
 
 pub(crate) fn bin_path_prefix() -> Option<String> {

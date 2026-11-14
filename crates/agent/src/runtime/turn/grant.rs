@@ -29,7 +29,7 @@ impl<P: Provider> Loop<P> {
         Ok(verdict)
     }
 
-    pub(super) async fn approve(
+    pub(in crate::runtime) async fn approve(
         &mut self,
         detail: String,
         persist: bool,

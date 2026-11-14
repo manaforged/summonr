@@ -1,23 +1,19 @@
 use super::*;
 
 fn command(dir: &Path, template: &str) -> Command {
-    Command {
-        plugin: Plugin::at("demo".to_string(), dir.to_owned()),
-        name: "echo".to_string(),
-        description: String::new(),
-        hint: String::new(),
-        template: template.to_string(),
-    }
+    let plugin = Plugin::at("demo".to_string(), dir.to_owned());
+    Command::new(&plugin, "echo".to_string(), &Frontmatter::parse(template)).unwrap()
 }
 
 #[test]
-fn arguments_are_substituted_once_and_never_rescanned() {
+fn argument_text_is_never_rescanned_but_path_variables_still_fill() {
     let dir = tempfile::tempdir().unwrap();
-    let rendered = command(dir.path(), "All: $ARGUMENTS. First: $1. Third: $3.")
+    let rendered = command(dir.path(), "All: $ARGUMENTS. First: $0. Third: $2.")
         .render("price $1 ${CLAUDE_PLUGIN_ROOT}", dir.path());
+    let root = dir.path().display();
     assert_eq!(
         rendered,
-        "All: price $1 ${CLAUDE_PLUGIN_ROOT}. First: price. Third: ${CLAUDE_PLUGIN_ROOT}."
+        format!("All: price $1 {root}. First: price. Third: {root}.")
     );
 }
 
@@ -25,14 +21,14 @@ fn arguments_are_substituted_once_and_never_rescanned() {
 fn the_plugin_root_expands_in_the_template_only() {
     let dir = tempfile::tempdir().unwrap();
     let rendered =
-        command(dir.path(), "Run ${CLAUDE_PLUGIN_ROOT}/bin/lint $1").render("x", dir.path());
+        command(dir.path(), "Run ${CLAUDE_PLUGIN_ROOT}/bin/lint $0").render("x", dir.path());
     assert_eq!(rendered, format!("Run {}/bin/lint x", dir.path().display()));
 }
 
 #[test]
 fn a_quoted_argument_binds_as_one_word() {
     let dir = tempfile::tempdir().unwrap();
-    let rendered = command(dir.path(), "say $1 then $2").render("\"hello world\" next", dir.path());
+    let rendered = command(dir.path(), "say $0 then $1").render("\"hello world\" next", dir.path());
     assert_eq!(rendered, "say hello world then next");
 }
 
@@ -43,7 +39,7 @@ fn a_project_command_file_expands_with_its_arguments() {
     std::fs::create_dir_all(&folder).unwrap();
     std::fs::write(
         folder.join("ship-check.md"),
-        "---\ndescription: check a crate\n---\nRun the tests for $1, then report: $ARGUMENTS",
+        "---\ndescription: check a crate\n---\nRun the tests for $0, then report: $ARGUMENTS",
     )
     .unwrap();
     let expanded = expand("/ship-check summonr fast", workspace.path(), None).unwrap();
@@ -62,7 +58,7 @@ fn a_workspace_secret_never_reaches_the_prompt_through_a_command_or_a_skill() {
     std::fs::create_dir_all(root.join(".summonr/skills")).unwrap();
     std::fs::write(
         root.join(".summonr/commands/deploy.md"),
-        "Deploy with deploy-key-value-42 to $1",
+        "Deploy with deploy-key-value-42 to $0",
     )
     .unwrap();
     std::fs::write(
@@ -77,5 +73,117 @@ fn a_workspace_secret_never_reaches_the_prompt_through_a_command_or_a_skill() {
     assert_eq!(
         expand("/release", root, None).unwrap().as_deref(),
         Some("Sign with [secret]")
+    );
+}
+
+#[test]
+fn placeholders_follow_the_claude_code_substitution_rules() {
+    let names = vec!["issue".to_string(), "branch".to_string()];
+    let filled = skills::fill(
+        "$ARGUMENTS[1] then $0, missing $5, \\$1.00, \\\\$0, $issue on $branch$ARGUMENTSx",
+        "\"a b\" c",
+        &names,
+    );
+    assert_eq!(
+        filled,
+        "c then a b, missing $5, $1.00, \\\\a b, a b on c\"a b\" cx"
+    );
+    let unnamed = skills::fill("$issue_id and $branch", "only", &names);
+    assert_eq!(unnamed, "$issue_id and ");
+}
+
+#[test]
+fn arguments_no_placeholder_takes_are_appended() {
+    assert_eq!(
+        skills::fill("Review it. Cost $9.", "the parser", &[]),
+        "Review it. Cost $9.\n\nARGUMENTS: the parser"
+    );
+    assert_eq!(skills::fill("Review it.", "", &[]), "Review it.");
+    assert_eq!(skills::fill("Review $0.", "the parser", &[]), "Review the.");
+}
+
+#[test]
+fn a_command_in_a_subfolder_is_named_by_its_folder_path() {
+    let workspace = tempfile::tempdir().unwrap();
+    let folder = workspace
+        .path()
+        .join(".claude/commands/probe-front/probe-deep");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("probe-widget.md"),
+        "---\nargument-hint: [name]\n---\nBuild $0",
+    )
+    .unwrap();
+    let expanded = expand(
+        "/probe-front:probe-deep:probe-widget Card",
+        workspace.path(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(expanded.as_deref(), Some("Build Card"));
+    let offered = offers(workspace.path());
+    let offer = offered
+        .iter()
+        .find(|offer| offer.insert == "/probe-front:probe-deep:probe-widget")
+        .expect("subfolder command offered");
+    assert_eq!(offer.about, "Build $0 [name]");
+}
+
+#[test]
+fn the_manifest_commands_key_replaces_the_default_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".claude-plugin")).unwrap();
+    std::fs::create_dir_all(root.join("commands")).unwrap();
+    std::fs::create_dir_all(root.join("extra/nested")).unwrap();
+    std::fs::write(root.join("commands/skipped.md"), "not loaded").unwrap();
+    std::fs::write(root.join("extra/nested/deep.md"), "deep body").unwrap();
+    std::fs::write(
+        root.join("status.md"),
+        "---\ndescription: from file\n---\nStatus of $0",
+    )
+    .unwrap();
+    let manifests = [
+        (r#"{"commands": "./extra"}"#, vec!["nested:deep"]),
+        (
+            r#"{"commands": ["./status.md", "./extra/"]}"#,
+            vec!["nested:deep", "status"],
+        ),
+        (
+            r#"{"commands": {"status": {"source": "./status.md", "argumentHint": "[env]", "model": "probe-model", "allowedTools": ["Read"]}, "about": {"content": "Explain it."}, "both": {"source": "./status.md", "content": "x"}}}"#,
+            vec!["about", "status"],
+        ),
+    ];
+    for (manifest, names) in manifests {
+        std::fs::write(root.join(".claude-plugin/plugin.json"), manifest).unwrap();
+        let loaded = load(&Plugin::at("probe-kit".to_string(), root.to_owned()));
+        let found: Vec<&str> = loaded.iter().map(|command| command.name.as_str()).collect();
+        assert_eq!(found, names, "{manifest}");
+    }
+    let loaded = load(&Plugin::at("probe-kit".to_string(), root.to_owned()));
+    let status = loaded
+        .iter()
+        .find(|command| command.name == "status")
+        .unwrap();
+    assert_eq!(status.meta.offer(), "from file [env]");
+    assert_eq!(status.meta.model.as_deref(), Some("probe-model"));
+    assert_eq!(status.meta.allowed_tools, ["Read"]);
+    assert_eq!(status.qualified(), "/probe-kit:status");
+    assert_eq!(status.render("prod", root), "Status of prod");
+}
+
+#[test]
+fn a_command_that_is_not_user_invocable_does_not_run() {
+    let workspace = tempfile::tempdir().unwrap();
+    let folder = workspace.path().join(".claude/commands");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("probe-hidden.md"),
+        "---\nuser-invocable: No\n---\nhidden",
+    )
+    .unwrap();
+    assert_eq!(
+        expand("/probe-hidden", workspace.path(), None).unwrap(),
+        None
     );
 }

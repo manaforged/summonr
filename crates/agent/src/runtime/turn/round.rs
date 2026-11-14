@@ -264,13 +264,7 @@ impl<P: Provider> Loop<P> {
             harness = format!("{harness}\n\nHarness: {exited}");
         }
         if !self.note_sent(&harness) {
-            if input.source.is_none() {
-                input.source = Some(crate::provider::Source {
-                    text: input.text.clone(),
-                    images: input.images.len(),
-                });
-            }
-            input.text = decorate(&harness, &input.text);
+            super::super::hooks::annotate(&mut input, &harness);
         }
         self.session.start_input(&input)?;
         Ok(self.session.history())

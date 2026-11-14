@@ -935,11 +935,11 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 | Layer | Where | What the model sees |
 | --- | --- | --- |
-| Command | `<name>.md` under `.summonr/commands/`, `.claude/commands/`, `~/.summonr/commands/`, or `~/.claude/commands/` | `/<name> args`, or `/project:<name>` and `/user:<name>` when a plugin command has the same name. The body is the prompt; `$ARGUMENTS` is everything after the name and `$1`..`$9` are its words. A project file wins over a user file with the same name. |
-| Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
+| Command | `<name>.md` under `.summonr/commands/`, `.claude/commands/`, `~/.summonr/commands/`, or `~/.claude/commands/` | `/<name> args`, or `/project:<name>` and `/user:<name>` when a plugin command has the same name. The body is the prompt; `$ARGUMENTS` is everything after the name, `$0`, `$1`, ... and `$ARGUMENTS[N]` are its words counted from 0, and arguments no placeholder takes are appended as `ARGUMENTS: <args>`. A project file wins over a user file with the same name. |
+| Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/`; a plugin skill is `/<plugin>:<name>` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
-| Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call (stdin is JSON). |
-| Plugin | `summonr plugin install PATH` (Claude Code layout) | Its skills, MCP tools (`<plugin>-<server>__tool`), hooks, and `bin/` |
+| Hook | `[hooks]` `session_start`, `user_prompt`, `pre_tool`, `post_tool`, `post_tool_failure`, `pre_compact`, `compact`, `stop`, `session_end` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call, `user_prompt` a prompt, and `stop` may keep the turn going (stdin is JSON). |
+| Plugin | `summonr plugin install PATH` (Claude Code layout) | Its skills, MCP tools (`plugin_<plugin>_<server>__tool`), hooks, and `bin/` |
 | CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy and the danger prompt apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
 
 `summonr plugin install PATH` copies a plugin directory to `~/.summonr/plugins/<name>/`. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr plugin list` prints one line per plugin: its name, on or off, and what it adds (skills, MCP servers, commands, agents, language servers, hooks, `bin`). There is no marketplace and no in-process loader.
@@ -952,26 +952,56 @@ When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude
 
 ### Hooks
 
-Each of `pre_tool`, `post_tool`, `compact`, and `stop` under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: tool names separated by `|`, or a regex. The hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`). In `claude`, `search` is `Grep`, or `Glob` for a name search with no `pattern`, and either matcher matches every search. A hook on `search` does not see `grep` or `rg` run through `run_command`; to block both, also match `run_command` or add the commands to `[policy] deny`.
+Each event key under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `timeout`, in seconds; without it a hook gets `job_wait_secs`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: names separated by `|`, or a regex. On tool events the hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`). In `claude`, `search` is `Grep`, or `Glob` for a name search with no `pattern`, and either matcher matches every search. A hook on `search` does not see `grep` or `rg` run through `run_command`; to block both, also match `run_command` or add the commands to `[policy] deny`. On other events the matcher is checked against the value in the Matcher column below.
 
 ```toml
 [hooks]
-pre_tool = "./scripts/guard.sh"
+pre_tool = { command = "./scripts/guard.sh", timeout = 10 }
+session_start = "git status --short"
 stop = [{ command = "./scripts/notify.sh" }, { command = "claude-hook.sh", dialect = "claude" }]
 ```
 
-A `summonr` hook reads this JSON on stdin. Every event also carries `session` and `workspace`:
+| Key | Claude Code event | Runs | Matcher | Can block |
+| --- | --- | --- | --- | --- |
+| `session_start` | `SessionStart` | Before the first turn of a session, and after a compaction | `startup`, `resume`, `fork`, `compact` | No |
+| `user_prompt` | `UserPromptSubmit` | Before a typed prompt reaches the model | none | Yes: the prompt does not run |
+| `pre_tool` | `PreToolUse` | Before a tool call | tool name | Yes: the call does not run |
+| `post_tool` | `PostToolUse` | After a tool call; a `claude` hook only after a call that succeeded | tool name | No |
+| `post_tool_failure` | `PostToolUseFailure` | After a tool call that failed | tool name | No |
+| `pre_compact` | `PreCompact` | Before the compaction summary is built | `manual`, `auto` | Yes: compaction is skipped |
+| `compact` | `PostCompact` | After the compaction summary replaces the history | `manual`, `auto` | No |
+| `stop` | `Stop` | When a turn ends | none | Yes: the turn goes on |
+| `session_end` | `SessionEnd` | When the host ends the session | `clear`, `resume`, `prompt_input_exit`, `other` | No |
 
-| Event | Fields |
+A `summonr` hook reads this JSON on stdin. Every event also carries `event` (the key), `session`, `workspace`, and `transcript` (the session journal):
+
+| Key | Fields |
 | --- | --- |
-| `pre_tool` | `event`, `id`, `tool`, `arguments` |
-| `post_tool` | `event`, `id`, `tool`, `arguments`, `success`, `output` |
-| `compact` | `event`, `summary` |
-| `stop` | `event`, `text`, `aborted` |
+| `session_start` | `source`, `model` |
+| `user_prompt` | `prompt` |
+| `pre_tool` | `id`, `tool`, `arguments` |
+| `post_tool`, `post_tool_failure` | `id`, `tool`, `arguments`, `success`, `output` |
+| `pre_compact` | `trigger`, `custom_instructions` (always `null`) |
+| `compact` | `summary`, `trigger` |
+| `stop` | `text`, `aborted`, `stop_hook_active` |
+| `session_end` | `reason` |
 
-Exit 0 allows. Any other exit blocks a `pre_tool` call, and stderr is the reason; the rest of the list does not run. For the other events a nonzero exit is a note.
+Exit 0 allows. Any other exit blocks a `pre_tool` call, a `user_prompt` prompt, or a `pre_compact` compaction, and stderr is the reason; after a `pre_tool` block the rest of the list does not run. Exit 2 from a `stop` hook keeps the turn going with stderr as the next message to the model. For the other events a nonzero exit is a note.
 
-A `claude` hook gets Claude Code's stdin JSON: `session_id`, `cwd`, `hook_event_name`, and for tool events `tool_name`, `tool_input`, `tool_use_id`, and `tool_response`. Exit 2 blocks a `pre_tool` call, and so does exit 0 with `hookSpecificOutput.permissionDecision = "deny"` on stdout. Any other nonzero exit is a note. Plugin hooks use this dialect.
+A `claude` hook gets Claude Code's stdin JSON: `session_id`, `transcript_path`, `cwd`, `permission_mode` (`default` with approval on, `auto` with it off), and `hook_event_name`. Tool events add `tool_name`, `tool_input`, and `tool_use_id`; `PostToolUse` adds `tool_response` as `{ output, success }`, and `PostToolUseFailure` adds `error`. `SessionStart` adds `source` and `model`, `UserPromptSubmit` adds `prompt`, `Stop` adds `stop_hook_active` and `last_assistant_message`, `PreCompact` adds `trigger` and `custom_instructions`, `PostCompact` adds `trigger` and `compact_summary`, and `SessionEnd` adds `reason`. Exit 2 blocks the events that can block, with stderr as the reason. On `PostToolUse` and `PostToolUseFailure`, exit 2 sends stderr to the model next to the result. Any other nonzero exit is a note, unless stdout is a JSON object, which then decides alone. A hook that does not start or runs past its timeout is a note. Plugin hooks use this dialect.
+
+Both dialects read one JSON object on stdout:
+
+| Field | Effect |
+| --- | --- |
+| `continue: false`, `stopReason` | Stops the prompt (`SessionStart`, `UserPromptSubmit`) or ends the turn (`Stop`). On tool events it is a note. |
+| `systemMessage` | A note for the user. |
+| `decision: "block"`, `reason` | Blocks `UserPromptSubmit`, `PreCompact`, and `Stop` (the reason goes to the model and the turn goes on); on `PostToolUse` the reason goes next to the result. |
+| `hookSpecificOutput.additionalContext` | Text for the model: with the prompt (`SessionStart`, `UserPromptSubmit`), in the summary (`SessionStart` after a compaction), next to the result (`PostToolUse`, `PostToolUseFailure`), or as the next message (`Stop`). On `PreToolUse` it goes in the block reason, or is a note when the call runs. |
+| `hookSpecificOutput.permissionDecision` | `PreToolUse` only. `deny` (or the older `decision: "block"`) blocks the call with `permissionDecisionReason`. `ask` asks you with that reason, the way an approval asks; without anyone to answer, the call is denied. `allow` lets the call go on to policy, which still decides. `defer` is a note. |
+| `hookSpecificOutput.updatedInput` | `PreToolUse` only: replaces the call's arguments before it runs. Ignored for a call routed through `mcp`. |
+
+Plain stdout from `SessionStart` and `UserPromptSubmit` goes to the model as context, and from `PreCompact` it adds to the summary instructions. A `stop` hook can keep the turn going at most 8 times in a row; a turn that calls a tool resets the count. summonr does not run `if`, `async`, `onFailure`, or non-command handler types.
 
 Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR` in its environment. A plugin hook also gets `CLAUDE_PLUGIN_ROOT` and `SUMMONR_PLUGIN_ROOT`, and `CLAUDE_PLUGIN_DATA` and `SUMMONR_PLUGIN_DATA`.
 

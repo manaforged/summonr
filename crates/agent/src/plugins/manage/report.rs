@@ -1,9 +1,18 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-use super::super::{Plugin, UNSUPPORTED, USER_CONFIG};
+use super::super::{HOOKS, LSP, MCP, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json};
 use crate::mcp::scan;
+
+const COMPONENTS: [&str; 5] = ["skills", "agents", HOOKS, MCP.key, LSP.key];
+const MANIFEST_SKIPPED: [(&str, &str); 5] = [
+    ("outputStyles", "output styles"),
+    ("workflows", "workflows"),
+    ("experimental", "themes, monitors, or evals"),
+    ("channels", "channels"),
+    ("dependencies", "plugin dependencies"),
+];
 
 pub(super) fn report(plugin: &Plugin, manifest: &Value, off: bool) -> String {
     let mut lines = vec![format!(
@@ -31,12 +40,51 @@ pub(super) fn skipped(plugin: &Plugin) -> Vec<String> {
             .filter(|(path, _)| plugin.dir.join(path).exists())
             .map(|(path, what)| format!("skipped\t{path} (summonr does not load plugin {what})")),
     );
+    lines.extend(
+        MANIFEST_SKIPPED
+            .iter()
+            .filter(|(key, _)| plugin.manifest.get(key).is_some())
+            .map(|(key, what)| format!("skipped\t{key} (summonr does not load plugin {what})")),
+    );
+    lines.extend(declared(plugin));
+    lines.extend(crate::plugins::lsp::unused(plugin));
+    for agent in crate::plugins::agents::of_plugin(plugin, &plugin.dir) {
+        for field in agent.unapplied() {
+            lines.push(format!(
+                "skipped\tagent {} {field} (summonr does not apply it)",
+                agent.name
+            ));
+        }
+    }
+    lines
+}
+
+fn declared(plugin: &Plugin) -> Vec<String> {
+    let mut lines = Vec::new();
+    for key in COMPONENTS {
+        for source in plugin.declared(key).into_iter().flatten() {
+            let note = match &source {
+                Source::Outside(path) => format!("{key} {path} (outside the plugin)"),
+                Source::File(path) if !path.exists() => {
+                    format!("{key} {} (not found)", path.display())
+                }
+                Source::File(path) if [MCP.key, LSP.key].contains(&key) && !is_json(path) => {
+                    format!("{key} {} (summonr reads .json files only)", path.display())
+                }
+                Source::File(path) if key == "agents" && !path.is_file() => {
+                    format!("{key} {} (agents takes .md files)", path.display())
+                }
+                Source::File(_) | Source::Inline(_) => continue,
+            };
+            lines.push(format!("skipped\t{note}"));
+        }
+    }
     lines
 }
 
 pub fn describe(plugin: &Plugin) -> Vec<String> {
     let mut parts = Vec::new();
-    let skills = skill_count(plugin);
+    let skills = crate::skills::plugin_files(plugin).len();
     if skills > 0 {
         parts.push(format!("skills {skills}"));
     }
@@ -84,41 +132,16 @@ fn push_names(parts: &mut Vec<String>, label: &str, names: &[String]) {
     }
 }
 
-fn skill_count(plugin: &Plugin) -> usize {
-    let mut found = BTreeSet::new();
-    for dir in plugin.skill_dirs() {
-        if dir.join("SKILL.md").is_file() {
-            found.insert(dir.clone());
-        }
-        for entry in summonr_core::walk::children(&dir) {
-            let path = entry.path();
-            if path.join("SKILL.md").is_file() {
-                found.insert(path);
-            }
-        }
-    }
-    found.len()
-}
-
 fn sorted(names: impl Iterator<Item = String>) -> Vec<String> {
     let names: BTreeSet<String> = names.collect();
     names.into_iter().collect()
 }
 
 pub(super) fn servers(plugin: &Plugin) -> Vec<String> {
-    let mut names = BTreeSet::new();
-    for map in plugin.mcp_json() {
-        if let Some(object) = map.as_object() {
-            names.extend(object.keys().cloned());
-        }
-    }
-    let toml_servers = plugin.mcp_toml();
-    if let Some(table) = toml_servers.as_ref().and_then(toml::Value::as_table) {
-        names.extend(table.keys().cloned());
-    }
-    names
-        .into_iter()
-        .map(|server| format!("{}-{server}", plugin.name))
+    plugin
+        .mcp()
+        .keys()
+        .map(|server| plugin.mcp_name(server))
         .collect()
 }
 
@@ -143,7 +166,7 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
             .map(|key| format!("${{user_config.{key}}}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let table = format!("mcp.{}-{server}", plugin.name);
+        let table = format!("mcp.{}", plugin.mcp_name(&server));
         lines.push(format!(
             "warning\tmcp {server} uses {tokens}; set [{table}.user_config] or env in [{table}]"
         ));
@@ -154,31 +177,19 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
 pub(super) fn settings_servers(plugin: &Plugin) -> BTreeSet<String> {
     config_needs(plugin)
         .into_keys()
-        .map(|server| format!("{}-{server}", plugin.name))
+        .map(|server| plugin.mcp_name(&server))
         .collect()
 }
 
-fn config_needs(plugin: &Plugin) -> std::collections::BTreeMap<String, Vec<String>> {
-    let mut needs = std::collections::BTreeMap::new();
-    let mut note = |server: &str, text: String| {
-        let keys: Vec<String> = config_keys(&text).into_iter().collect();
-        if !keys.is_empty() {
-            needs.entry(server.to_string()).or_insert(keys);
-        }
-    };
-    for map in plugin.mcp_json() {
-        if let Some(object) = map.as_object() {
-            for (server, entry) in object {
-                note(server, entry.to_string());
-            }
-        }
-    }
-    if let Some(table) = plugin.mcp_toml().as_ref().and_then(toml::Value::as_table) {
-        for (server, entry) in table {
-            note(server, entry.to_string());
-        }
-    }
-    needs
+fn config_needs(plugin: &Plugin) -> BTreeMap<String, Vec<String>> {
+    plugin
+        .mcp()
+        .into_iter()
+        .filter_map(|(server, entry)| {
+            let keys: Vec<String> = config_keys(&entry.to_string()).into_iter().collect();
+            (!keys.is_empty()).then_some((server, keys))
+        })
+        .collect()
 }
 
 fn config_keys(text: &str) -> BTreeSet<String> {

@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::config;
-use crate::durable::store;
+use crate::plugins::read_parsed;
 use summonr_core::error::{Error, Result};
 use summonr_core::secret::Secret;
 
@@ -168,13 +168,13 @@ fn layers(workspace: &Path) -> Result<Layers> {
             .map(|(name, _)| name.clone()),
     );
     if import_peers && let Some(home) = &home {
-        let codex = read(&home.join(".codex/config.toml"), |text: &str| {
+        let codex = read_parsed(&home.join(".codex/config.toml"), |text: &str| {
             toml::from_str::<toml::Value>(text)
         })?;
         layers.push(toml_map(
             codex.as_ref().and_then(|file| file.get("mcp_servers")),
         ));
-        let claude = read(&home.join(".claude.json"), |text: &str| {
+        let claude = read_parsed(&home.join(".claude.json"), |text: &str| {
             serde_json::from_str::<Value>(text)
         })?;
         layers.push(json_map(
@@ -198,7 +198,7 @@ fn layers(workspace: &Path) -> Result<Layers> {
                 .map(str::to_string),
         );
     }
-    let local = read(&workspace.join(".mcp.json"), |text: &str| {
+    let local = read_parsed(&workspace.join(".mcp.json"), |text: &str| {
         serde_json::from_str::<Value>(text)
     })?;
     let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
@@ -215,18 +215,23 @@ fn layers(workspace: &Path) -> Result<Layers> {
         .collect();
     shared.retain(|name, _entry| all || approved.contains(name));
     layers.push(shared);
-    layers.push(plugin_layer(workspace));
-    layers.push(user);
+    let (plugins, legacy) = plugin_layer(workspace);
+    layers.push(plugins);
+    layers.push(renamed(user, &legacy));
     Ok((layers, waiting))
 }
 
-fn plugin_layer(workspace: &Path) -> BTreeMap<String, Entry> {
+fn plugin_layer(workspace: &Path) -> (BTreeMap<String, Entry>, BTreeMap<String, String>) {
     let mut layer = BTreeMap::new();
+    let mut legacy = BTreeMap::new();
     for plugin in crate::plugins::enabled() {
-        let mut maps = plugin.mcp_json();
-        let toml = plugin.mcp_toml().map(serde_json::to_value);
-        maps.extend(toml.into_iter().flatten());
-        layer.extend(plugin.servers(&maps, "-", workspace, |entry: &mut Entry| {
+        let map = plugin.mcp();
+        legacy.extend(
+            map.keys()
+                .map(|server| (plugin.legacy_mcp_name(server), plugin.mcp_name(server))),
+        );
+        let named = |server: &str| plugin.mcp_name(server);
+        layer.extend(plugin.servers(map, named, workspace, |entry: &mut Entry| {
             entry
                 .command
                 .iter_mut()
@@ -236,20 +241,24 @@ fn plugin_layer(workspace: &Path) -> BTreeMap<String, Entry> {
                 .collect()
         }));
     }
-    layer
+    (layer, legacy)
 }
 
-fn read<T, E: std::fmt::Display>(
-    path: &Path,
-    parse: impl FnOnce(&str) -> std::result::Result<T, E>,
-) -> Result<Option<T>> {
-    let text = store::read_or_empty(path)?;
-    if text.is_empty() {
-        return Ok(None);
+fn renamed(
+    layer: BTreeMap<String, Entry>,
+    legacy: &BTreeMap<String, String>,
+) -> BTreeMap<String, Entry> {
+    let mut out: BTreeMap<String, Entry> = BTreeMap::new();
+    for (name, entry) in layer {
+        let name = legacy.get(&name).cloned().unwrap_or(name);
+        match out.get_mut(&name) {
+            Some(base) => base.overlay(entry),
+            None => {
+                out.insert(name, entry);
+            }
+        }
     }
-    parse(&text)
-        .map(Some)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
+    out
 }
 
 fn json_map(value: Option<&Value>) -> BTreeMap<String, Entry> {

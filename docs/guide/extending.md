@@ -19,7 +19,32 @@ After the first model round, the advertised tool list and the skill catalog stay
 
 Write a `SKILL.md` under `~/.summonr/skills/<name>/` or `.summonr/skills/<name>/`. Claude Code skills work as they are: summonr also reads `~/.claude/skills/`, `.claude/skills/` in the workspace, and `~/.agents/skills/`. The model loads it with the `skill` tool. The body arrives as a later tool result.
 
-In Summonr's own two skill roots, skills can sit in folders up to four levels deep, such as `review/rust/SKILL.md`. A skill keeps its own directory name, and two skills with one name in different folders list as `FOLDER:NAME`. The Claude Code and `~/.agents/skills/` roots are read one level deep, as Claude Code reads them.
+In Summonr's own two skill roots, skills can sit in folders up to four levels deep, such as `review/rust/SKILL.md`. A skill keeps its own directory name, and two skills with one name in different folders list as `FOLDER:NAME`. The Claude Code and `~/.agents/skills/` roots are read one level deep, as Claude Code reads them. When two roots hold a skill with the same name, the first root in the list above wins.
+
+A skill runs when the model loads it or when you type `/NAME args`. summonr reads these frontmatter fields:
+
+| Field | Effect |
+| --- | --- |
+| `name` | The name you type. The directory name also runs the skill. |
+| `description`, `when_to_use` | Joined into the catalog summary, cut at 1,536 characters. With neither, the summary is the first line of the body. |
+| `disable-model-invocation: true` | The skill is left out of the model's catalog, and the `skill` tool refuses it. `/NAME` still runs it. |
+| `user-invocable: false` | The skill is left out of the `/` menu, and `/NAME` does not run it. The model can still load it. |
+| `argument-hint` | Shown after the summary in completion. |
+| `arguments` | Names for `$name` placeholders, in argument order. |
+| `allowed-tools`, `model` | Read, but not applied yet. |
+
+Booleans take `true`, `false`, `yes`, `no`, `on`, `off`, `1`, or `0`. When you type `/NAME args`, the body after the frontmatter is the prompt. Skills and commands fill these placeholders the same way:
+
+- `$ARGUMENTS` is everything after the name, as typed.
+- `$ARGUMENTS[N]` and `$N` are word `N`, counted from 0, so `$0` is the first word. Quote a value to keep its spaces. A placeholder with no word stays as typed.
+- `$name` is the word at the position of `name` in `arguments`, or empty.
+- A backslash before one of these keeps it as text: `\$1.00`.
+- When no placeholder takes the arguments, they are added at the end as `ARGUMENTS: <args>`.
+- `${CLAUDE_SKILL_DIR}` is the skill's directory and `${CLAUDE_PROJECT_DIR}` is the workspace. These are also filled when the model loads the skill.
+
+Argument text goes in once and is not read again for `$` placeholders. `/NAME` with no arguments takes the session's current task as its arguments. When a skill and a command have the same name, the skill runs. summonr does not run `` !`cmd` `` or ` ```! ` blocks, does not attach `@file` references, and does not fill `${CLAUDE_SESSION_ID}`. They reach the model as text.
+
+A command is a Markdown file under `commands/` in `.summonr/`, `.claude/`, `~/.summonr/`, or `~/.claude/`. A file in a subfolder is named by its path, with `:` between the parts: `.claude/commands/frontend/component.md` runs as `/frontend:component`. Commands take the same frontmatter as skills, except `name`.
 
 ## Add an MCP server
 
@@ -47,7 +72,7 @@ A server can ask you to fill a form during a tool call. summonr shows which serv
 
 ## Add a hook
 
-Set `pre_tool`, `post_tool`, `compact`, or `stop` under `[hooks]` in `~/.summonr/config.toml`. Each value is a shell command, a table `{ command = "...", dialect = "claude", matcher = "Edit|Write" }`, or a list of either; the list runs in order. summonr writes JSON to each command's stdin. A `pre_tool` hook that exits nonzero blocks the call, and the rest of the list does not run. With `dialect = "claude"`, a hook gets Claude Code's stdin JSON and verdict rules. `matcher` takes tool names separated by `|`, or a regex, as in a Claude Code `hooks.json`, and is checked against the tool name in the hook's dialect. The [reference](reference.md#hooks) lists the stdin fields, verdicts, and environment variables.
+Set an event under `[hooks]` in `~/.summonr/config.toml`: `session_start`, `user_prompt`, `pre_tool`, `post_tool`, `post_tool_failure`, `pre_compact`, `compact`, `stop`, or `session_end`. Each value is a shell command, a table `{ command = "...", dialect = "claude", matcher = "Edit|Write", timeout = 30 }`, or a list of either; the list runs in order. summonr writes JSON to each command's stdin. A `pre_tool` hook that exits nonzero blocks the call, and the rest of the list does not run. A `user_prompt` hook can block the prompt, a `stop` hook that exits 2 keeps the turn going, and plain stdout from `session_start` or `user_prompt` goes to the model as context. With `dialect = "claude"`, a hook gets Claude Code's stdin JSON and verdict rules. `matcher` takes tool names separated by `|`, or a regex, as in a Claude Code `hooks.json`, and is checked against the tool name in the hook's dialect. The [reference](reference.md#hooks) lists the stdin fields, verdicts, JSON output fields, and environment variables.
 
 ## Add a CLI
 
@@ -89,21 +114,23 @@ A plugin is a directory in the Claude Code plugin layout. `summonr plugin instal
 
 | Part | What summonr does with it |
 | --- | --- |
-| `skills/<name>/SKILL.md`, manifest `skills` | Added to the skill catalog; the summary is the frontmatter `description` |
-| `.mcp.json`, manifest `mcpServers`, `mcp.toml` | MCP servers named `<plugin>-<server>`; installing counts as approval |
-| `hooks/hooks.json`, manifest `hooks`, `hooks.toml` | Hooks added after your own |
+| `skills/<name>/SKILL.md`, manifest `skills` | Skills named `/<plugin>:<name>`, or `/<name>` when no other skill or command has the name. A skill of your own with the same name does not hide the plugin skill. Manifest `skills` adds folders to `skills/`; `"."` names the plugin root. A plugin with only a root `SKILL.md` is one skill named after the plugin. `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` in the body are filled. |
+| `.mcp.json`, manifest `mcpServers`, `mcp.toml` | MCP servers named `plugin_<plugin>_<server>`, so a tool is `mcp__plugin_<plugin>_<server>__<tool>` in hooks, as in Claude Code. Manifest `mcpServers` takes a `.json` path, an inline map, or an array of both; a later server of the same name replaces an earlier one. `.mcpb` and `.dxt` bundles are skipped. Installing counts as approval. |
+| `hooks/hooks.json`, manifest `hooks`, `hooks.toml` | Hooks added after your own. Manifest `hooks` takes a `.json` path, an inline event map, or an array of both. |
 | `bin/` | On `PATH` for `run_command` |
-| `commands/<name>.md` | Slash commands: `/<plugin>:<name> args`, or `/<name> args` when no other plugin or built-in command has the name. The body is the prompt; `$ARGUMENTS` is everything after the name and `$1`..`$9` are its words. They show in completion. |
-| `agents/<name>.md` | Agents the model can hand a `task` to by name. The frontmatter `description` is listed to the model; the body opens the child's first message; `tools` (Claude or summonr names) limits what the child may call. `model` is ignored, so the child keeps the parent's prompt cache. |
-| `.lsp.json` | Language servers for the listed extensions, started on first use like built-in ones. Your own `[lsp]` settings come first. |
+| `commands/<name>.md`, manifest `commands` | Slash commands: `/<plugin>:<name> args`, or `/<name> args` when no other plugin or built-in command has the name. Placeholders are filled as for [skills](#add-a-skill). Manifest `commands` takes a path, a list of paths to files or folders, or a map from name to `source` or `content` with `description` and `argumentHint`. When it is set, `commands/` is not read. They show in completion. |
+| `agents/<name>.md`, manifest `agents` | Agents the model can hand a `task` to by name. Manifest `agents` lists `.md` files and replaces `agents/`. A file in `agents/review/` is `<plugin>:review:<name>`. The frontmatter `description` is listed to the model; the body opens the child's first message; `tools` (Claude or summonr names) limits what the child may call, less any `disallowedTools`. `model` and `color` are read and not applied, so the child keeps the parent's prompt cache; `install` names them as skipped. |
+| `.lsp.json`, manifest `lspServers` | Language servers for the listed extensions, started on first use like built-in ones. Manifest `lspServers` takes a `.json` path, an inline map, or an array of both. summonr applies `command`, `args`, `env`, `extensionToLanguage`, `initializationOptions`, and `workspaceFolder`, and runs every server over stdio; `install` names each other field as skipped. Your own `[lsp]` settings come first. |
 
-`${CLAUDE_PLUGIN_ROOT}` and `${SUMMONR_PLUGIN_ROOT}` in a server's command, args, env, and URL become the plugin directory, `${CLAUDE_PLUGIN_DATA}` becomes `~/.summonr/plugin-data/<name>/` (deleted on uninstall), and `${CLAUDE_PROJECT_DIR}` becomes the workspace; hook commands get the same values as environment variables. summonr does not prompt for a plugin's `userConfig`. `install` names it as skipped and names each `${user_config.KEY}`. Set the key under `[mcp.<plugin>-<server>.user_config]`, or set `env` on `[mcp.<plugin>-<server>]` without repeating `command` or `url`. A missing key is empty. `enabled = false` on that table turns that one server off. Hooks from `hooks.json` run the way Claude Code runs them: their stdin carries `tool_name` (`Bash` for `run_command`, `Grep` for `search`, or `Glob` for a name search, `mcp__<server>__<tool>` for MCP tools), `tool_input`, and `hook_event_name`; `matcher` selects tools; exit 2, or `permissionDecision: "deny"` on stdout, blocks a `PreToolUse` call; any other nonzero exit is a note, not a block. summonr maps `PreToolUse`, `PostToolUse`, `PreCompact`, and `Stop`, and runs `command` hooks only. `monitors/`, `output-styles/`, `workflows/`, and `themes/` are not loaded; `install` names the ones it skipped.
+`${CLAUDE_PLUGIN_ROOT}` and `${SUMMONR_PLUGIN_ROOT}` in a server's command, args, env, and URL become the plugin directory, `${CLAUDE_PLUGIN_DATA}` becomes `~/.summonr/plugin-data/<name>/` (deleted on uninstall), and `${CLAUDE_PROJECT_DIR}` becomes the workspace; hook commands get the same values as environment variables. summonr does not prompt for a plugin's `userConfig`. `install` names it as skipped and names each `${user_config.KEY}`. Set the key under `[mcp.plugin_<plugin>_<server>.user_config]`, or set `env` on `[mcp.plugin_<plugin>_<server>]` without repeating `command` or `url`. A table named `[mcp.<plugin>-<server>]`, the name earlier releases used, still applies to that server. A missing key is empty. `enabled = false` on that table turns that one server off. Hooks from `hooks.json` run the way Claude Code runs them: their stdin carries `tool_name` (`Bash` for `run_command`, `Grep` for `search`, or `Glob` for a name search, `mcp__<server>__<tool>` for MCP tools), `tool_input`, and `hook_event_name`; `matcher` selects tools; exit 2, or `permissionDecision: "deny"` on stdout, blocks a `PreToolUse` call; any other nonzero exit is a note, not a block. summonr maps `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PreCompact`, `PostCompact`, `Stop`, and `SessionEnd`, and runs `command` hooks only. `monitors/`, `output-styles/`, `workflows/`, and `themes/` are not loaded; `install` names the ones it skipped.
 
 Nothing a plugin ships runs inside summonr. Skills, commands, and agents are files. Hooks and `bin/` tools run once per call. An MCP server starts once to list its tools, then on first use; a language server starts on first use. Both stop on their own when idle. Beyond `servers_max` live servers, the least recently used idle server stops. `/mcp` shows each running server's memory on macOS and Linux.
 
 `summonr plugin list` lists plugins and what each adds. `summonr plugin remove NAME` deletes the directory and `~/.summonr/plugin-data/<name>/`, and it removes that name from `[plugins] off`. `[plugins] off = ["NAME"]` in `~/.summonr/config.toml` keeps one installed but unloaded. A name in `off` that is not installed is an error when a session starts and when you run `summonr plugin list`.
 
-`install` refuses a directory that adds nothing summonr loads, and it refuses `plugin.json`, `.mcp.json`, `hooks.json`, `.lsp.json`, `mcp.toml`, or `hooks.toml` when the file is present, not empty, and does not parse. The same parse check applies to a JSON file the manifest points at. It connects to each new MCP server. If a server does not answer, `install` exits 1 and keeps the copy. Installing the same name again replaces the directory and keeps `~/.summonr/plugin-data/<name>/`. A hook whose type is not `command` is skipped and does not run.
+`install` refuses a directory that adds nothing summonr loads, and it refuses `plugin.json`, `.mcp.json`, `hooks.json`, `.lsp.json`, `mcp.toml`, or `hooks.toml` when the file is present, not empty, and does not parse. The same parse check applies to a JSON file the manifest points at. It connects to each new MCP server. If a server does not answer, `install` exits 1 and keeps the copy. Installing the same name again replaces the directory and keeps `~/.summonr/plugin-data/<name>/`. A hook whose type is not `command` is skipped and does not run. A manifest path may start with `./` or not; one that leaves the plugin directory or does not exist is skipped and named.
+
+Agents also load from `.claude/agents/` in the workspace and `~/.claude/agents/`, subfolders included, named by the frontmatter `name`. On a clash the workspace agent wins over the user agent, and both win over a plugin agent of the same bare name.
 
 ## Related
 

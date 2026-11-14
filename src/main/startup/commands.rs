@@ -65,28 +65,7 @@ pub(super) fn print_sessions(json: bool) -> Result<()> {
 }
 
 fn print_sessions_json(sessions: &[summonr_agent::session::SessionInfo]) -> Result<()> {
-    #[derive(serde::Serialize)]
-    struct Row<'a> {
-        id: &'a str,
-        name: Option<&'a str>,
-        directory: Option<&'a str>,
-        model: Option<&'a str>,
-        preview: &'a str,
-        format: u32,
-    }
-    let rows: Vec<Row<'_>> = sessions
-        .iter()
-        .rev()
-        .map(|info| Row {
-            id: &info.id,
-            name: info.name.as_deref(),
-            directory: info.cwd.as_deref(),
-            model: info.model.as_deref(),
-            preview: &info.preview,
-            format: info.format,
-        })
-        .collect();
-    println!("{}", serde_json::to_string(&rows)?);
+    println!("{}", summonr_agent::session::rows(sessions));
     Ok(())
 }
 

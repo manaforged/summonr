@@ -182,7 +182,42 @@ Markdown on stdout. It is not JSON.
 
 ### `summonr acp`
 
-JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1` with no auth methods, and `authenticate` answers an empty object. The methods are `session/new` (needs `cwd`), `session/load` (needs `sessionId` and `cwd`), and `session/prompt`. `initialize` advertises `loadSession: true` and `mcpCapabilities` with `http` and `sse` false. Both `session/new` and `session/load` take `mcpServers`: each stdio entry (`name`, `command`, `args`, `env` as `name`/`value` pairs) runs as an MCP server for that session only, on top of the configured servers, and wins on a name clash. summonr passes its env values as given, does not write the entry to any config or session file, and does not log the env values. An `http` or `sse` entry answers -32602. `session/load` replays the stored conversation as `session/update` notifications (`user_message_chunk`, `agent_message_chunk`, `tool_call`, `tool_call_update`) and then answers; an unknown `sessionId` answers -32002. summonr sends `session/update` notifications and accepts a `session/cancel` notification. While a prompt runs, other requests answer -31000, except two for that session: `session/set_config_option` answers the full `configOptions` list and the new value applies from the next prompt, and `_summonr.dev/steer` with `sessionId` and `prompt` (content blocks, as in `session/prompt`) answers `{}` and adds the text to the running turn before its next model request. `_summonr.dev/steer` with no turn running answers -32602 `no turn is running`. Between prompts, other `_`-prefixed methods answer -32601. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
+JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1` with no auth methods, and `authenticate` answers an empty object. The methods are `session/new` (needs `cwd`), `session/load` (needs `sessionId` and `cwd`), and `session/prompt`. `initialize` advertises `loadSession: true` and `mcpCapabilities` with `http` and `sse` false. Both `session/new` and `session/load` take `mcpServers`: each stdio entry (`name`, `command`, `args`, `env` as `name`/`value` pairs) runs as an MCP server for that session only, on top of the configured servers, and wins on a name clash. summonr passes its env values as given, does not write the entry to any config or session file, and does not log the env values. An `http` or `sse` entry answers -32602. `session/load` replays the stored conversation as `session/update` notifications (`user_message_chunk`, `agent_message_chunk`, `tool_call`, `tool_call_update`) and then answers; an unknown `sessionId` answers -32002. summonr sends `session/update` notifications and accepts a `session/cancel` notification. While a prompt runs, other requests answer -31000, except two for that session: `session/set_config_option` answers the full `configOptions` list and the new value applies from the next prompt, and `_summonr.dev/steer` with `sessionId` and `prompt` (content blocks, as in `session/prompt`) answers `{}` and adds the text to the running turn before its next model request. `_summonr.dev/steer` with no turn running answers -32602 `no turn is running`. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
+
+#### summonr extensions
+
+The `_summonr.dev/*` methods are off until the client opts in. Send `_meta` in the `initialize` params (or in `clientCapabilities._meta`):
+
+```json
+{"protocolVersion": 1, "_meta": {"summonr.dev/ext": {"version": 1}}}
+```
+
+summonr then answers with the version and the names it serves, without the `_summonr.dev/` prefix:
+
+```json
+{"agentCapabilities": {"_meta": {"summonr.dev/ext": {"version": 1, "features": ["session/list", "session/diff", "session/model", "steer", "session/status", "session/child", "usage"]}}}}
+```
+
+Without the opt-in, or for a name not in `features`, every `_summonr.dev/*` request answers -32601. Source: `crates/agent/src/acp/ext.rs`.
+
+Requests:
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `_summonr.dev/session/list` | `{"cwd"?: "/repo"}` | `{"sessions": [{"id", "name", "directory", "model", "preview", "format"}]}`, the rows of `summonr session list --json`, newest first; `cwd` keeps the sessions whose directory matches |
+| `_summonr.dev/session/diff` | `{"sessionId": "...", "turn"?: "last" \| "session" \| 2}` | `{"base", "session", "files": [{"path", "added", "removed", "new"}]}`, the same shape as `summonr session diff --turn last --json`; `turn` defaults to `last` |
+| `_summonr.dev/session/model` | `{"sessionId": "...", "endpoint"?: "NAME", "model"?: "M"}` | `{}`; the next prompt uses that endpoint and model, with the endpoint's fallbacks, context window, and price. An unknown endpoint answers -32602 |
+| `_summonr.dev/steer` | `{"sessionId": "...", "prompt": [content blocks]}` | `{}` during a prompt for that session; -32602 `no turn is running` between prompts |
+
+While a prompt runs, only `_summonr.dev/steer` for that session answers; other requests answer -31000.
+
+Notifications from summonr, sent only after the opt-in:
+
+| Method | Params |
+| --- | --- |
+| `_summonr.dev/session/status` | `{"sessionId", "status": "working" \| "asking" \| "done" \| "failed" \| "idle"}`: `working` when a prompt starts and after an approval is answered, `asking` while an approval or form waits, then `done` when the prompt ends, `failed` on an error, or `idle` on `session/cancel` |
+| `_summonr.dev/session/child` | `{"sessionId", "childId", "kind": "implement" \| "research", "title"}` when the `task` tool starts a child |
+| `_summonr.dev/usage` | `{"sessionId", "endpoint", "used", "limit", "cost"}` after each model response: `used` is prompt plus completion tokens, `limit` is the context window or `null`, `cost` is dollars or `null` |
 
 ## Conventions
 

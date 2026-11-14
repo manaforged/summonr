@@ -10,7 +10,6 @@ use crate::endpoint::{self, Endpoint};
 use crate::provider::{Client, Effort, UserInput};
 use crate::rpc::{self, Ask, Frame, Read};
 use crate::runtime::{Loop, Steering};
-use crate::tools::Event;
 use summonr_core::error::{Error, Result};
 
 type Input = rpc::Lines<Stdin>;
@@ -24,19 +23,16 @@ mod codes {
 }
 
 mod config;
+pub(crate) mod ext;
 mod permission;
 mod update;
-use update::{chunk, emit, update, usage};
+use update::{Updates, chunk, update};
 
 struct Seat {
     agent: Loop<Client>,
     steering: Arc<Steering>,
-}
-
-struct Updates {
-    out: UnboundedSender<String>,
-    session: String,
-    window: Option<u32>,
+    tag: Arc<OnceLock<String>>,
+    endpoint: String,
 }
 
 struct Server<F> {
@@ -44,6 +40,7 @@ struct Server<F> {
     build: F,
     out: UnboundedSender<String>,
     sessions: BTreeMap<String, Seat>,
+    ext: bool,
 }
 
 pub async fn serve<F>(name: Option<&str>, model: Option<&str>, build: F) -> Result<i32>
@@ -65,6 +62,7 @@ where
         build,
         out,
         sessions: BTreeMap::new(),
+        ext: false,
     };
     let mut input = rpc::Lines::new(tokio::io::stdin());
     while let Some(line) = next_line(&mut input).await {
@@ -89,21 +87,13 @@ where
             return;
         };
         let reply = match rpc::ask(&method) {
-            Ask::Initialize => Ok(json!({
-                "protocolVersion": 1,
-                "agentCapabilities": {
-                    "loadSession": true,
-                    "mcpCapabilities": {"http": false, "sse": false}
-                },
-                "agentInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")},
-                "authMethods": []
-            })),
+            Ask::Initialize => Ok(self.initialize(&params)),
             Ask::Authenticate => Ok(json!({})),
             Ask::SessionNew => self.open(&params, "session/new", None).await,
             Ask::SessionLoad => self.load(&params).await,
             Ask::SessionSetConfigOption => self.configure(&params),
             Ask::SessionPrompt => self.prompt(&params, input).await,
-            Ask::Steer => self.idle(&params),
+            Ask::Extension => self.extension(&method, &params),
             Ask::Roots
             | Ask::Elicit
             | Ask::Ping
@@ -113,6 +103,37 @@ where
             | Ask::Unsupported => Err(rpc::unsupported(&method)),
         };
         drop(self.out.send(frame_line(&rpc::answer(&id, reply))));
+    }
+
+    fn initialize(&mut self, params: &Value) -> Value {
+        self.ext = ext::opted(params);
+        let mut capabilities = json!({
+            "loadSession": true,
+            "mcpCapabilities": {"http": false, "sse": false}
+        });
+        if self.ext {
+            capabilities["_meta"] = ext::capability();
+        }
+        json!({
+            "protocolVersion": 1,
+            "agentCapabilities": capabilities,
+            "agentInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")},
+            "authMethods": []
+        })
+    }
+
+    fn clients(
+        &self,
+        endpoint: &Endpoint,
+        tag: &Arc<OnceLock<String>>,
+    ) -> Result<(Client, Vec<(Client, Endpoint)>)> {
+        let client = self.connect(endpoint, tag)?;
+        let (fallbacks, skipped) =
+            endpoint::fallbacks(endpoint, |fallback| self.connect(fallback, tag));
+        for note in skipped {
+            eprintln!("summonr: {note}");
+        }
+        Ok((client, fallbacks))
     }
 
     fn connect(&self, endpoint: &Endpoint, tag: &Arc<OnceLock<String>>) -> Result<Client> {
@@ -149,13 +170,8 @@ where
             .clone()
             .map_err(|error| (codes::INTERNAL, error))?;
         let tag = Arc::new(OnceLock::new());
-        let client = self.connect(&endpoint, &tag).map_err(failure)?;
+        let (client, fallbacks) = self.clients(&endpoint, &tag).map_err(failure)?;
         let mut session = (self.build)(&endpoint, client, &cwd, resume).map_err(failure)?;
-        let (fallbacks, skipped) =
-            endpoint::fallbacks(&endpoint, |fallback| self.connect(fallback, &tag));
-        for note in skipped {
-            eprintln!("summonr: {note}");
-        }
         session.set_fallbacks(fallbacks);
         session.add_mcp(servers);
         let steering = Arc::new(Steering::approvals_only());
@@ -174,6 +190,8 @@ where
             Seat {
                 agent: session,
                 steering,
+                tag,
+                endpoint: endpoint.name,
             },
         );
         Ok(json!({"sessionId": id, "configOptions": options}))
@@ -214,16 +232,27 @@ where
         let session = session_id(params).to_string();
         let text = prompt_text(params);
         let out = self.out.clone();
-        let Some(Seat { agent, steering }) = self.sessions.get_mut(&session) else {
+        let opted = self.ext;
+        let Some(Seat {
+            agent,
+            steering,
+            endpoint,
+            ..
+        }) = self.sessions.get_mut(&session)
+        else {
             return Err(missing(&session));
         };
-        let window = agent.context_window();
         let mut pending = None;
+        if opted {
+            ext::status(&out, &session, crate::hub::Status::Working);
+        }
         let outcome = {
             let updates = Updates {
                 out: out.clone(),
                 session: session.clone(),
-                window,
+                window: agent.context_window(),
+                endpoint: endpoint.clone(),
+                ext: opted,
             };
             let turn = agent.turn_with(text, move |event| updates.emit(event));
             tokio::pin!(turn);
@@ -242,7 +271,7 @@ where
                                 break None;
                             }
                             Ok(Frame::Request { id, method, params }) => {
-                                let reply = during(&session, &method, &params, steering, &mut pending);
+                                let reply = during(&session, &method, &params, steering, &mut pending, opted);
                                 drop(out.send(frame_line(&rpc::answer(&id, reply))));
                             }
                             Ok(Frame::Response { id, result, .. }) => permission::answer(steering, &id, result.as_ref()),
@@ -255,6 +284,14 @@ where
         if let Some(effort) = pending {
             apply(agent, effort);
         }
+        if opted {
+            let status = match &outcome {
+                Some(Ok(_)) => crate::hub::Status::Review,
+                Some(Err(_)) => crate::hub::Status::Failed,
+                None => crate::hub::Status::Idle,
+            };
+            ext::status(&out, &session, status);
+        }
         match outcome {
             Some(Ok(turn)) => config::stop(&turn),
             Some(Err(error)) => Err(failure(error)),
@@ -263,36 +300,6 @@ where
                 Ok(json!({"stopReason": "cancelled"}))
             }
         }
-    }
-}
-
-impl Updates {
-    fn emit(&self, event: &Event) {
-        match event {
-            Event::Approval {
-                detail: Some(detail),
-                id,
-                persist,
-                dialog,
-            } => return self.ask(detail, id.as_deref(), *persist, *dialog),
-            Event::Usage {
-                prompt_tokens,
-                completion_tokens,
-                ..
-            } => usage(
-                &self.out,
-                &self.session,
-                self.window,
-                u64::from(*prompt_tokens) + u64::from(*completion_tokens),
-            ),
-            _other => {}
-        }
-        emit(&self.out, &self.session, event);
-    }
-
-    fn ask(&self, detail: &str, call: Option<&str>, persist: bool, dialog: u64) {
-        let request = permission::request(&self.session, detail, call, persist, dialog);
-        drop(self.out.send(frame_line(&request)));
     }
 }
 
@@ -324,6 +331,7 @@ fn during(
     params: &Value,
     steering: &Steering,
     pending: &mut Option<Option<Effort>>,
+    opted: bool,
 ) -> Reply {
     let mine = session_id(params) == session;
     match rpc::ask(method) {
@@ -332,7 +340,7 @@ fn during(
             *pending = Some(effort);
             Ok(json!({"configOptions": config::options(effort)}))
         }
-        Ask::Steer if mine => {
+        Ask::Extension if mine && ext::call(opted, method)? == ext::Method::Steer => {
             steering.push([UserInput::from(prompt_text(params))]);
             Ok(json!({}))
         }

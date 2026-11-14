@@ -26,7 +26,7 @@ pub(super) fn mcp(message: &Value, tools: &[Value]) -> Value {
         | Ask::SessionPrompt
         | Ask::SessionCancel
         | Ask::SessionSetConfigOption
-        | Ask::Steer
+        | Ask::Extension
         | Ask::ToolsCall
         | Ask::Unsupported => Err(rpc::unsupported(&method)),
     };

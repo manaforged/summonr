@@ -6,6 +6,9 @@
 
 mod support;
 
+#[path = "acp/ext.rs"]
+mod ext;
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, channel};
@@ -120,8 +123,26 @@ impl Editor {
         self.call(1, "initialize", json!({"protocolVersion": 1}))
     }
 
+    fn opt_in(&mut self) -> Value {
+        let meta = json!({"summonr.dev/ext": {"version": 1}});
+        self.call(
+            1,
+            "initialize",
+            json!({"protocolVersion": 1, "_meta": meta}),
+        )
+    }
+
     fn session(&mut self, cwd: &std::path::Path) -> String {
         self.initialize();
+        self.start(cwd)
+    }
+
+    fn ext_session(&mut self, cwd: &std::path::Path) -> String {
+        self.opt_in();
+        self.start(cwd)
+    }
+
+    fn start(&mut self, cwd: &std::path::Path) -> String {
         let reply = self.call(2, "session/new", json!({"cwd": cwd, "mcpServers": []}));
         reply["result"]["sessionId"]
             .as_str()
@@ -351,7 +372,7 @@ fn a_steer_during_a_prompt_reaches_the_next_model_request() {
     let home = tempfile::tempdir().expect("temp home");
     let model = Model::start(guarded_command());
     let mut editor = Editor::open(home.path(), &model);
-    let session = editor.session(home.path());
+    let session = editor.ext_session(home.path());
     editor.prompt(&session, "push it");
     let request = editor.until("session/request_permission", asked);
     let steer =
@@ -372,7 +393,7 @@ fn a_steer_with_no_turn_running_is_invalid_params() {
     let home = tempfile::tempdir().expect("temp home");
     let model = Model::start(Vec::new());
     let mut editor = Editor::open(home.path(), &model);
-    let session = editor.session(home.path());
+    let session = editor.ext_session(home.path());
     let steer = json!({"sessionId": session, "prompt": [{"type": "text", "text": "hi"}]});
     let reply = editor.call(4, "_summonr.dev/steer", steer);
     assert_eq!(reply["error"]["code"], -32602, "{reply}");

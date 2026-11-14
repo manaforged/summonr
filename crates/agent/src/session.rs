@@ -58,6 +58,25 @@ pub struct SessionInfo {
     pub format: u32,
 }
 
+/// The rows `summonr session list --json` prints, newest first.
+#[must_use]
+pub fn rows(sessions: &[SessionInfo]) -> serde_json::Value {
+    sessions
+        .iter()
+        .rev()
+        .map(|info| {
+            serde_json::json!({
+                "id": info.id,
+                "name": info.name,
+                "directory": info.cwd,
+                "model": info.model,
+                "preview": info.preview,
+                "format": info.format,
+            })
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Summary {
     cwd: Option<String>,

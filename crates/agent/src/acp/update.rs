@@ -1,11 +1,54 @@
 use serde_json::{Value, json};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::frame_line;
+use super::{ext, frame_line, permission};
 use crate::rpc;
 use crate::tools::Event;
 
-pub(super) fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
+pub(super) struct Updates {
+    pub(super) out: UnboundedSender<String>,
+    pub(super) session: String,
+    pub(super) window: Option<u32>,
+    pub(super) endpoint: String,
+    pub(super) ext: bool,
+}
+
+impl Updates {
+    pub(super) fn emit(&self, event: &Event) {
+        if self.ext {
+            ext::observe(self, event);
+        }
+        match event {
+            Event::Approval {
+                detail: Some(detail),
+                id,
+                persist,
+                dialog,
+            } => return self.ask(detail, id.as_deref(), *persist, *dialog),
+            Event::Usage {
+                prompt_tokens,
+                completion_tokens,
+                cost,
+                ..
+            } => {
+                let used = u64::from(*prompt_tokens) + u64::from(*completion_tokens);
+                usage(&self.out, &self.session, self.window, used);
+                if self.ext {
+                    ext::usage(self, used, *cost);
+                }
+            }
+            _other => {}
+        }
+        emit(&self.out, &self.session, event);
+    }
+
+    fn ask(&self, detail: &str, call: Option<&str>, persist: bool, dialog: u64) {
+        let request = permission::request(&self.session, detail, call, persist, dialog);
+        drop(self.out.send(frame_line(&request)));
+    }
+}
+
+fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
     let content = match event {
         Event::ToolCall {
             id,
@@ -90,7 +133,7 @@ pub(super) fn chunk(kind: &str, text: &str) -> Value {
     json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}})
 }
 
-pub(super) fn usage(out: &UnboundedSender<String>, session: &str, window: Option<u32>, used: u64) {
+fn usage(out: &UnboundedSender<String>, session: &str, window: Option<u32>, used: u64) {
     let Some(size) = window else {
         return;
     };

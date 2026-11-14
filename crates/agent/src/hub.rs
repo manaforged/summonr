@@ -116,7 +116,7 @@ pub(crate) const fn seen(status: Status) -> Status {
     }
 }
 
-fn asking(event: &Event) -> Option<bool> {
+pub(crate) fn asking(event: &Event) -> Option<bool> {
     match event {
         Event::Approval { detail, .. } => Some(detail.is_some()),
         Event::Elicit { form, .. } => Some(form.is_some()),

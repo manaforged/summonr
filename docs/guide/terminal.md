@@ -172,7 +172,7 @@ When two unnamed children change the same lines, that child's checkout stays on 
 
 Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message.
 
-A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal. A research child that calls `edit` or `write` is told it is read-only. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A child that calls `task` gets a refusal; every other tool works in a child, research children included. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 A `task` call can name a plugin agent with `agent`. Its instructions open the child's first message, its `tools` list limits what the child can call, and the child's row names that agent. Task card titles use workspace-relative paths, and a card with one child takes that child's title.
 

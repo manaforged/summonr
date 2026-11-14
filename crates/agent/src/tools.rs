@@ -240,10 +240,6 @@ impl ToolRegistry {
         self.browser = None;
     }
 
-    pub(crate) fn allow_shell(&mut self) {
-        self.policy.allow_shell();
-    }
-
     #[cfg(test)]
     pub(crate) async fn execute_for_test(&self, call: &ToolCall) -> Result<ToolOutput> {
         self.execute_outcome(call).await

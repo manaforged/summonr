@@ -703,7 +703,7 @@ A `task` call may name a plugin agent with `agent`; its instructions open the ch
 
 With `workspace: "shared"`, an `implement` child edits the parent checkout directly. Assign disjoint paths: edits are visible immediately and the harness does not reconcile or roll them back. No child checkout is created. The default `workspace: "isolated"` retains checkout isolation and completion reconciliation.
 
-A `research` child reads the parent workspace. It cannot write files or start background commands. It can run a foreground command. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task` gets a refusal. Children call `web` when `search` is on, and use the lead's MCP servers: an implement child gets every MCP tool the policy allows, and a research child gets the tools its server marks `readOnlyHint`. A child keeps the mail tools when its lead has them, so it can post to the lead's board; a research child cannot `send`, `post`, or `set`. A research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A `research` child gets the same tools as an implement child. It always works in the parent workspace, never an isolated checkout; its brief tells it to investigate and report, and to change the workspace only where the assignment asks. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task` gets a refusal. Children call `web` when `search` is on, use the lead's MCP servers, and keep the mail tools when the lead has them, so they can post to the lead's board. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 `task` with `background: true` starts the child and returns its id at once. `task` with `child: ID` reports its state, elapsed time, and last action while it runs, and its full result once it finishes; `kill: true` stops it. A turn does not end while a background child runs: summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it. **Clear** on a background status row dismisses that row for the current view without stopping the child. Its completion report and session log stay available. `task` with `child: ID` and `clear: true` performs the same dismissal through the native tool; combine `kill: true` and `clear: true` to stop and dismiss. An unknown child id returns an error without hiding another card. New children still appear.
 
@@ -733,7 +733,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `board` | `mail` module | `action` post, get, set, or list; `key`, `value` |
 | `mcp` | an MCP server has over 8 KB of tool schemas | Lists those servers' tool names; `query` returns matching tools with schemas; `tool` and `arguments` call one |
 
-The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. A read-only research child keeps the parent's tool list, so its first request reuses the parent's prompt cache. It can call `read`, `search`, `skill`, and, with `search` on, `web`; `run_command`, `edit`, and `write` are refused when called.
+The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. A child keeps the parent's tool list, so its first request reuses the parent's prompt cache.
 
 ## Modules
 
@@ -943,7 +943,7 @@ confirm = "risky"
 ```toml
 ask = ["git push", "git tag", "cargo publish", "npm publish", "gh release"]
 ```
-In a read-only research child, `edit`, `write`, and `run_command` are unavailable. A restricted write list refuses shell commands; file tools still use the list.
+A restricted write list refuses shell commands; file tools still use the list.
 
 ## Extend
 

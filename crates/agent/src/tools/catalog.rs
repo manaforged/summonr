@@ -113,7 +113,7 @@ impl ToolRegistry {
             Gate::SkillCatalog => self.probed().1,
             Gate::Language => self.language,
             Gate::LspAvailable => self.probed().0,
-            Gate::Writable => !self.policy.is_read_only() || self.policy.shell_allowed(),
+            Gate::Writable => !self.policy.is_read_only(),
             Gate::Web => self.search.is_some(),
             Gate::Browser => self.browser.is_some(),
             Gate::BrowserWritable => self.browser.is_some() && !self.policy.is_read_only(),

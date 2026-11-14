@@ -25,7 +25,6 @@ pub(crate) struct Policy {
     confirm: Gate,
     session_confirm: Gate,
     read_only: bool,
-    shell: bool,
     unrestricted: bool,
     deny: Vec<String>,
     ask: Vec<String>,
@@ -133,15 +132,6 @@ impl Policy {
 
     pub(crate) fn set_read_only(&mut self, on: bool) {
         self.read_only = on;
-    }
-
-    pub(crate) fn allow_shell(&mut self) {
-        self.shell = true;
-    }
-
-    #[must_use]
-    pub(crate) fn shell_allowed(&self) -> bool {
-        self.shell
     }
 
     #[must_use]

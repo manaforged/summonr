@@ -1,5 +1,5 @@
 {
-  "root": "src/",
+  "root": "crates/agent/src/",
   "tiers": [
     {
       "name": "core",
@@ -46,6 +46,8 @@
         "hunks",
         "checkpoint",
         "worktree",
+        "forge",
+        "scripts",
         "verify",
         "steps",
         "memory",
@@ -79,16 +81,7 @@
         "cron",
         "gateway",
         "acp",
-        "update",
         "splash"
-      ]
-    },
-    {
-      "name": "surface",
-      "modules": [
-        "tui",
-        "main",
-        "lib"
       ]
     }
   ],
@@ -190,10 +183,6 @@
       "tools"
     ],
     [
-      "mcp",
-      "tui"
-    ],
-    [
       "modules",
       "config"
     ],
@@ -234,10 +223,6 @@
       "tools"
     ],
     [
-      "review",
-      "runtime"
-    ],
-    [
       "rpc",
       "tools"
     ],
@@ -250,16 +235,8 @@
       "tools"
     ],
     [
-      "session",
-      "tui"
-    ],
-    [
       "skills",
       "plugins"
-    ],
-    [
-      "steps",
-      "tools"
     ],
     [
       "tools",

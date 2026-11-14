@@ -4,6 +4,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[path = "support/stub.rs"]
+mod stub;
+
 const BLESS: &str = "SUMMONR_BLESS";
 const OFFLINE_PROXY: &str = "http://127.0.0.1:9";
 const OFFLINE_SECS: u64 = 3;
@@ -182,17 +185,10 @@ fn a_custom_server_without_a_listing_is_asked_once_then_read_from_the_cache() {
 #[cfg(unix)]
 #[test]
 fn listing_never_starts_claude_code() {
-    use std::os::unix::fs::PermissionsExt;
     let home = Home::new();
     home.config("models_catalog = false\n[provider.anthropic]\naccess = \"plan\"\n");
-    let marker = home.path().join("claude-started");
-    let shim = home.path().join("bin/claude");
-    std::fs::write(
-        &shim,
-        format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
-    )
-    .unwrap();
-    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let shim = summonr_core::dirs::link_fixture("claude/started", &home.path().join("bin/claude"));
+    let marker = stub::state(&shim, "started");
     let home = home.offline();
     for args in [&[][..], &["--all"]] {
         home.list(args);

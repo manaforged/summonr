@@ -1,0 +1,254 @@
+use std::collections::BTreeSet;
+
+use serde_json::Value;
+
+use super::super::{
+    HOOKS, LSP, MCP, McpServer, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json, located,
+    renamed, scan,
+};
+
+const COMPONENTS: [&str; 6] = [
+    "skills",
+    "agents",
+    HOOKS,
+    MCP.key,
+    LSP.key,
+    crate::style::MANIFEST_KEY,
+];
+const MANIFEST_SKIPPED: [(&str, &str); 4] = [
+    ("workflows", "workflows"),
+    ("experimental", "themes, monitors, or evals"),
+    ("channels", "channels"),
+    ("dependencies", "plugin dependencies"),
+];
+
+pub(super) fn report(plugin: &Plugin, manifest: &Value, off: bool) -> String {
+    let mut lines = vec![format!(
+        "plugin\t{}\t{}",
+        plugin.name,
+        crate::config::tilde(&plugin.dir)
+    )];
+    lines.extend(describe(plugin));
+    lines.extend(skipped(plugin));
+    lines.extend(settings(plugin, manifest));
+    if off {
+        lines.push(format!(
+            "off\t{} stays unloaded until you remove it from [plugins] off",
+            plugin.name
+        ));
+    }
+    lines.join("\n")
+}
+
+pub(super) fn skipped(plugin: &Plugin) -> Vec<String> {
+    let mut lines = plugin.skipped_mods();
+    lines.extend(
+        UNSUPPORTED
+            .iter()
+            .filter(|(path, _)| plugin.dir.join(path).exists())
+            .map(|(path, what)| format!("skipped\t{path} (summonr does not load plugin {what})")),
+    );
+    lines.extend(
+        MANIFEST_SKIPPED
+            .iter()
+            .filter(|(key, _)| plugin.manifest.get(key).is_some())
+            .map(|(key, what)| format!("skipped\t{key} (summonr does not load plugin {what})")),
+    );
+    lines.extend(declared(plugin));
+    lines.extend(crate::plugins::lsp::unused(plugin));
+    let mut notes = Vec::new();
+    for agent in crate::plugins::agents::of_plugin(plugin, &plugin.dir) {
+        for field in agent.unapplied() {
+            notes.push(crate::skills::unapplied("agent", &agent.name, field));
+        }
+    }
+    for file in crate::skills::plugin_files(plugin) {
+        let dir = file.parent().and_then(std::path::Path::file_name);
+        let name = dir.map_or_else(|| plugin.name.clone(), |dir| dir.to_string_lossy().into());
+        match crate::skills::Meta::read(&file) {
+            Ok(meta) => notes.extend(meta.notes("skill", &name)),
+            Err(error) => notes.push(format!("skill {name}: {}", located(&file, error))),
+        }
+    }
+    for command in crate::plugins::commands::load(plugin) {
+        notes.extend(command.meta.notes("command", &command.name));
+    }
+    lines.extend(notes.into_iter().map(|note| format!("skipped\t{note}")));
+    lines
+}
+
+fn declared(plugin: &Plugin) -> Vec<String> {
+    let mut lines = Vec::new();
+    for key in COMPONENTS {
+        for source in plugin.declared(key).into_iter().flatten() {
+            let note = match &source {
+                Source::Outside(path) => format!("{key} {path} (outside the plugin)"),
+                Source::File(path) if !path.exists() => {
+                    format!("{key} {} (not found)", path.display())
+                }
+                Source::File(path) if [MCP.key, LSP.key].contains(&key) && !is_json(path) => {
+                    format!("{key} {} (summonr reads .json files only)", path.display())
+                }
+                Source::File(path) if key == "agents" && !path.is_file() => {
+                    format!("{key} {} (agents takes .md files)", path.display())
+                }
+                Source::File(_) | Source::Inline(_) => continue,
+            };
+            lines.push(format!("skipped\t{note}"));
+        }
+    }
+    lines
+}
+
+pub fn describe(plugin: &Plugin) -> Vec<String> {
+    let mut parts = Vec::new();
+    let skills = crate::skills::plugin_files(plugin).len();
+    if skills > 0 {
+        parts.push(format!("skills {skills}"));
+    }
+    push_names(&mut parts, "mcp", &servers(plugin));
+    push_names(
+        &mut parts,
+        "commands",
+        &sorted(
+            crate::plugins::commands::load(plugin)
+                .into_iter()
+                .map(|command| command.name),
+        ),
+    );
+    push_names(
+        &mut parts,
+        "agents",
+        &sorted(
+            crate::plugins::agents::of_plugin(plugin, &plugin.dir)
+                .into_iter()
+                .map(|agent| agent.name),
+        ),
+    );
+    push_names(
+        &mut parts,
+        "lsp",
+        &sorted(
+            crate::plugins::lsp::of(plugin, &plugin.dir)
+                .into_iter()
+                .filter_map(|server| server.key.split_once(':').map(|(_, name)| name.to_string())),
+        ),
+    );
+    push_names(
+        &mut parts,
+        "styles",
+        &sorted(
+            crate::style::of_plugin(plugin)
+                .into_iter()
+                .map(|style| style.name),
+        ),
+    );
+    let hooks = plugin.hooks().names();
+    if !hooks.is_empty() {
+        parts.push(format!("hooks {}", hooks.join(" ")));
+    }
+    if has_bin_file(plugin) {
+        parts.push("bin".to_string());
+    }
+    parts
+}
+
+fn push_names(parts: &mut Vec<String>, label: &str, names: &[String]) {
+    if !names.is_empty() {
+        parts.push(format!("{label} {}", names.join(" ")));
+    }
+}
+
+fn sorted(names: impl Iterator<Item = String>) -> Vec<String> {
+    let names: BTreeSet<String> = names.collect();
+    names.into_iter().collect()
+}
+
+pub(super) fn servers(plugin: &Plugin) -> Vec<String> {
+    plugin
+        .mcp_servers()
+        .into_iter()
+        .map(|server| server.name)
+        .collect()
+}
+
+fn has_bin_file(plugin: &Plugin) -> bool {
+    plugin.bin().is_some_and(|dir| {
+        summonr_core::walk::children(&dir).any(|entry| {
+            entry
+                .file_type()
+                .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
+        })
+    })
+}
+
+fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+    if manifest.get("userConfig").is_some() {
+        lines.push("skipped\tuserConfig (summonr does not prompt for plugin settings)".to_string());
+    }
+    let user = user_servers();
+    if let Err(error) = &user {
+        lines.push(format!("warning\t{error}"));
+    }
+    for (server, keys) in config_needs(plugin, user.ok()) {
+        let tokens = keys
+            .iter()
+            .map(|key| format!("{USER_CONFIG}{key}}}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let table = format!("mcp.{}", server.name);
+        lines.push(format!(
+            "warning\tmcp {} uses {tokens}; set [{table}.user_config] or env in [{table}]",
+            server.key
+        ));
+    }
+    lines
+}
+
+pub(super) fn settings_servers(plugin: &Plugin) -> BTreeSet<String> {
+    config_needs(plugin, user_servers().ok())
+        .into_iter()
+        .map(|(server, _)| server.name)
+        .collect()
+}
+
+type UserServers = std::collections::BTreeMap<String, summonr_types::mcp::Entry>;
+
+fn user_servers() -> summonr_core::error::Result<UserServers> {
+    crate::config::file().map(|file| file.mcp.clone())
+}
+
+fn config_needs(plugin: &Plugin, user: Option<UserServers>) -> Vec<(McpServer, Vec<String>)> {
+    let servers = plugin.mcp_servers();
+    let user = user.map(|user| renamed(user, &plugin.legacy_names(&servers)));
+    servers
+        .into_iter()
+        .filter_map(|server| {
+            let own = server.config.get("user_config").and_then(Value::as_object);
+            let set: BTreeSet<&String> = user
+                .as_ref()
+                .and_then(|user| user.get(&server.name))
+                .into_iter()
+                .flat_map(|entry| entry.user_config.keys())
+                .chain(own.into_iter().flat_map(serde_json::Map::keys))
+                .collect();
+            let keys: Vec<String> = config_keys(&server.config.to_string())
+                .into_iter()
+                .filter(|key| !set.contains(key))
+                .collect();
+            (!keys.is_empty()).then_some((server, keys))
+        })
+        .collect()
+}
+
+fn config_keys(text: &str) -> BTreeSet<String> {
+    let keys = std::cell::RefCell::new(BTreeSet::new());
+    scan(text, USER_CONFIG, |key| {
+        if summonr_core::text::is_name(key, summonr_core::text::Charset::Dotted) {
+            keys.borrow_mut().insert(key.to_string());
+        }
+        None
+    });
+    keys.into_inner()
+}

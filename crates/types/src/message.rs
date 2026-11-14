@@ -5,6 +5,7 @@ use summonr_core::error::{Error, Result};
 
 use crate::Usage;
 
+/// The role of a chat message.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -14,6 +15,7 @@ pub enum Role {
     Tool,
 }
 
+/// An image as its media type and base64 data.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Image {
     pub media_type: String,
@@ -21,6 +23,7 @@ pub struct Image {
 }
 
 impl Image {
+    /// The image of `bytes` with media type `media_type`.
     pub fn encode(media_type: impl Into<String>, bytes: &[u8]) -> Self {
         Self {
             media_type: media_type.into(),
@@ -28,17 +31,20 @@ impl Image {
         }
     }
 
+    /// The decoded image bytes.
     pub fn bytes(&self) -> Result<Vec<u8>> {
         base64::engine::general_purpose::STANDARD
             .decode(&self.data)
             .map_err(|error| Error::Config(format!("cannot decode stored image: {error}")))
     }
 
+    /// The image as a `data:` URL.
     pub fn url(&self) -> String {
         format!("data:{};base64,{}", self.media_type, self.data)
     }
 }
 
+/// What the user sent: text, images, and the text as typed before expansion.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UserInput {
     pub text: String,
@@ -46,6 +52,7 @@ pub struct UserInput {
     pub source: Option<Source>,
 }
 
+/// The user's text as typed, and how many images it had, before expansion.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Source {
     pub text: String,
@@ -72,6 +79,7 @@ impl From<String> for UserInput {
     }
 }
 
+/// One chat message sent to a provider.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Message {
     pub role: Role,
@@ -100,6 +108,7 @@ pub struct Message {
 }
 
 impl Message {
+    /// A system message.
     pub fn system(content: impl Into<String>) -> Self {
         Self {
             role: Role::System,
@@ -113,6 +122,7 @@ impl Message {
         }
     }
 
+    /// A user message.
     pub fn user(input: impl Into<UserInput>) -> Self {
         let input = input.into();
         Self {
@@ -127,6 +137,7 @@ impl Message {
         }
     }
 
+    /// A tool result message for `call_id`.
     pub fn tool(call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: Role::Tool,
@@ -141,6 +152,7 @@ impl Message {
     }
 }
 
+/// The kind of a tool call; only functions exist.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolKind {
@@ -148,6 +160,7 @@ pub enum ToolKind {
     Function,
 }
 
+/// One tool call from the assistant.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ToolCall {
     pub id: String,
@@ -158,6 +171,7 @@ pub struct ToolCall {
     pub continuation: Option<Continuation>,
 }
 
+/// Provider state a later request must send back to continue a turn.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "provider", rename_all = "snake_case")]
 pub enum Continuation {
@@ -179,6 +193,7 @@ pub enum Continuation {
     },
 }
 
+/// Whether a tool call's arguments were parsed as JSON.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Checked {
     #[default]
@@ -187,6 +202,7 @@ pub enum Checked {
     Invalid,
 }
 
+/// The function name and JSON arguments of a tool call.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ToolFunction {
     pub name: String,
@@ -204,6 +220,7 @@ impl PartialEq for ToolFunction {
 impl Eq for ToolFunction {}
 
 impl ToolFunction {
+    /// Parses the arguments once and records the result.
     pub fn check(&mut self) {
         self.checked = if parses(&self.arguments) {
             Checked::Valid
@@ -212,6 +229,7 @@ impl ToolFunction {
         };
     }
 
+    /// Whether the arguments are valid JSON.
     pub fn valid(&self) -> bool {
         match self.checked {
             Checked::Valid => true,
@@ -225,6 +243,7 @@ fn parses(arguments: &str) -> bool {
     serde_json::from_str::<Value>(arguments).is_ok()
 }
 
+/// The assistant's reply from a provider.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AssistantMessage {
     #[serde(default)]
@@ -241,6 +260,7 @@ pub struct AssistantMessage {
     pub continuation: Option<Continuation>,
 }
 
+/// Why the assistant stopped.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
@@ -253,6 +273,7 @@ pub enum StopReason {
 }
 
 impl AssistantMessage {
+    /// The reply as a chat message for the history.
     pub fn into_message(self) -> Message {
         Message {
             role: Role::Assistant,
@@ -267,6 +288,7 @@ impl AssistantMessage {
     }
 }
 
+/// Deserializes a list that may be `null` as an empty list.
 pub fn vec_or_null<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -275,6 +297,7 @@ where
     Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+/// Deserializes a reasoning field given as a string or an object with text.
 pub fn reasoning_field<'de, D>(deserializer: D) -> std::result::Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,

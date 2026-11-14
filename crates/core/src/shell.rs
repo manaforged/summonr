@@ -11,11 +11,13 @@ use dunce::simplified;
 use crate::error::Error;
 use crate::error::Result;
 
+/// The shell program that runs commands: `bash`.
 #[cfg(unix)]
 pub fn program() -> Result<String> {
     Ok("bash".to_string())
 }
 
+/// The shell program that runs commands: Windows PowerShell.
 #[cfg(windows)]
 pub fn program() -> Result<String> {
     let root = std::env::var_os("SystemRoot")
@@ -38,11 +40,13 @@ pub fn program() -> Result<String> {
     })
 }
 
+/// The shell arguments that run `script`.
 #[cfg(unix)]
 pub fn arguments(script: &str, _: &Path) -> Vec<String> {
     vec!["-c".to_string(), script.to_string()]
 }
 
+/// The PowerShell arguments that run `script` in `cwd`.
 #[cfg(windows)]
 pub fn arguments(script: &str, cwd: &Path) -> Vec<String> {
     vec![
@@ -55,10 +59,13 @@ pub fn arguments(script: &str, cwd: &Path) -> Vec<String> {
     ]
 }
 
+/// `text` in single quotes for a POSIX shell.
+#[cfg(any(unix, test))]
 pub fn quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
+/// `command` in a script that writes its exit code to `exit`.
 #[cfg(unix)]
 pub fn wrap(command: &str, exit: &Path, _: &Path) -> String {
     let exit = quote(&exit.to_string_lossy());
@@ -67,6 +74,7 @@ pub fn wrap(command: &str, exit: &Path, _: &Path) -> String {
     )
 }
 
+/// `command` in a PowerShell script that writes its exit code to `exit`.
 #[cfg(windows)]
 pub fn wrap(command: &str, exit: &Path, cwd: &Path) -> String {
     let exit = simplified(exit).to_string_lossy().replace('\'', "''");
@@ -86,6 +94,7 @@ fn encode(script: &str, cwd: &Path) -> String {
     STANDARD.encode(bytes)
 }
 
+/// `command` split at each of `delimiters` outside quotes and `$(...)`.
 pub fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
     let mut segments = Vec::new();
     let mut current = String::new();

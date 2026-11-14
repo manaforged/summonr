@@ -7,6 +7,9 @@ mod content;
 mod defer;
 #[path = "mcp/diff.rs"]
 mod diff;
+#[cfg(unix)]
+#[path = "mcp/hooks.rs"]
+mod hooks;
 #[path = "mcp/lifecycle.rs"]
 mod lifecycle;
 #[path = "mcp/manage.rs"]
@@ -24,6 +27,9 @@ mod progress;
 #[path = "mcp/protocol.rs"]
 mod protocol;
 #[cfg(unix)]
+#[path = "mcp/scripts.rs"]
+mod scripts;
+#[cfg(unix)]
 #[path = "mcp/search_index.rs"]
 mod search_index;
 #[cfg(unix)]
@@ -31,6 +37,8 @@ mod search_index;
 mod secrets;
 #[path = "mcp/session.rs"]
 mod session;
+#[path = "mcp/settings.rs"]
+mod settings;
 mod support;
 #[path = "mcp/tools.rs"]
 mod tools;
@@ -74,6 +82,7 @@ fn main() {
         tools::tools_disabled_modules_are_hidden_and_refuse_calls,
         torn::a_session_resumes_with_any_state_file_torn,
         content::a_server_prompt_becomes_the_user_message,
+        content::a_server_prompt_runs_from_its_mcp_spelling,
         content::a_prompt_without_its_required_argument_is_refused,
         content::a_server_resource_is_attached_to_the_prompt,
         content::a_changed_prompt_list_is_fetched_again,
@@ -113,23 +122,44 @@ fn main() {
         plugins::a_legacy_bundle_installs_and_an_unreachable_server_fails_it,
         plugin_install::plugin_install_refuses_a_tree_that_adds_nothing,
         plugin_install::plugin_install_keeps_the_copy_when_json_does_not_parse,
+        plugin_install::a_broken_plugin_file_is_one_note_and_the_session_runs,
         plugin_install::plugin_reinstall_keeps_plugin_data,
         plugin_install::plugin_unknown_off_warns_without_blocking_list_or_session_start,
         plugin_install::plugin_uninstall_removes_an_unknown_off_name,
         plugin_install::plugin_install_skips_a_server_turned_off_in_config,
         plugin_install::plugin_install_counts_only_language_servers_that_load,
+        plugin_install::plugin_install_names_the_file_and_key_of_a_server_of_the_wrong_shape,
+        #[cfg(unix)]
+        plugin_install::plugin_configured_user_config_clears_the_warning_and_env_expands_once,
+        #[cfg(unix)]
+        plugin_install::plugin_user_env_sees_the_plugin_root,
         #[cfg(unix)]
         plugin_install::plugin_user_config_reaches_the_server,
         #[cfg(unix)]
         plugin_install::plugin_user_env_replaces_the_server_env,
         #[cfg(unix)]
         plugin_install::plugin_non_command_hook_is_skipped_and_does_not_run,
+        plugin_install::a_marketplace_is_added_listed_installed_from_and_removed,
+        #[cfg(unix)]
+        plugin_install::a_git_source_installs_with_the_entry_merged_into_its_manifest,
         #[cfg(unix)]
         plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
         #[cfg(unix)]
         plugins::a_hook_matcher_limits_the_tools_it_runs_for,
         #[cfg(unix)]
         plugins::a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_grep,
+        #[cfg(unix)]
+        plugins::pre_tool_context_reaches_the_model_next_to_the_result,
+        #[cfg(unix)]
+        plugins::a_pre_tool_hook_rewrites_a_scout_call,
+        #[cfg(unix)]
+        plugins::subagent_hooks_open_and_hold_a_child,
+        #[cfg(unix)]
+        plugins::a_provider_error_runs_stop_failure_instead_of_stop,
+        #[cfg(unix)]
+        hooks::a_print_run_opens_and_closes_its_session_hooks,
+        #[cfg(unix)]
+        hooks::a_turn_cut_by_the_time_limit_still_runs_stop,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -141,6 +171,12 @@ fn main() {
         output::a_json_run_starts_with_its_session_id,
         diff::turn_last_shows_the_latest_turn_of_a_resumed_session_without_generated_files,
         diff::a_turn_diff_names_its_session,
+        #[cfg(unix)]
+        scripts::each_new_worktree_runs_setup_on_its_own_port_block,
+        #[cfg(unix)]
+        scripts::a_failed_setup_stops_the_run_naming_the_script_and_its_code,
+        #[cfg(unix)]
+        scripts::a_gitignored_env_file_reaches_a_new_worktree_before_setup_reads_it,
         session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
         session::a_failed_worktree_run_without_changes_says_so,
         session::a_goal_run_reports_the_judge_usage_once,
@@ -163,6 +199,15 @@ fn main() {
         policy::an_unapproved_project_server_is_named,
         policy::a_tuning_table_keeps_a_project_server_waiting,
         policy::a_zero_timeout_is_refused,
+        policy::a_local_claude_server_replaces_the_project_one_whole,
+        policy::a_websocket_server_is_skipped_and_named,
+        policy::a_project_server_of_the_wrong_shape_is_a_note_and_the_session_runs,
+        #[cfg(unix)]
+        settings::claude_settings_hooks_and_env_load_only_when_imported,
+        settings::a_project_deny_rule_holds_only_in_a_trusted_workspace,
+        settings::a_malformed_settings_file_is_a_note_and_the_session_runs,
+        #[cfg(unix)]
+        policy::an_unset_variable_without_a_default_reaches_the_server_as_written,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_relocated_summonr_home_stays_protected_from_read_and_search,
         #[cfg(unix)]
@@ -182,6 +227,11 @@ fn main() {
         protocol::an_aborted_call_is_cancelled,
         protocol::a_cancel_sent_at_exit_reaches_a_slow_server,
         transport::a_call_with_no_reply_is_cancelled_at_the_timeout,
+        transport::a_claude_timeout_in_milliseconds_cancels_a_call,
+        #[cfg(unix)]
+        transport::a_headers_helper_header_replaces_the_static_one,
+        transport::a_project_server_never_receives_a_credential_variable,
+        transport::peer_mail_waits_for_a_pending_mcp_call,
         transport::a_timed_out_reply_does_not_break_the_next_call,
         transport::a_request_the_server_does_not_read_times_out,
         transport::a_remote_server_reconnects_after_its_session_expires,

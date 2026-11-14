@@ -1,11 +1,18 @@
-use summonr::{Error, Result, is_endpoint};
+use summonr_agent::{Error, Result, is_endpoint};
 
-use flags::{COMMANDS, CONFLICTS, FLAGS, Input};
+use commands::COMMANDS;
+use flags::{ALIASES, CONFLICTS, FLAGS, Input};
 
+#[path = "cli/commands.rs"]
+mod commands;
+#[path = "cli/cron.rs"]
+mod cron;
 #[path = "cli/flags.rs"]
 mod flags;
 #[path = "cli/help.rs"]
 mod help;
+#[path = "cli/integrations.rs"]
+mod integrations;
 #[path = "cli/mcp.rs"]
 mod mcp;
 #[path = "cli/typo.rs"]
@@ -16,39 +23,44 @@ pub(super) use mcp::McpCommand;
 
 #[derive(Clone, Debug)]
 pub(super) enum Verb {
-    Endpoints,
-    Sessions,
+    EndpointList,
+    EndpointUsage,
+    SessionList,
     Doctor,
     Classify,
     Export,
     Profile,
     Workflows,
     Modules,
-    Install,
-    Uninstall,
+    PluginInstall,
+    PluginRemove,
+    Marketplace(summonr_agent::plugins::market::Command),
     Update,
     Acp,
-    Mail(Vec<String>),
-    Cron(Vec<String>),
-    Gateway(Vec<String>),
-    Tool(Vec<String>),
+    Mail(summonr_agent::mail::cli::Command),
+    Cron(Box<summonr_agent::cron::cli::Command>),
+    Panel(summonr_agent::panel::cli::Command),
+    Gateway(summonr_agent::gateway::cli::Command),
+    Tool { name: String, arguments: String },
     Mcp(McpCommand),
     Login,
     Logout,
     Worktrees,
     Diff,
+    Children,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct Args {
     pub(super) verb: Option<Verb>,
     pub(super) print: bool,
-    pub(super) effort: Option<summonr::Effort>,
+    pub(super) effort: Option<summonr_agent::Effort>,
     pub(super) json: bool,
     pub(super) live: bool,
     pub(super) grep: Option<String>,
     pub(super) logs: bool,
     pub(super) report: bool,
+    pub(super) schema: bool,
     pub(super) all: bool,
     pub(super) last: Option<usize>,
     pub(super) name: Option<String>,
@@ -66,6 +78,7 @@ pub(super) struct Args {
     pub(super) endpoint: Option<String>,
     pub(super) model: Option<String>,
     pub(super) workflow: Option<String>,
+    pub(super) skills: Option<String>,
     pub(super) steps: Option<String>,
     pub(super) goal: Option<String>,
     pub(super) prompt: Vec<String>,
@@ -74,11 +87,13 @@ pub(super) struct Args {
     pub(super) gui: bool,
     pub(super) stat: bool,
     pub(super) turn: Option<String>,
+    pub(super) child: Option<String>,
     pub(super) prune_worktrees: bool,
     pub(super) key: bool,
     pub(super) url: Option<String>,
     pub(super) default: bool,
     pub(super) remove: bool,
+    pub(super) add: bool,
     pub(super) questions: Option<String>,
     pub(super) noul: Vec<String>,
     pub(super) review: bool,
@@ -89,10 +104,18 @@ pub(super) struct Args {
     pub(super) digest: bool,
     pub(super) add_list: bool,
     pub(super) arity: Option<(&'static str, usize)>,
+    taken: usize,
 }
 
-pub(super) fn parse() -> Result<Args> {
-    parse_from(std::env::args().skip(1))
+pub(super) fn parse(window: bool) -> Result<Args> {
+    let mut args = parse_from(std::env::args().skip(1))?;
+    if args.gui && !window {
+        return Err(Error::Setup(
+            "the window is the Summonr desktop app, `summonr-desktop`".to_string(),
+        ));
+    }
+    args.gui |= window && std::env::args_os().len() == 1;
+    Ok(args)
 }
 
 enum Step {
@@ -130,11 +153,11 @@ impl Args {
     fn step(&mut self, input: &mut Input, arg: &str, command: bool) -> Result<Step> {
         if let Some(row) = FLAGS.find(arg, self) {
             FLAGS.apply(row, arg, self, input)?;
-        } else if let Some((name, most, run)) =
-            COMMANDS.iter().find(|(name, ..)| command && *name == arg)
-        {
-            self.arity = most.map(|most| (*name, most));
-            run(self, input)?;
+        } else if let Some(row) = COMMANDS.iter().find(|row| command && row.name == arg) {
+            self.arity = row.most.map(|most| (row.name, most));
+            (row.run)(self, input)?;
+        } else if let Some((_, full)) = ALIASES.iter().find(|(old, _)| command && *old == arg) {
+            self.subcommand(full, input)?;
         } else if arg.starts_with('-') {
             return Err(misplaced(arg));
         } else {
@@ -173,7 +196,10 @@ impl Args {
     }
 
     fn verb(&self) -> Option<&'static str> {
-        FLAGS.scoped(self)
+        self.arity
+            .map(|(name, _)| name)
+            .filter(|name| name.contains(' '))
+            .or_else(|| FLAGS.scoped(self))
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {
@@ -182,6 +208,11 @@ impl Args {
     }
 
     fn check_names(&self) -> Result<()> {
+        if self.add && (self.endpoint.is_none() || (self.url.is_none() && self.model.is_none())) {
+            return Err(Error::Setup(
+                "`summonr endpoint add NAME --url URL [--model NAME]`".to_string(),
+            ));
+        }
         if matches!(self.verb, Some(Verb::Login))
             && self.url.is_none()
             && let Some(name) = self.endpoint.as_deref()
@@ -201,7 +232,7 @@ impl Args {
 
     fn check(&self) -> Result<()> {
         if let Some((_, message)) = CONFLICTS.iter().find(|(broken, _)| broken(self)) {
-            return Err(Error::Config((*message).to_string()));
+            return Err(Error::Setup((*message).to_string()));
         }
         if let Some(mode) = [
             ("--goal", self.goal.is_some()),
@@ -211,7 +242,7 @@ impl Args {
         .find_map(|(mode, on)| on.then_some(mode))
             && let Some(extra) = self.prompt.first()
         {
-            return Err(Error::Config(format!(
+            return Err(Error::Setup(format!(
                 "{mode} takes no prompt; put `{extra}` in the objective or the plan"
             )));
         }
@@ -224,10 +255,10 @@ impl Args {
             return Ok(());
         };
         match self.prompt.get(most) {
-            Some(extra) if most == 0 => Err(Error::Config(format!(
+            Some(extra) if most + self.taken == 0 => Err(Error::Setup(format!(
                 "`summonr {verb}` takes no arguments; got `{extra}`"
             ))),
-            Some(extra) => Err(Error::Config(format!(
+            Some(extra) => Err(Error::Setup(format!(
                 "`summonr {verb}` takes one argument; got extra `{extra}`"
             ))),
             None => Ok(()),
@@ -241,8 +272,8 @@ fn misplaced(option: &str) -> Error {
         .iter()
         .map(|verb| format!("`summonr {verb}`"))
         .collect();
-    Error::Config(if verbs.is_empty() {
-        format!("unknown option `{option}`")
+    Error::Setup(if verbs.is_empty() {
+        summonr_agent::table::unknown_option(option)
     } else {
         format!("`{option}` works only after {}", verbs.join(" or "))
     })
@@ -250,27 +281,23 @@ fn misplaced(option: &str) -> Error {
 
 fn unlisted(login: bool) -> &'static str {
     if login {
-        "; add a server with `summonr login NAME --url URL [--model NAME]`"
+        "; add a server with `summonr endpoint add NAME --url URL [--model NAME]`"
     } else {
         ""
     }
 }
 
 fn unknown(name: &str, tail: &str) -> Error {
-    let names = summonr::endpoint_names().unwrap_or_default();
-    let hint = summonr::closest_endpoint(name, &names, summonr::EndpointNear::Typo)
+    let names = summonr_agent::endpoint_names().unwrap_or_default();
+    let hint = summonr_agent::closest_endpoint(name, &names, summonr_agent::EndpointNear::Typo)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
-    Error::Config(format!(
-        "unknown endpoint `{name}`: {hint}`summonr endpoints` lists them{tail}"
+    Error::Setup(format!(
+        "unknown endpoint `{name}`: {hint}`summonr endpoint list` lists them{tail}"
     ))
 }
 
 fn named(token: &str) -> bool {
-    !token.is_empty()
-        && token.len() <= 40
-        && token
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    token.len() <= 40 && summonr_core::text::is_name(token, summonr_core::text::Charset::Dotted)
 }
 
 #[cfg(test)]

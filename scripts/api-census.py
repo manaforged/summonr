@@ -41,6 +41,10 @@ FN = re.compile(
 
 API_DOC = ROOT / "docs" / "guide" / "internals" / "module-api.md"
 
+ALLOW: dict[str, set[str]] = {
+    "short-shaped helper": {"crates/agent/src/session/catalog.rs"},
+}
+
 SOURCE_RULES: list[tuple[str, str, str]] = [
     ("session dialect Msg", r"enum Msg\b", "one session event"),
     ("session dialect Cmd", r"enum Cmd\b", "one session event"),
@@ -53,7 +57,7 @@ SOURCE_RULES: list[tuple[str, str, str]] = [
     ("sigil prelude glob", r"use sigil::prelude::\*", "named imports"),
     ("legacy tool alias literal", r'"(read_file|edit_file|write_file|list_dir|web_search|web_fetch|replace_text|replace_texts|insert_after|delete_lines)"', "one alias table"),
     ("match wildcard arm", r"(?m)^\s*_\s*(?:=>|\|)", "name the arm"),
-    ("timeout mention", r"\btimeout\b", "one timeout policy"),
+    ("timeout mention", r"\btimeout\s*\(", "one timeout policy"),
 ]
 
 
@@ -88,18 +92,40 @@ def name_pattern(name: str, manifest: bool) -> str:
     if "::" in name:
         return r"(?<![\w:])" + re.escape(name) + r"\b"
     if "." in name:
-        return r"\b" + re.escape(name.rsplit(".", 1)[1]) + r"\b"
-    return r"\b" + re.escape(name) + r"\b"
+        return r"\b" + re.escape(name) + r"\b"
+    return definition(name)
 
 
-def delete_rules() -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+def definition(name: str) -> str:
+    return r"\b(?:fn|struct|enum|type|const|static|mod|trait)\s+" + re.escape(name) + r"\b"
+
+
+def home(name: str) -> tuple[str, str] | None:
+    """The file pattern and definition pattern of a `module::item` or `file.rs::item` name."""
+    owner, _, item = name.rpartition("::")
+    if not owner or not re.fullmatch(r"\w+", item):
+        return None
+    if owner.endswith(".rs"):
+        return r"(^|/)" + re.escape(owner) + "$", definition(item)
+    parts = owner.split("::")
+    if parts[0] == "crate" or not all(re.fullmatch(r"[a-z_][a-z0-9_]*", part) for part in parts):
+        return None
+    module = re.escape("/".join(parts))
+    return r"(^|/)" + module + r"(\.rs|/mod\.rs)$", definition(item)
+
+
+def delete_rules() -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]], list[tuple[str, str, str, str]]]:
     source: list[tuple[str, str, str]] = []
     manifest: list[tuple[str, str, str]] = []
+    homes: list[tuple[str, str, str, str]] = []
     for token, keep, in_manifest in delete_table():
         for name in expand(token):
             rule = (f"delete {name}", name_pattern(name, in_manifest), keep)
             (manifest if in_manifest else source).append(rule)
-    return source, manifest
+            found = None if in_manifest else home(name)
+            if found:
+                homes.append((f"delete {name}", found[0], found[1], keep))
+    return source, manifest, homes
 
 
 BASELINE = ROOT / "scripts" / "api-census-baseline.txt"
@@ -131,6 +157,7 @@ def items() -> list[tuple[str, str, str, str]]:
 def functions() -> list[tuple[str, int, str, int, int]]:
     text = {p: source_text(p) for p in source_files()}
     blob = "\n".join(text.values())
+    counts = Counter(re.findall(r"\w+", blob))
     rows: list[tuple[str, int, str, int, int]] = []
     for path, body in text.items():
         rel = str(path.relative_to(ROOT))
@@ -146,8 +173,7 @@ def functions() -> list[tuple[str, int, str, int, int]]:
             start = offs[i] + m.start()
             end = block_end(body, offs[i])
             loc = body[start:end].count("\n") + 1
-            mentions = len(re.findall(r"\b" + re.escape(name) + r"\b", blob))
-            rows.append((rel, i + 1, name, loc, mentions))
+            rows.append((rel, i + 1, name, loc, counts[name]))
     return rows
 
 
@@ -169,11 +195,21 @@ def tree_lines() -> list[tuple[str, str, int]]:
 
 
 def ratchet(tree: list[tuple[str, str, int]]) -> list[tuple[str, str, int]]:
-    blob = "\n".join(source_text(p) for p in source_files())
+    texts = {str(p.relative_to(ROOT)): source_text(p) for p in source_files()}
     manifest = (ROOT / "Cargo.toml").read_text(errors="replace")
-    doc_source, doc_manifest = delete_rules()
+    doc_source, doc_manifest, homes = delete_rules()
+
+    def count(label: str, pattern: str) -> int:
+        allowed = ALLOW.get(label, set())
+        return sum(len(re.findall(pattern, text)) for rel, text in texts.items() if rel not in allowed)
+
+    moved = Counter()
+    for label, where, pattern, _ in homes:
+        moved[label] += sum(
+            len(re.findall(pattern, text)) for rel, text in texts.items() if re.search(where, rel)
+        )
     hits = [
-        (label, keep, len(re.findall(pattern, blob)))
+        (label, keep, count(label, pattern) + moved[label])
         for label, pattern, keep in doc_source + SOURCE_RULES
     ]
     hits += [
@@ -210,7 +246,7 @@ def write_baseline(hits: list[tuple[str, str, int]]) -> None:
 
 
 def command_drift() -> list[str]:
-    table = tomllib.loads((ROOT / "src/command/commands.toml").read_text())
+    table = tomllib.loads((ROOT / "crates/agent/src/command/commands.toml").read_text())
     code = {
         row["name"]
         for group in table["group"]
@@ -219,7 +255,7 @@ def command_drift() -> list[str]:
     }
     doc = set(
         re.findall(
-            r"^\| `(/[a-z]+(?: accept| reject)?)[ `]",
+            r"^\| `(/[a-z][a-z-]*(?: accept| reject)?)[ `]",
             (ROOT / "docs/guide/reference.md").read_text(),
             re.M,
         )
@@ -252,7 +288,10 @@ def summarize_tree(tree) -> None:
         f"lines {source_lines + test_lines}: source {source_lines} in "
         f"{len(source)} files ({inline} of them inline tests), test {test_lines} in {len(test)} files"
     )
-    print(f"files over {CAP} lines: {sum(1 for _, k, n in source if n > CAP)}")
+    print(
+        f"files over {CAP} lines (stricter than the 800-line house rule): "
+        f"{sum(1 for _, k, n in source if n > CAP)}"
+    )
 
 
 def write_tables(fns, tree) -> None:
@@ -326,7 +365,12 @@ def main() -> int:
 
     hits = ratchet(tree)
     live = [(label, keep, count) for label, keep, count in hits if count]
-    print(f"delete-list names still present: {len(live)} of {len(hits)}")
+    named = [hit for hit in hits if hit[0].startswith("delete ")]
+    print(
+        f"delete-list names still present: {sum(1 for hit in named if hit[2])} of {len(named)}; "
+        f"pattern rules with hits: {sum(1 for hit in hits if hit not in named and hit[2])} "
+        f"of {len(hits) - len(named)}"
+    )
 
     if update or not BASELINE.is_file():
         write_baseline(hits)

@@ -5,7 +5,7 @@ use std::path::Path;
 use leyline::Session;
 use sha2::{Digest, Sha256};
 
-use crate::process::{self, Spec};
+use summonr_agent::process::{self, Spec};
 use summonr_core::error::{Error, Result};
 
 const RELEASES: &str = "https://github.com/manaforged/summonr/releases";
@@ -51,7 +51,7 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     }
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     sweep(dir);
-    let http = crate::credentials::http(crate::limits::limits().update())?;
+    let http = summonr_agent::credentials::http(summonr_agent::limits::limits().update())?;
     let latest = latest(&http, source.releases).await?;
     match newer(&latest, source.current) {
         Ordering::Equal => return Ok(Outcome::Current(latest)),
@@ -66,8 +66,8 @@ pub async fn run(source: &Source<'_>, exe: &Path) -> Result<Outcome> {
     let asset = format!("{name}.{ARCHIVE}");
     let base = format!("{}/download/v{latest}", source.releases);
     eprintln!("Downloading {asset} ({latest})");
-    let archive = fetch(&http, &format!("{base}/{asset}")).await?;
-    let listed = fetch(&http, &format!("{base}/{asset}.sha256")).await?;
+    let (archive_url, sum_url) = (format!("{base}/{asset}"), format!("{base}/{asset}.sha256"));
+    let (archive, listed) = tokio::try_join!(fetch(&http, &archive_url), fetch(&http, &sum_url))?;
     check(&archive, &listed, &asset)?;
     unpack(stage.path(), &asset, &archive)?;
     let fresh = stage.path().join(&name).join(BINARY);
@@ -87,7 +87,7 @@ fn sweep(dir: &Path) {
                 .and_then(|meta| meta.modified())
                 .ok()
                 .and_then(|modified| modified.elapsed().ok())
-                .is_some_and(|age| age > crate::limits::limits().update());
+                .is_some_and(|age| age > summonr_agent::limits::limits().update());
         if stale {
             drop(std::fs::remove_dir_all(entry.path()));
         }
@@ -141,20 +141,9 @@ fn newer(latest: &str, current: &str) -> Ordering {
 }
 
 async fn fetch(http: &Session, url: &str) -> Result<Vec<u8>> {
-    let failed = |why: String| Error::Setup(format!("cannot download {url}: {why}"));
-    let response = http
-        .get(url)
-        .send()
+    summonr_agent::credentials::download(http, url, None)
         .await
-        .map_err(|error| failed(error.to_string()))?;
-    if !response.status().is_success() {
-        return Err(failed(format!("HTTP {}", response.status().as_u16())));
-    }
-    response
-        .bytes()
-        .await
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| failed(error.to_string()))
+        .map_err(Error::Setup)
 }
 
 fn check(archive: &[u8], listed: &[u8], asset: &str) -> Result<()> {

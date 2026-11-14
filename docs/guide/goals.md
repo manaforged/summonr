@@ -1,6 +1,6 @@
 # Goals and checks
 
-This page shows you how to make summonr work until your check command passes, run a numbered plan, and read what a run changed.
+This page shows you how to run a goal against a check command, run a numbered plan, and read what a run changed.
 
 ## Set a check
 
@@ -26,7 +26,11 @@ With no check file, `/goal` in the interface detects a check from the workspace 
 | `package.json` with a non-empty `test` script | `npm test` |
 | `go.mod` | `go test ./...` |
 
-A Python project gets no detected check, and the judge decides. A goal with no check, such as "make the system better", asks the model to first write a contract: the outcome that matters most, the command or evidence that will show it, and what must not regress. The judge counts the goal done only when that evidence is shown; formatting, renames, comments, docs, or a bare test run count as unfinished.
+A Python project gets no detected check, and the judge decides. A goal with no check, such as "make the system better", asks the model to first write a contract to `.summonr/contract.toml` as `checks = [...]` and `protect = [...]`: commands that fail now and pass only when the outcome that matters most is met, commands that guard what must not regress, and the test files and fixtures those commands depend on. The model ends that turn before it changes the code.
+
+The model is pointed at evidence a tool computes: a test that reproduces the defect, a property test, a run of user actions checked against a simple model, or a mutation run on the diff.
+
+summonr runs the commands first. When every one already passes, the contract goes back to the model without a judge call, because it cannot show the change. Otherwise the judge reads it. When the judge accepts, summonr moves the commands and a SHA-256 of each protected file into the goal's Work record, deletes the file, and runs the commands after each turn; the goal ends when they all pass. A later edit to the contract file changes nothing, and a change to a protected file fails the check until it is restored. Deleting an unaccepted contract hands the decision back to the judge. Until a contract is accepted, the judge decides, and formatting, renames, comments, docs, or a bare test run count as unfinished.
 
 Use one key, not both. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start. `--no-verify` skips the check gate for one run.
 
@@ -38,7 +42,7 @@ A check must leave the workspace as it found it. A check that writes files there
 summonr --goal "make cargo test pass"
 ```
 
-`--goal` keeps one objective until `.summonr/check.toml` is green and a judge says stop. Every goal turn restates the objective to the model, so a compacted context cannot lose it.
+`--goal` keeps one objective until its check, or its accepted contract, is green. Without either, a judge says when to stop. Every goal turn restates the objective to the model, so a compacted context cannot lose it.
 
 | Judge verdict | Effect |
 | --- | --- |
@@ -66,7 +70,10 @@ better = "lower"
 target = 240.0
 noise = 1.5
 protect = ["bench.py"]
+lanes = ["climb-b"]
 ```
+
+`lanes` are other session names. When a turn is kept, the harness puts the finding in each session's inbox: the number, the turn diff, and the text that model wrote. The model does not send it. The other session's next goal turn starts with that finding. Any endpoint can be that session.
 
 ```sh
 summonr --goal "make bench.py faster" --max-secs 28800
@@ -150,12 +157,12 @@ When a `--goal` or `--steps` run stops short, summonr runs the configured check 
 ## Review what a run changed
 
 ```sh
-summonr diff                    # the patch against the base
-summonr diff --stat
-summonr diff --turn last --json
+summonr session diff                    # the patch against the base
+summonr session diff --stat
+summonr session diff --turn last --json
 ```
 
-`summonr diff [PATH]` shows changes against the base: the worktree base with `--worktree`, `HEAD` otherwise. `--turn` takes `N`, `last`, or `session`. In the interface, the same data is the diff pane; see [Using the terminal](terminal.md).
+`summonr session diff [PATH]` shows changes against the base: the worktree base with `--worktree`, `HEAD` otherwise. `--turn` takes `N`, `last`, or `session`. In the interface, the same data is the diff pane; see [Using the terminal](terminal.md).
 
 ## Script it
 
@@ -171,7 +178,7 @@ JSON turn receipts keep model text separate from the files this turn wrote and e
 
 ## Workflows
 
-A workflow runs each role on its own model. The roles are `scout`, `implement`, `review`, `judge`, and `summary`. A role the workflow does not name runs on the endpoint and model you started with.
+A workflow runs each role on its own model. The roles are `scout`, `implement`, `judge`, and `summary`. A role the workflow does not name runs on the endpoint and model you started with.
 
 ```toml
 # ~/.summonr/config.toml
@@ -179,11 +186,10 @@ workflow = "cheap-scout"      # optional default
 
 [workflows.cheap-scout]
 scout = "grok"
-review = "zai"
-judge = "grok"
+judge = "zai"
 ```
 
-`summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the `workflow` key picks one. `summonr workflows` lists them. In the interface every card action has a verb:
+`summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the `workflow` key picks one. `summonr workflow list` lists them. In the interface every card action has a verb:
 
 | Command | Action |
 | --- | --- |

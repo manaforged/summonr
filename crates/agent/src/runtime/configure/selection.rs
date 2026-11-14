@@ -1,0 +1,294 @@
+use super::*;
+
+impl<P: Provider> Loop<P> {
+    pub(crate) fn set_provider(&mut self, provider: P, model: impl Into<String>) {
+        self.probes.retain(|(role, probe)| {
+            let keep = role.is_some();
+            if !keep {
+                probe.abort();
+            }
+            keep
+        });
+        self.tools.set_model_images(provider.takes_images());
+        self.provider = provider;
+        self.model = model.into();
+        self.herdr.set_model(&self.model);
+        self.context_sample = None;
+    }
+
+    /// Lets skills and commands this workspace defines run their `!` blocks and imports Claude Code settings; set from `--trust`.
+    pub fn set_trust(&mut self, trust: bool) {
+        self.tools.set_trust(trust);
+        let claude = crate::config::claude::load(&self.workspace, trust);
+        claude.report();
+        self.hooks.extend(&claude.hooks);
+        self.tools.import_claude(claude);
+    }
+
+    pub(crate) fn set_compact_tokens(&mut self, tokens: Option<u32>) {
+        self.compact_tokens = tokens;
+    }
+
+    pub fn set_fallbacks(
+        &mut self,
+        fallbacks: impl IntoIterator<Item = (P, crate::endpoint::Endpoint)>,
+    ) {
+        self.fallbacks = fallbacks.into_iter().collect();
+    }
+
+    /// Puts this session in the topic that `topic` started.
+    pub fn join_topic(&mut self, topic: &str) -> Result<()> {
+        self.session.set_topic(topic.to_string())
+    }
+
+    /// Limits this session to skill set `set` and records the choice in its journal.
+    pub fn choose_skills(&mut self, set: crate::skills::Set) -> Result<()> {
+        self.session.set_skills(set.name().to_owned())?;
+        self.tools.set_skill_set(Some(set));
+        Ok(())
+    }
+
+    /// The skill set this session's journal records, if one was chosen.
+    #[must_use]
+    pub fn skills(&self) -> Option<String> {
+        self.session.skills().map(str::to_string)
+    }
+
+    /// Replaces the system prompt sent with each later request.
+    pub fn set_system_prompt(&mut self, prompt: impl Into<String>) {
+        self.system_prompt = prompt.into();
+    }
+
+    /// Switches the output style from the next turn; the system prompt keeps its cached text until history is rewritten.
+    pub(crate) fn choose_style(&mut self, pick: crate::style::Pick) {
+        self.style.choose(pick);
+    }
+
+    /// The name of the output style this session runs with.
+    pub(crate) fn style_name(&self) -> String {
+        self.style.current(&self.system_prompt)
+    }
+
+    /// Moves a mid-session style switch into the system prompt once the cached history is gone.
+    pub(crate) fn restyle(&mut self) {
+        if let Some(prompt) = self.style.rewritten(&self.system_prompt) {
+            self.system_prompt = prompt;
+        }
+    }
+
+    pub fn apply_endpoint(&mut self, endpoint: &crate::endpoint::Endpoint) {
+        self.session.set_agent(endpoint.agent());
+        self.set_context_window(endpoint.context_window);
+        self.set_compact_tokens(endpoint.compact_tokens);
+        self.set_effort(endpoint.effort_for(self.chosen_effort));
+        self.set_price(endpoint.price);
+        self.set_env(
+            endpoint
+                .env
+                .iter()
+                .map(|(key, value)| (key.clone(), value.expose().to_string())),
+        );
+    }
+
+    pub(crate) fn set_role_model(
+        &mut self,
+        role: workflow::Role,
+        provider: P,
+        model: impl Into<String>,
+        effort: Option<crate::provider::Effort>,
+        price: Option<crate::provider::Price>,
+        context_window: Option<u32>,
+    ) {
+        self.selections
+            .insert(role, (provider, model.into(), context_window));
+        self.tuning.insert(role, (effort, price));
+    }
+
+    pub(crate) fn clear_role_model(&mut self, role: workflow::Role) {
+        self.selections.remove(&role);
+        self.tuning.remove(&role);
+    }
+
+    pub(crate) fn set_price(&mut self, price: Option<crate::provider::Price>) {
+        self.price = price;
+    }
+
+    #[must_use]
+    pub(crate) fn role_model(&self, role: workflow::Role) -> Option<&str> {
+        self.selections
+            .get(&role)
+            .map(|(_, model, _)| model.as_str())
+    }
+
+    pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
+        self.session.set_workflow(name)
+    }
+
+    pub(crate) fn apply_workflow(
+        &mut self,
+        workflow: &workflow::Workflow,
+        mut resolve: impl FnMut(
+            workflow::Role,
+            &workflow::ModelSelection,
+        ) -> Result<(P, crate::endpoint::Endpoint)>,
+    ) -> Result<()> {
+        let mut selections = BTreeMap::new();
+        let mut tuning = BTreeMap::new();
+        for (role, selection) in &workflow.selections {
+            let (provider, endpoint) = resolve(*role, selection).map_err(|error| {
+                Error::Config(format!(
+                    "{}: {role} selection {selection}: {error}",
+                    workflow.name
+                ))
+            })?;
+            selections.insert(*role, (provider, endpoint.model, endpoint.context_window));
+            tuning.insert(*role, (endpoint.effort, endpoint.price));
+        }
+        self.set_workflow(Some(&workflow.name))?;
+        self.selections = selections;
+        self.tuning = tuning;
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn workflow(&self) -> Option<String> {
+        self.session.workflow().map(str::to_string)
+    }
+
+    pub(crate) fn set_verify(&mut self, commands: Option<Vec<String>>) -> Result<()> {
+        self.check_file = std::fs::read(crate::verify::check_path(&self.workspace)).ok();
+        self.metric = match commands {
+            Some(_) => crate::verify::metric(&self.workspace)?.map(|metric| {
+                let protected = crate::verify::Protected::capture(&self.workspace, &metric.protect);
+                (metric, protected)
+            }),
+            None => None,
+        };
+        self.verify = commands;
+        Ok(())
+    }
+
+    pub fn with_verify(mut self, commands: Vec<String>) -> Result<Self> {
+        self.set_verify(Some(commands))?;
+        Ok(self)
+    }
+
+    pub fn with_budget(mut self, budget: Budget) -> Result<Self> {
+        self.session.set_budget(
+            budget.max_tokens,
+            budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
+        )?;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn history_len(&self) -> usize {
+        self.session.history().len()
+    }
+
+    #[must_use]
+    pub fn session_path(&self) -> &Path {
+        self.session.path()
+    }
+
+    pub fn set_name(&mut self, name: &str) -> Result<()> {
+        crate::session::set_name(self.session.path(), name)?;
+        if self.mailbox.is_some() {
+            self.join_mail();
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<String> {
+        crate::session::catalog_name(self.session.path())
+    }
+
+    #[must_use]
+    pub fn session_id(&self) -> String {
+        self.session.id().to_string()
+    }
+
+    /// The session that started this one, as its journal records it.
+    #[must_use]
+    pub fn parent(&self) -> Option<String> {
+        self.session.parent().map(|id| id.to_string())
+    }
+
+    pub fn work_progress(&self) -> Result<crate::WorkProgress> {
+        self.session.work_progress()
+    }
+
+    pub fn next_action(&self, job: &crate::Job) -> Result<crate::NextAction> {
+        let progress = self.work_progress()?;
+        if let Some(code) = progress.exit_code() {
+            return Ok(crate::NextAction::Done(code));
+        }
+        let (plan, steps) = match job {
+            crate::Job::Goal { objective, gates } => {
+                return Ok(crate::NextAction::Run {
+                    prompt: crate::goal::prompt(objective, gates, progress.rounds),
+                    step: None,
+                });
+            }
+            crate::Job::Steps { plan, steps } => (plan, steps),
+        };
+        let current = progress
+            .current
+            .ok_or_else(|| Error::Config("Steps Work has no active item".to_string()))?;
+        let step = steps
+            .get(current.saturating_sub(1))
+            .ok_or_else(|| Error::Config("Steps Work is outside the selected plan".to_string()))?;
+        Ok(crate::NextAction::Run {
+            prompt: crate::steps::prompt(step, steps.len(), plan),
+            step: Some((current, steps.len())),
+        })
+    }
+}
+
+impl Loop<crate::provider::Client> {
+    pub fn configure_workflow(
+        &mut self,
+        workflow: &workflow::Workflow,
+        mut connect: impl FnMut(
+            &workflow::ModelSelection,
+        ) -> Result<(crate::provider::Client, crate::endpoint::Endpoint)>,
+    ) -> Result<()> {
+        let mut missing = Vec::new();
+        self.apply_workflow(workflow, |role, selection| {
+            let (client, endpoint) = connect(selection)?;
+            if endpoint.context_window.is_none() {
+                missing.push((
+                    role,
+                    client.clone(),
+                    endpoint.name.clone(),
+                    endpoint.model.clone(),
+                ));
+            }
+            Ok((client, endpoint))
+        })?;
+        for (role, client, name, model) in missing {
+            self.watch_context(Some(role), client, &name, &model);
+        }
+        Ok(())
+    }
+
+    pub fn watch_driver(&mut self, client: crate::provider::Client, endpoint: &str, model: &str) {
+        self.watch_context(None, client, endpoint, model);
+    }
+
+    pub(crate) fn watch_context(
+        &mut self,
+        role: Option<workflow::Role>,
+        client: crate::provider::Client,
+        endpoint: &str,
+        model: &str,
+    ) {
+        let endpoint = endpoint.to_string();
+        let model = model.to_string();
+        self.watch_window(
+            role,
+            tokio::spawn(async move { client.context(&endpoint, &model).await }),
+        );
+    }
+}

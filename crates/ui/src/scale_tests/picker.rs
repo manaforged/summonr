@@ -1,0 +1,401 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::super::app::App;
+use super::{State, busy_info, frame_with, screens};
+use summonr_agent::catalog::Model;
+use summonr_agent::hub::{Fact, Msg};
+use summonr_agent::recent::ModelId;
+
+fn session(id: &str, parent: Option<&str>) -> summonr_agent::session::SessionInfo {
+    summonr_agent::session::SessionInfo {
+        id: id.to_string(),
+        path: std::path::PathBuf::new(),
+        cwd: Some("/work".to_string()),
+        model: Some("m".to_string()),
+        preview: format!("Session {id}"),
+        name: None,
+        parent: parent.map(str::to_string),
+        depth: 0,
+        interactive: true,
+        agent: None,
+        topic: None,
+        modified: None,
+        format: summonr_agent::session::FORMAT,
+    }
+}
+
+#[test]
+fn filtering_sessions_keeps_the_cursor_on_the_visible_result() {
+    let selected = std::cell::Cell::new(usize::MAX);
+    let shown = screens(
+        110,
+        34,
+        |app| {
+            app.open_sessions(false);
+            app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+                (session("first", None), true),
+                (session("second", None), true),
+                (session("third", None), true),
+            ]))));
+            app.sessions.list.select(2);
+        },
+        &[
+            &|app: &App| app.sessions.list.type_query("first".to_string()),
+            &|app: &App| selected.set(app.sessions.list.cursor.peek()),
+        ],
+    );
+    assert!(shown[1].contains("Session first"), "{}", shown[1]);
+    assert!(!shown[1].contains("Session third"), "{}", shown[1]);
+    assert_eq!(selected.get(), 0, "cursor must follow the filtered result");
+}
+
+#[test]
+fn a_session_delete_confirmation_is_visible_with_existing_rows() {
+    let screen = picker(80, |app| {
+        app.open_sessions(false);
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+            (session("first", None), true),
+            (session("second", None), true),
+        ]))));
+        app.delete_session();
+    });
+    let notice = format!("{} again deletes first", crate::ui::alt_label('d'));
+    assert!(screen.contains(&notice), "{screen}");
+}
+
+#[test]
+fn a_changed_target_and_a_reopened_picker_need_a_new_delete_confirmation() {
+    use summonr_agent::hub::Cmd;
+
+    use tokio::sync::mpsc::unbounded_channel;
+    sigil::reactive::Owner::scope("session-delete", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, mut sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+        let rows = vec![
+            (session("first", None), true),
+            (session("second", None), true),
+        ];
+        app.open_sessions(false);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::ListSessions)));
+        app.update(Msg::Fact(Fact::Sessions(Ok(rows.clone()))));
+        app.delete_session();
+        app.overlay_move(1);
+        app.delete_session();
+        assert!(
+            sent.try_recv().is_err(),
+            "changing the target deleted without confirmation"
+        );
+        app.overlay_close();
+        app.open_sessions(false);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::ListSessions)));
+        app.update(Msg::Fact(Fact::Sessions(Ok(rows))));
+        app.overlay_move(1);
+        app.delete_session();
+        assert!(
+            sent.try_recv().is_err(),
+            "reopening reused the old confirmation"
+        );
+        app.delete_session();
+        assert!(matches!(sent.try_recv(), Ok(Cmd::DeleteSession(id)) if id == "second"));
+    });
+}
+
+#[test]
+fn cycling_to_related_sessions_selects_the_current_branch() {
+    let _screen = picker(100, |app| {
+        app.open_sessions(false);
+        let current = app.model.peek().session.clone();
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+            (session("parent", None), true),
+            (session(&current, Some("parent")), true),
+        ]))));
+        app.sessions.scope();
+        app.sessions.scope();
+        assert_eq!(app.sessions.list.cursor.peek(), 1);
+        assert_eq!(app.sessions.rows()[1].id, current);
+    });
+}
+
+fn days_ago(days: u64) -> Option<u64> {
+    let today = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_secs()
+        / 86_400;
+    Some(today - days)
+}
+
+fn open(app: &App, rows: &[(&str, Option<u64>)], pinned: usize) {
+    app.replace("/model".to_owned());
+    app.submit();
+    let selection = |id: &str| ModelId::new("openrouter", id);
+    app.update(Msg::Fact(Fact::Models {
+        request: 1,
+        rows: rows.iter().map(|(id, _)| selection(id)).collect(),
+        facts: std::sync::Arc::new(
+            rows.iter()
+                .map(|(id, release)| {
+                    let mut model = Model::named(*id);
+                    model.release = *release;
+                    (selection(id), model)
+                })
+                .collect(),
+        ),
+        groups: Default::default(),
+        causes: Default::default(),
+        pinned,
+        recent: 0,
+        loading: false,
+        error: String::new(),
+    }));
+}
+
+fn picker(cols: u16, setup: impl FnOnce(&App)) -> String {
+    frame_with(busy_info(), cols, 30, State::Idle, setup).join("\n")
+}
+
+#[test]
+fn the_model_picker_hides_models_released_over_six_months_ago() {
+    let screen = picker(140, |app| {
+        open(
+            app,
+            &[
+                ("fresh-model", days_ago(20)),
+                ("stale-model", days_ago(400)),
+            ],
+            0,
+        );
+    });
+    assert!(screen.contains("fresh-model"), "{screen}");
+    assert!(!screen.contains("stale-model"), "{screen}");
+    assert!(
+        screen.contains("▸ 1 older model · type to search them"),
+        "{screen}"
+    );
+}
+
+#[test]
+fn showing_older_models_lists_them_in_the_picker() {
+    let screen = picker(140, |app| {
+        open(
+            app,
+            &[
+                ("fresh-model", days_ago(20)),
+                ("stale-model", days_ago(400)),
+            ],
+            0,
+        );
+        app.toggle_older_models();
+    });
+    assert!(screen.contains("stale-model"), "{screen}");
+    assert!(screen.contains("▾ hide 1 older model"), "{screen}");
+}
+
+#[test]
+fn a_favorite_older_model_stays_in_the_picker() {
+    let screen = picker(140, |app| {
+        open(
+            app,
+            &[
+                ("stale-favorite", days_ago(400)),
+                ("fresh-model", days_ago(20)),
+            ],
+            1,
+        );
+    });
+    assert!(screen.contains("favorites"), "{screen}");
+    assert!(screen.contains("stale-favorite"), "{screen}");
+}
+
+#[test]
+fn searching_the_picker_finds_older_models() {
+    let screen = picker(140, |app| {
+        open(
+            app,
+            &[
+                ("fresh-model", days_ago(20)),
+                ("stale-model", days_ago(400)),
+            ],
+            0,
+        );
+        app.replace_model_draft("stale".to_owned());
+    });
+    assert!(screen.contains("stale-model"), "{screen}");
+}
+
+#[test]
+fn a_model_without_a_release_date_stays_in_the_picker() {
+    let screen = picker(140, |app| {
+        open(app, &[("undated-model", None)], 0);
+    });
+    assert!(screen.contains("undated-model"), "{screen}");
+    assert!(!screen.contains("older model"), "{screen}");
+}
+
+#[test]
+fn the_wide_picker_shows_the_release_day_of_the_selected_model() {
+    let screen = picker(140, |app| {
+        open(app, &[("leap-model", Some(19_782))], 1);
+        app.overlay_move(1);
+    });
+    let row = screen
+        .lines()
+        .find(|line| line.contains("released"))
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(row.contains("2024-02-29"), "{screen}");
+}
+
+#[test]
+fn the_model_picker_uses_the_width_of_a_wide_terminal() {
+    let screen = picker(140, |app| open(app, &[("fresh-model", days_ago(20))], 0));
+    let top = screen
+        .lines()
+        .find(|line| line.contains('╭'))
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(top.matches('─').count() >= 110, "{screen}");
+}
+
+#[test]
+fn the_model_picker_fills_a_tall_terminal() {
+    let models: Vec<(String, Option<u64>)> = (0..90)
+        .map(|index| (format!("model-{index:02}"), days_ago(20)))
+        .collect();
+    let rows: Vec<(&str, Option<u64>)> = models
+        .iter()
+        .map(|(id, release)| (id.as_str(), *release))
+        .collect();
+    let screen = frame_with(busy_info(), 165, 85, State::Idle, |app| open(app, &rows, 0));
+    let top = screen.iter().position(|line| line.contains('╭'));
+    let bottom = screen.iter().rposition(|line| line.contains('╰'));
+    let tall = top.zip(bottom).map(|(top, bottom)| bottom - top + 1);
+    assert_eq!(tall, Some(83), "{}", screen.join("\n"));
+    assert!(
+        screen.iter().any(|line| line.contains("model-60")),
+        "{}",
+        screen.join("\n")
+    );
+}
+
+#[test]
+fn every_resume_row_keeps_its_id_project_and_model_under_a_long_title() {
+    let lines = frame_with(busy_info(), 100, 30, State::Idle, |app| {
+        app.open_sessions(false);
+        let mut long = session("1a12e62c7e670000", None);
+        long.preview =
+            "Add sub, mul, and a safe div that raises ValueError on zero to calc.py".to_string();
+        long.model = Some("glm-5.3-flash".to_string());
+        let mut short = session("2b23f73d8f780000", None);
+        short.preview = "say hi".to_string();
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![
+            (long, true),
+            (short, true),
+        ]))));
+    });
+    let screen = lines.join("\n");
+    let first = super::find(&lines, "Add sub").expect("first session row");
+    assert!(lines[first].contains("1a12e62c"), "{screen}");
+    assert!(lines[first].contains("· work"), "{screen}");
+}
+
+#[test]
+fn the_session_filter_is_one_labelled_row_above_the_list() {
+    let lines = frame_with(busy_info(), 120, 30, State::Idle, |app| {
+        app.open_sessions(false);
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(
+            session("first", None),
+            true,
+        )]))));
+    });
+    let screen = lines.join("\n");
+    let field = super::find(&lines, super::super::ui::FILTER_HINT).expect(&screen);
+    let row = super::find(&lines, "Session first").expect(&screen);
+    assert!(row > field && row - field <= 2, "{screen}");
+}
+
+fn first_model(screen: &str) -> Option<String> {
+    screen.lines().find_map(|line| {
+        line.split_whitespace()
+            .find(|word| word.starts_with("model-"))
+            .map(str::to_owned)
+    })
+}
+
+#[test]
+fn moving_back_up_the_model_list_keeps_the_page_in_place() {
+    let ids: Vec<String> = (0..40).map(|at| format!("model-{at:02}")).collect();
+    let rows: Vec<(&str, Option<u64>)> = ids.iter().map(|id| (id.as_str(), None)).collect();
+    let shots = screens(
+        100,
+        30,
+        |app| open(app, &rows, 0),
+        &[
+            &|app: &App| (0..30).for_each(|_| assert!(app.overlay_move(1))),
+            &|app: &App| assert!(app.overlay_move(-1)),
+        ],
+    );
+    let down = first_model(&shots[1]);
+    assert_ne!(down.as_deref(), Some("model-00"), "{}", shots[1]);
+    assert_eq!(down, first_model(&shots[2]), "{}\n{}", shots[1], shots[2]);
+}
+
+fn after_ctrl(key: &str, setup: impl FnOnce(&App)) -> (String, App) {
+    sigil::reactive::Owner::scope("picker-keys", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(140, 30);
+        setup(&app);
+        app.refresh();
+        let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
+        let tree = app.clone();
+        host.mount(move || super::super::view::root(tree));
+        let mut screen = sigil::terminal::Screen::new(140, 30);
+        for _ in 0..2 {
+            screen.frame(&mut host, [], (140, 30)).expect("frame");
+        }
+        let press = sigil::events::Event::key(
+            sigil::events::LogicalKey::character(key),
+            sigil::events::KeyPhase::Down,
+        )
+        .modifiers(sigil::events::ModifiersState::CONTROL);
+        screen.frame(&mut host, [press], (140, 30)).expect("frame");
+        screen.frame(&mut host, [], (140, 30)).expect("frame");
+        (screen.text(), app)
+    })
+}
+
+#[test]
+fn ctrl_s_adds_the_selected_model_to_favorites() {
+    let (screen, _) = after_ctrl("s", |app| {
+        open(app, &[("fresh-model", days_ago(20))], 0);
+        app.overlay_move(1);
+    });
+    assert!(screen.contains("★ favorite fresh-model"), "{screen}");
+}
+
+#[test]
+fn the_model_hints_name_no_option_keys() {
+    let screen = picker(140, |app| open(app, &[("fresh-model", None)], 0));
+    assert!(screen.contains("ctrl+s favorite"), "{screen}");
+    assert!(screen.contains("F2 default"), "{screen}");
+    assert!(
+        !screen.contains('⌥') && !screen.contains("Alt+"),
+        "{screen}"
+    );
+}
+
+#[test]
+fn resume_lists_the_current_session_and_marks_it() {
+    let screen = picker(120, |app| {
+        app.update(Msg::Fact(Fact::Session("current".to_owned())));
+        app.open_sessions(false);
+        app.update(Msg::Fact(Fact::Sessions(Ok(vec![(
+            session("current", None),
+            true,
+        )]))));
+    });
+    assert!(screen.contains("Session current"), "{screen}");
+    assert!(screen.contains("(current)"), "{screen}");
+}

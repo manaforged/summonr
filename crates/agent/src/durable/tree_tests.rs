@@ -1,0 +1,163 @@
+use std::time::{Duration, SystemTime};
+
+use super::{changed, identity, mark, snapshot};
+
+fn backdate(path: &std::path::Path, by: Duration) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(SystemTime::now() - by)
+        .unwrap();
+}
+
+#[test]
+fn a_same_size_rewrite_is_seen_even_when_it_restores_the_old_mtime() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let stale = root.join("stale.txt");
+    let fresh = root.join("fresh.txt");
+    std::fs::write(&stale, "aaaa").unwrap();
+    std::fs::write(&fresh, "aaaa").unwrap();
+    backdate(&stale, Duration::from_secs(20));
+    backdate(&fresh, Duration::from_secs(20));
+    let touched = ["stale.txt".to_string(), "fresh.txt".to_string()];
+    let base = snapshot(root, &[], None, &touched).unwrap();
+
+    std::fs::write(&stale, "bbbb").unwrap();
+    backdate(&stale, Duration::from_secs(20));
+    std::fs::write(&fresh, "bbbb").unwrap();
+    let capture = snapshot(root, &[], Some(&base), &touched).unwrap();
+
+    assert_eq!(
+        changed(&base, &capture),
+        vec!["fresh.txt".to_string(), "stale.txt".to_string()],
+        "a content write moves the change time, so a restored mtime still gets a rehash"
+    );
+    let again = snapshot(root, &[], Some(&capture), &touched).unwrap();
+    assert_eq!(
+        changed(&capture, &again),
+        Vec::<String>::new(),
+        "untouched files reuse their marks"
+    );
+    assert_eq!(
+        changed(&base, &snapshot(root, &[], None, &touched).unwrap()),
+        vec!["fresh.txt".to_string(), "stale.txt".to_string()],
+        "without a previous snapshot every file is hashed"
+    );
+}
+
+#[test]
+fn a_file_summonr_writes_its_own_output_to_is_not_a_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = dir.path().join("events.jsonl");
+    let code = dir.path().join("a.txt");
+    std::fs::write(&events, "{}").unwrap();
+    std::fs::write(&code, "a").unwrap();
+    let own = [identity(&std::fs::metadata(&events).unwrap()).unwrap()];
+    assert!(mark(&events, "events.jsonl", None, &own).unwrap().is_none());
+    assert!(mark(&code, "a.txt", None, &own).unwrap().is_some());
+}
+
+#[test]
+fn bytecode_a_check_writes_does_not_change_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(git.success());
+    std::fs::write(root.join("calc.py"), "def add(a, b):\n    return a + b\n").unwrap();
+    let before = snapshot(root, &[], None, &[]).unwrap();
+    std::fs::create_dir(root.join("__pycache__")).unwrap();
+    std::fs::write(root.join("__pycache__/calc.cpython-312.pyc"), "bytecode").unwrap();
+    let after = snapshot(root, &[], Some(&before), &[]).unwrap();
+    assert!(before == after, "a generated cache changed the snapshot");
+}
+
+#[test]
+fn the_tree_cache_drops_workspaces_past_the_retention() {
+    let cache = tempfile::tempdir().unwrap();
+    let kept = cache.path().join("kept.json");
+    let stale = cache.path().join("stale.json");
+    std::fs::write(&kept, "{}").unwrap();
+    std::fs::write(&stale, "{}").unwrap();
+    let retain = std::time::Duration::from_secs(60);
+    let later = std::time::SystemTime::now() + retain * 2;
+    crate::durable::store::retain(cache.path(), retain, later, |path| {
+        path != kept && std::fs::remove_file(path).is_ok()
+    });
+    assert!(kept.exists());
+    assert!(!stale.exists());
+}
+
+#[test]
+fn a_remembered_tree_reaches_a_new_process_through_the_cache() {
+    let work = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    std::fs::write(work.path().join("a.txt"), "one").unwrap();
+    let mut first = snapshot(work.path(), &[], None, &["a.txt".to_string()]).unwrap();
+    super::cache::remember(cache.path(), work.path(), &mut first);
+    let loaded = super::cache::remembered(cache.path(), work.path()).expect("cached");
+    assert_eq!(loaded, first);
+}
+
+#[test]
+fn a_cached_tree_exactly_at_the_retention_age_is_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path();
+    let edge = cache.join("edge.json");
+    let old = cache.join("old.json");
+    std::fs::write(&edge, "{}").unwrap();
+    std::fs::write(&old, "{}").unwrap();
+    let retain = Duration::from_secs(60);
+    backdate(&old, retain * 2);
+    let at = std::fs::metadata(&edge).unwrap().modified().unwrap();
+    let keep = cache.join("keep.json");
+    crate::durable::store::retain(cache, retain, at + retain, |path| {
+        path != keep && std::fs::remove_file(path).is_ok()
+    });
+    assert!(edge.is_file());
+    assert!(!old.exists());
+}
+
+#[test]
+fn a_folder_outside_git_is_never_walked_and_covers_what_the_session_touched() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("bystander.db"), "untouched by the agent").unwrap();
+    std::fs::write(root.join("notes.txt"), "one").unwrap();
+    let base = snapshot(root, &[], None, &[]).unwrap();
+    assert!(
+        base.files.is_empty(),
+        "a base with nothing touched reads no files: {:?}",
+        base.files.keys()
+    );
+    std::fs::write(root.join("notes.txt"), "two").unwrap();
+    let touched = ["notes.txt".to_string()];
+    let capture = snapshot(root, &[], Some(&base), &touched).unwrap();
+    assert_eq!(changed(&base, &capture), vec!["notes.txt".to_string()]);
+    std::fs::remove_file(root.join("notes.txt")).unwrap();
+    let later = snapshot(root, &[], Some(&capture), &[]).unwrap();
+    assert_eq!(
+        changed(&capture, &later),
+        vec!["notes.txt".to_string()],
+        "a known file that goes away is a change"
+    );
+}
+
+#[test]
+fn a_git_workspace_git_cannot_list_stops_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join(".git"), "gitdir: missing\n").unwrap();
+    std::fs::write(root.join("new.txt"), "written by the agent").unwrap();
+    let result = snapshot(root, &[], None, &[]);
+    assert!(
+        result.is_err(),
+        "a listing git refused must not pass as an empty workspace: {:?}",
+        result.map(|snapshot| snapshot.files.keys().cloned().collect::<Vec<_>>())
+    );
+}

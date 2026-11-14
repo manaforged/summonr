@@ -2,7 +2,7 @@
 """Palette lock. Three presets, twenty tokens each, frozen in a baseline file.
 
 The interface colours are approved as they stand. This script reads the
-presets out of src/tui/sigil_view/theme.rs and compares them with
+presets out of crates/ui/src/theme.rs and compares them with
 scripts/palette-baseline.txt. Any token that moves is reported by name.
 
     python3 scripts/palette-check.py            # check, exit 1 on drift
@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-THEME = ROOT / "src" / "tui" / "sigil_view" / "theme.rs"
+THEME = ROOT / "crates" / "ui" / "src" / "theme.rs"
 BASELINE = ROOT / "scripts" / "palette-baseline.txt"
 
 PRESETS = {

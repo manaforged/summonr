@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// Token counts of one request or a sum of requests.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(from = "UsageWire")]
 pub struct Usage {
@@ -86,11 +87,13 @@ impl From<UsageWire> for Usage {
 }
 
 impl Usage {
+    /// `count` as a `u32`, saturating.
     #[must_use]
     pub fn clamp(count: u64) -> u32 {
         u32::try_from(count).unwrap_or(u32::MAX)
     }
 
+    /// Usage from these token counts, each saturated to `u32`.
     pub fn counted(
         prompt: u64,
         completion: u64,
@@ -107,6 +110,7 @@ impl Usage {
         }
     }
 
+    /// Adds `other` to this usage, saturating.
     pub fn add(&mut self, other: &Self) {
         self.prompt_tokens = self.prompt_tokens.saturating_add(other.prompt_tokens);
         self.completion_tokens = self

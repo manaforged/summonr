@@ -1,8 +1,8 @@
 use std::io::IsTerminal;
 
-use summonr::Result;
+use summonr_agent::Result;
 
-use crate::cli::Args;
+use crate::entry::cli::Args;
 
 struct Raw;
 
@@ -70,7 +70,7 @@ fn masked(key: &mut String) -> Result<Result<()>> {
         }
         match byte[0] {
             b'\r' | b'\n' => return Ok(Ok(())),
-            0x03 | 0x04 => return Ok(Err(summonr::Error::Config("cancelled".to_string()))),
+            0x03 | 0x04 => return Ok(Err(summonr_agent::Error::Config("cancelled".to_string()))),
             0x7f | 0x08 => {
                 key.pop();
             }
@@ -84,9 +84,9 @@ fn masked(key: &mut String) -> Result<Result<()>> {
 }
 
 pub(super) fn print_login_catalog() -> Result<()> {
-    let (rows, errors): (Vec<_>, Vec<_>) = summonr::endpoint_names()?
+    let (rows, errors): (Vec<_>, Vec<_>) = summonr_agent::endpoint_names()?
         .into_iter()
-        .map(|name| summonr::auth_info(&name))
+        .map(|name| summonr_agent::auth_info(&name))
         .partition(Result::is_ok);
     let mut errors: Vec<String> = errors
         .into_iter()
@@ -95,8 +95,8 @@ pub(super) fn print_login_catalog() -> Result<()> {
         .collect();
     errors.dedup();
     errors.iter().for_each(|error| eprintln!("{error}"));
-    let ready = summonr::endpoint_set_up();
-    let mut rows: Vec<summonr::AuthInfo> = rows.into_iter().flatten().collect();
+    let ready = summonr_agent::endpoint_set_up();
+    let mut rows: Vec<summonr_agent::AuthInfo> = rows.into_iter().flatten().collect();
     rows.sort_by_key(|row| {
         (
             row.catalog_rank(),
@@ -120,19 +120,19 @@ pub(super) fn print_login_catalog() -> Result<()> {
     }
     println!(
         "
-summonr login NAME                         sign in or store a key
-summonr login NAME --key                   skip the question and store a key
-summonr login NAME --default [--model M]   start on NAME when no endpoint is named
-summonr login NAME --url URL [--model M]   add or update your own OpenAI-compatible server
-summonr login NAME --model M               change the model of a server you added
-summonr logout NAME                        forget the stored key or token
-summonr logout NAME --remove               remove a server you added"
+summonr login NAME                               sign in or store a key
+summonr login NAME --key                         skip the question and store a key
+summonr login NAME --default [--model M]         start on NAME when no endpoint is named
+summonr endpoint add NAME --url URL [--model M]  add or update your own OpenAI-compatible server
+summonr endpoint add NAME --model M              change the model of a server you added
+summonr logout NAME                              forget the stored key or token
+summonr endpoint remove NAME                     remove a server you added"
     );
     Ok(())
 }
 
 fn keyless(name: &str) -> Result<Option<String>> {
-    let info = summonr::auth_info(name)?;
+    let info = summonr_agent::auth_info(name)?;
     if !info.keyless() || info.login.signs_in() {
         return Ok(None);
     }
@@ -150,7 +150,7 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
     }
     let name = args.endpoint.as_deref().unwrap_or_default();
     if !args.prompt.is_empty() {
-        return Err(summonr::Error::Config(
+        return Err(summonr_agent::Error::Config(
             "do not put credentials on the command line; `summonr login NAME` asks for them"
                 .to_string(),
         ));
@@ -163,14 +163,14 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
     }
     if key_login(name, args.key)? {
         let key = read_secret(&format!("key for {name}: "))?;
-        let source = summonr::check_key(name, key.trim()).await?;
+        let source = summonr_agent::check_key(name, key.trim()).await?;
         println!("key for {name} stored in {}", source.label());
         return Ok(());
     }
-    let endpoint = summonr::login_endpoint(name)?;
-    let flow = summonr::auth_info(name)?.login;
+    let endpoint = summonr_agent::login_endpoint(name)?;
+    let flow = summonr_agent::auth_info(name)?.login;
     match flow {
-        summonr::LoginFlow::Browser => {
+        summonr_agent::LoginFlow::Browser => {
             println!("signing in to {} through the browser", endpoint.name)
         }
         _ => println!("signing in to {}", endpoint.name),
@@ -186,7 +186,7 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
             })
         },
     );
-    summonr::Client::login(&endpoint, &mut prompt).await?;
+    summonr_agent::Client::login(&endpoint, &mut prompt).await?;
     println!("signed in · {}", endpoint.name);
     Ok(())
 }
@@ -195,7 +195,7 @@ fn key_login(name: &str, force: bool) -> Result<bool> {
     if force {
         return Ok(true);
     }
-    let info = summonr::auth_info(name)?;
+    let info = summonr_agent::auth_info(name)?;
     if !info.dual() {
         return Ok(!info.login.signs_in());
     }

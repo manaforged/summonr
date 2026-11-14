@@ -1,0 +1,16 @@
+#!/bin/sh
+dir="$SUMMONR_TEST_FAKE_GH"
+printf '%s\n' "$*" >> "$dir/argv.log"
+if [ -f "$dir/stall" ] && [ "$1 $2" = "pr list" ]; then exec sleep 30; fi
+case "$1 $2" in
+  "auth status") cat "$dir/auth.json" ;;
+  "repo view") printf '{"defaultBranchRef":{"name":"main"}}' ;;
+  "pr list")
+    if [ -f "$dir/created" ]; then
+      printf '[{"number":7,"url":"https://github.com/owner/repo/pull/7","state":"OPEN","reviewDecision":"","statusCheckRollup":[]}]'
+    else
+      printf '[]'
+    fi ;;
+  "pr create") touch "$dir/created"; echo "https://github.com/owner/repo/pull/7" ;;
+  *) echo "unexpected gh $*" >&2; exit 1 ;;
+esac

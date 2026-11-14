@@ -1,0 +1,4 @@
+#!/bin/sh
+printf '%s\n' "$*" >> "$0.calls"
+[ -f "$0.real" ] && exec "$(cat "$0.real")" "$@"
+exit 1

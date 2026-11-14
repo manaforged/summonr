@@ -1,0 +1,395 @@
+use std::path::Path;
+
+use serde::Serialize;
+
+use crate::worktree;
+use summonr_core::error::{Error, Result};
+
+mod child;
+mod git;
+pub(crate) mod ignored;
+mod layout;
+mod turn;
+mod watch;
+
+pub(crate) use watch::Watch;
+
+pub use child::{Delta, children, delta};
+use git::{git, numstat_row};
+pub(crate) use git::{git_apply, git_env, git_output, git_paths, git_within, nul_paths};
+pub(crate) use layout::{Layout, STATE_DIR, inside_git, layout, state_dir};
+pub(crate) use turn::edited;
+pub use turn::{SESSION_BASE, TurnId, turn_patch, turn_stats, turns};
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+pub struct Stat {
+    pub path: String,
+    pub added: u32,
+    pub removed: u32,
+    pub new: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Diff {
+    pub base: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    pub files: Vec<Stat>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub strays: Vec<Stat>,
+}
+
+impl Diff {
+    #[must_use]
+    pub fn added(&self) -> u32 {
+        self.files.iter().map(|stat| stat.added).sum()
+    }
+
+    #[must_use]
+    pub fn removed(&self) -> u32 {
+        self.files.iter().map(|stat| stat.removed).sum()
+    }
+
+    #[must_use]
+    pub fn summary(&self) -> String {
+        let scope = match &self.session {
+            Some(session) => format!(
+                "{} of session {}",
+                self.base,
+                crate::session::short(session)
+            ),
+            None => format!("vs {}", self.base),
+        };
+        format!(
+            "{} · +{} −{} · {scope}",
+            summonr_core::text::plural(self.files.len(), "file"),
+            self.added(),
+            self.removed(),
+        )
+    }
+}
+
+fn named(root: &Path) -> Result<String> {
+    match worktree::tree_at(root) {
+        None => Ok("HEAD".to_string()),
+        Some(tree) if tree.base.is_empty() => tree.fork_point(),
+        Some(tree) => Ok(tree.base),
+    }
+}
+
+fn base(root: &Path) -> Result<Option<String>> {
+    resolve(root, named(root)?)
+}
+
+fn resolve(root: &Path, base: String) -> Result<Option<String>> {
+    match git(root, &["rev-parse", "--verify", &base]) {
+        Ok(_) => Ok(Some(base)),
+        Err(error) => {
+            if base == "HEAD" && initial(root)? {
+                Ok(None)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+fn initial(root: &Path) -> Result<bool> {
+    Ok(git(
+        root,
+        &[
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=no",
+        ],
+    )?
+    .lines()
+    .any(|line| line == "# branch.oid (initial)"))
+}
+
+fn reference(root: &Path, base: Option<&str>) -> Result<String> {
+    match base {
+        Some(base) => Ok(base.to_string()),
+        None => git(root, &["hash-object", "-t", "tree", "--stdin"])
+            .map(|value| value.trim().to_string()),
+    }
+}
+
+pub(crate) fn status_records(root: &Path) -> Vec<String> {
+    if inside_git(root)
+        && let Ok(status) = git(
+            root,
+            &["status", "--porcelain=v2", "-z", "--untracked-files=all"],
+        )
+    {
+        return status
+            .split('\0')
+            .filter(|record| !record.is_empty() && !record.starts_with('#'))
+            .map(str::to_string)
+            .collect();
+    }
+    Vec::new()
+}
+
+pub(crate) fn changed_paths(before: &[String], after: &[String]) -> Vec<String> {
+    let had: std::collections::BTreeSet<&String> = before.iter().collect();
+    let mut paths: Vec<String> = after
+        .iter()
+        .filter(|record| !had.contains(*record))
+        .filter_map(|record| status_path(record).map(str::to_string))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+pub(crate) fn snapshot(root: &Path) -> String {
+    if !inside_git(root) {
+        return "non-Git workspace".to_string();
+    }
+    let Ok((head, base, count)) = dirty(root) else {
+        return "Git state unavailable".to_string();
+    };
+    match count {
+        0 => format!("{head} ({}), worktree clean", crate::session::short(&base)),
+        count => format!(
+            "{head} ({}), {} dirty",
+            crate::session::short(&base),
+            summonr_core::text::plural(count, "file")
+        ),
+    }
+}
+
+fn dirty(root: &Path) -> Result<(String, String, usize)> {
+    let named = named(root)?;
+    if named != "HEAD" {
+        let base = resolve(root, named)?;
+        let diff = changes(root, base, false)?;
+        let head = git(root, &["rev-parse", "--short=12", "HEAD"])
+            .unwrap_or_else(|_| "no commits".to_string());
+        return Ok((head, diff.base, diff.files.len()));
+    }
+    let status = git(
+        root,
+        &[
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--branch",
+            "--no-renames",
+            "--untracked-files=all",
+        ],
+    )?;
+    let mut head = None;
+    let mut count = 0;
+    for record in status.split('\0').filter(|record| !record.is_empty()) {
+        match record.strip_prefix("# branch.oid ") {
+            Some(oid) => head = Some(oid.to_string()),
+            None if record.starts_with('#') => {}
+            None if status_path(record).is_some_and(ignored::hidden) => {}
+            None => count += 1,
+        }
+    }
+    Ok(match head.filter(|oid| oid != "(initial)") {
+        Some(oid) => (crate::session::short(&oid).to_string(), named, count),
+        None => ("no commits".to_string(), "empty tree".to_string(), count),
+    })
+}
+
+fn status_path(record: &str) -> Option<&str> {
+    let fields = match record.as_bytes().first() {
+        Some(b'1') => 9,
+        Some(b'u') => 11,
+        Some(b'?' | b'!') => 2,
+        Some(_) | None => return None,
+    };
+    record.splitn(fields, ' ').nth(fields - 1)
+}
+
+pub fn stats(root: &Path) -> Result<Diff> {
+    changes(root, base(root)?, true)
+}
+
+fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
+    let reference = reference(root, base.as_deref())?;
+    let numstat = git(
+        root,
+        &["diff", "--numstat", "--no-renames", &reference, "--"],
+    )?;
+    let mut files: Vec<Stat> = numstat
+        .lines()
+        .filter_map(numstat_row)
+        .filter(|stat| !ignored::hidden(&stat.path))
+        .collect();
+    for path in untracked(root)? {
+        files.push(Stat {
+            added: if lines { added(root, &path)? } else { 0 },
+            path,
+            removed: 0,
+            new: true,
+        });
+    }
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(Diff {
+        base: base.unwrap_or_else(|| "empty tree".to_string()),
+        session: None,
+        files,
+        strays: Vec::new(),
+    })
+}
+
+fn added(root: &Path, path: &str) -> Result<u32> {
+    if path.ends_with('/') {
+        return Ok(0);
+    }
+    let lines = line_count(&root.join(path))?.unwrap_or(0);
+    Ok(u32::try_from(lines).unwrap_or(u32::MAX))
+}
+
+pub(crate) fn line_count(path: &Path) -> Result<Option<u64>> {
+    use std::io::BufRead;
+    let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
+    let mut lines = 0_u64;
+    let mut head = true;
+    let mut last = b'\n';
+    loop {
+        let chunk = reader.fill_buf()?;
+        if chunk.is_empty() {
+            return Ok(Some(lines.saturating_add(u64::from(last != b'\n'))));
+        }
+        if std::mem::take(&mut head) && chunk[..chunk.len().min(8000)].contains(&0) {
+            return Ok(None);
+        }
+        lines += chunk.iter().filter(|byte| **byte == b'\n').count() as u64;
+        last = *chunk.last().unwrap_or(&b'\n');
+        let size = chunk.len();
+        reader.consume(size);
+    }
+}
+
+pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
+    let base = reference(root, base(root)?.as_deref())?;
+    let mut text = tracked_patch(root, &base, path)?;
+    text.push_str(&untracked_patch(root, path)?);
+    Ok(text)
+}
+
+fn tracked_patch(root: &Path, base: &str, path: Option<&str>) -> Result<String> {
+    let shown: Vec<String> = match path {
+        Some(path) => vec![path.to_string()],
+        None => git_paths(
+            root,
+            &["diff", "--name-only", "-z", "--no-renames", base, "--"],
+        )?
+        .iter()
+        .filter(|file| !ignored::hidden(file))
+        .map(|file| format!(":(literal){file}"))
+        .collect(),
+    };
+    if shown.is_empty() {
+        return Ok(String::new());
+    }
+    let mut args = vec!["diff", "--no-color", "--no-renames", base, "--"];
+    args.extend(shown.iter().map(String::as_str));
+    Ok(String::from_utf8_lossy(&git_output(root, &[], &args, None)?).into_owned())
+}
+
+fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
+    let mut text = String::new();
+    for file in untracked(root)?
+        .iter()
+        .map(String::as_str)
+        .filter(|file| path.is_none_or(|path| path == *file))
+    {
+        if file.ends_with('/') {
+            if path.is_some() {
+                return Err(Error::Config(format!(
+                    "open {file} as a separate workspace to inspect its changes"
+                )));
+            }
+            continue;
+        }
+        let args = ["diff", "--no-index", "--no-color", "--", "/dev/null", file];
+        text.push_str(&String::from_utf8_lossy(&git_output(
+            root,
+            &[],
+            &args,
+            None,
+        )?));
+    }
+    Ok(text)
+}
+
+fn untracked(root: &Path) -> Result<Vec<String>> {
+    let mut paths = git_paths(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    paths.retain(|path| !ignored::hidden(path));
+    Ok(paths)
+}
+
+pub(crate) fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
+    let tracked = !git(root, &["ls-files", "-z", "--", path])?.is_empty();
+    let text = if tracked {
+        let base = reference(root, base(root)?.as_deref())?;
+        git(root, &["diff", "-U0", "--no-color", &base, "--", path])?
+    } else {
+        git(
+            root,
+            &[
+                "diff",
+                "--no-index",
+                "-U0",
+                "--no-color",
+                "--",
+                "/dev/null",
+                path,
+            ],
+        )?
+    };
+    Ok(parse_hunks(&text)
+        .into_iter()
+        .map(|hunk| hunk.new)
+        .filter(|(_, count)| *count > 0)
+        .collect())
+}
+
+pub(crate) struct ParsedHunk<'a> {
+    pub(crate) offset: usize,
+    pub(crate) header: &'a str,
+    pub(crate) new: (usize, usize),
+    pub(crate) body: &'a str,
+}
+
+pub(crate) fn parse_hunks(patch: &str) -> Vec<ParsedHunk<'_>> {
+    let mut starts: Vec<usize> = patch
+        .match_indices("@@ ")
+        .map(|(at, _)| at)
+        .filter(|at| *at == 0 || patch.as_bytes()[at - 1] == b'\n')
+        .collect();
+    starts.push(patch.len());
+    starts
+        .windows(2)
+        .map(|pair| {
+            let body = &patch[pair[0]..pair[1]];
+            let header = body.lines().next().unwrap_or_default();
+            ParsedHunk {
+                offset: pair[0],
+                header,
+                new: new_range(header),
+                body,
+            }
+        })
+        .collect()
+}
+
+fn new_range(header: &str) -> (usize, usize) {
+    let Some(plus) = header.split(' ').find(|word| word.starts_with('+')) else {
+        return (1, 0);
+    };
+    let (start, count) = plus[1..].split_once(',').unwrap_or((&plus[1..], "1"));
+    (start.parse().unwrap_or(1), count.parse().unwrap_or(0))
+}
+
+#[cfg(test)]
+#[path = "diff_tests.rs"]
+mod tests;

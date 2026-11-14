@@ -1,0 +1,212 @@
+use std::collections::BTreeMap;
+
+use crate::display::ellipsize;
+use crate::limits::limits;
+use summonr_core::markdown::Fence;
+
+#[derive(Default)]
+struct Seen {
+    model: String,
+    root: String,
+    id: String,
+    task: String,
+    closing: String,
+    commands: Vec<String>,
+    files: Vec<String>,
+    errors: Vec<String>,
+    exits: BTreeMap<String, usize>,
+    reads: usize,
+    edits: usize,
+}
+
+pub fn digest(transcript: &str) -> String {
+    render(&walk(transcript))
+}
+
+fn walk(transcript: &str) -> Seen {
+    let mut seen = Seen::default();
+    let mut section = String::new();
+    let mut body = String::new();
+    let mut fence = Fence::default();
+    for line in transcript.lines() {
+        if let Some(header) = line.strip_prefix("# session ") {
+            header_fields(header, &mut seen);
+            continue;
+        }
+        if line.starts_with("## ") {
+            close(&section, &body, &mut seen);
+            section = line.trim_start_matches("## ").to_string();
+            body.clear();
+            continue;
+        }
+        let inside = fence.open();
+        if fence.code(line) {
+            if inside && fence.open() {
+                capture_output(line, &mut seen);
+            }
+            continue;
+        }
+        if let Some(call) = line.strip_prefix("- `") {
+            capture_call(call, &mut seen);
+            continue;
+        }
+        if body.chars().count() < limits().classify_closing_chars * 2 {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    close(&section, &body, &mut seen);
+    seen
+}
+
+fn header_fields(header: &str, seen: &mut Seen) {
+    let mut parts = header.split(" · ");
+    seen.id = parts.next().unwrap_or_default().trim().to_string();
+    seen.model = parts.next().unwrap_or_default().trim().to_string();
+    seen.root = parts.next().unwrap_or_default().trim().to_string();
+}
+
+fn close(section: &str, body: &str, seen: &mut Seen) {
+    let text = body.trim();
+    if text.is_empty() {
+        return;
+    }
+    if section == "You" && seen.task.is_empty() {
+        seen.task = ellipsize(&text.replace('\n', " "), limits().classify_task_chars);
+    }
+    if section == "Assistant" {
+        seen.closing = ellipsize(&text.replace('\n', " "), limits().classify_closing_chars);
+    }
+}
+
+fn capture_call(call: &str, seen: &mut Seen) {
+    use crate::tools::Builtin;
+    let Some((name, rest)) = call.split_once('`') else {
+        return;
+    };
+    match Builtin::live(name) {
+        Some(Builtin::RunCommand) => {
+            if let Some(command) = field(rest, "command") {
+                seen.commands
+                    .push(ellipsize(&command, limits().classify_command_chars));
+            }
+        }
+        Some(Builtin::Read | Builtin::Search) => seen.reads += 1,
+        Some(Builtin::Edit | Builtin::Write) => {
+            seen.edits += 1;
+            if let Some(path) = field(rest, "path")
+                && !seen.files.contains(&path)
+            {
+                seen.files.push(path);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn field(text: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let start = text.find(&needle)? + needle.len();
+    let rest = text.get(start..)?.trim_start();
+    let rest = rest.strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let mut value = String::new();
+    let mut escaped = false;
+    for glyph in rest.chars() {
+        if escaped {
+            value.push(glyph);
+            escaped = false;
+            continue;
+        }
+        match glyph {
+            '\\' => escaped = true,
+            '"' => break,
+            _ => value.push(glyph),
+        }
+    }
+    (!value.is_empty()).then_some(value)
+}
+
+fn capture_output(line: &str, seen: &mut Seen) {
+    let trimmed = line.trim();
+    if let Some(code) = trimmed.strip_prefix("exit ") {
+        let code = code.split_whitespace().next().unwrap_or(code);
+        if code.chars().all(|glyph| glyph.is_ascii_digit()) {
+            let seen_before = seen.exits.get(code).copied().unwrap_or_default();
+            seen.exits.insert(code.to_string(), seen_before + 1);
+            return;
+        }
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    let interesting = lowered.starts_with("error")
+        || lowered.starts_with("warning:")
+        || lowered.contains("panicked")
+        || lowered.contains("test result: failed")
+        || lowered.starts_with("failed")
+        || lowered.contains("permission denied");
+    if interesting
+        && seen.errors.len() < limits().classify_errors_max
+        && !seen.errors.iter().any(|kept| kept == trimmed)
+    {
+        seen.errors.push(ellipsize(
+            &trimmed.replace('\n', " "),
+            limits().classify_command_chars,
+        ));
+    }
+}
+
+fn tally(counted: &mut BTreeMap<String, usize>, key: &str) {
+    let slot = counted.entry(key.to_string()).or_default();
+    let next = *slot + 1;
+    counted.insert(key.to_string(), next);
+}
+
+fn render(seen: &Seen) -> String {
+    let mut counted: BTreeMap<String, usize> = BTreeMap::new();
+    for command in &seen.commands {
+        tally(&mut counted, command);
+    }
+    let mut ranked: Vec<(&String, &usize)> = counted.iter().collect();
+    ranked.sort_by(|left, right| right.1.cmp(left.1));
+    let mut out = format!(
+        "session {} \u{b7} {} \u{b7} {}\n\ntask\n{}\n\ncommands: {} run, {} distinct\n",
+        seen.id,
+        seen.model,
+        seen.root,
+        seen.task,
+        seen.commands.len(),
+        counted.len()
+    );
+    for (command, count) in ranked.iter().take(limits().classify_commands_max) {
+        out.push_str(&format!("  {count}x {command}\n"));
+    }
+    if !seen.exits.is_empty() {
+        let shown: Vec<String> = seen
+            .exits
+            .iter()
+            .map(|(code, count)| format!("exit {code}: {count}"))
+            .collect();
+        out.push_str(&format!("\noutcomes: {}\n", shown.join(", ")));
+    }
+    if !seen.errors.is_empty() {
+        out.push_str("\nerrors and warnings seen\n");
+        for error in &seen.errors {
+            out.push_str(&format!("  {error}\n"));
+        }
+    }
+    out.push_str(&format!(
+        "\nfiles read {} times, edited or written {} times, {} distinct paths\n",
+        seen.reads,
+        seen.edits,
+        seen.files.len()
+    ));
+    for path in seen.files.iter().take(limits().classify_files_max) {
+        out.push_str(&format!("  {path}\n"));
+    }
+    out.push_str(&format!("\nclosing statement\n{}\n", seen.closing));
+    out
+}
+
+#[cfg(test)]
+#[path = "digest_tests.rs"]
+mod tests;

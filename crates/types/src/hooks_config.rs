@@ -1,6 +1,8 @@
 use serde::Deserialize;
+use serde::de::Error as _;
+use std::collections::BTreeMap;
 
-use super::{Dialect, Hook, HookEvent, Hooks, Matcher};
+use super::{Dialect, Hook, HookEvent, Hooks, Matcher, seconds};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -12,6 +14,10 @@ enum HookEntry {
         dialect: Dialect,
         #[serde(default)]
         matcher: Option<String>,
+        #[serde(default)]
+        timeout: Option<f64>,
+        #[serde(default, rename = "async")]
+        background: bool,
     },
 }
 
@@ -23,8 +29,12 @@ impl HookEntry {
                 command,
                 dialect,
                 matcher,
+                timeout,
+                background,
             } => Hook {
                 matcher: matcher.as_deref().and_then(Matcher::parse),
+                timeout: timeout.and_then(seconds),
+                background,
                 ..Hook::plain(command, dialect)
             },
         }
@@ -40,25 +50,15 @@ enum Commands {
 
 impl<'de> Deserialize<'de> for Hooks {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct Raw {
-            pre_tool: Option<Commands>,
-            post_tool: Option<Commands>,
-            compact: Option<Commands>,
-            stop: Option<Commands>,
-        }
-        let raw = Raw::deserialize(deserializer)?;
+        let raw = BTreeMap::<String, serde_json::Value>::deserialize(deserializer)?;
         let mut hooks = Self::default();
-        for (event, commands) in [
-            (HookEvent::PreTool, raw.pre_tool),
-            (HookEvent::PostTool, raw.post_tool),
-            (HookEvent::Compact, raw.compact),
-            (HookEvent::Stop, raw.stop),
-        ] {
-            let list = match commands {
-                Some(Commands::One(entry)) => vec![entry],
-                Some(Commands::Many(entries)) => entries,
-                None => Vec::new(),
+        for event in HookEvent::ALL {
+            let Some(value) = raw.get(event.key()) else {
+                continue;
+            };
+            let list = match Commands::deserialize(value).map_err(D::Error::custom)? {
+                Commands::One(entry) => vec![entry],
+                Commands::Many(entries) => entries,
             };
             for entry in list {
                 hooks.push(event, entry.hook());

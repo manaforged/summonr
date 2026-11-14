@@ -7,12 +7,19 @@ targets = [
     { triple = "x86_64-pc-windows-msvc" },
     { triple = "aarch64-apple-darwin" },
 ]
+exclude = ["summonr-desktop"]
 all-features = false
 no-default-features = false
 
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error via gtk in muda on Linux; desktop menu dependency only" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser via sctk-adwaita in winit; terminal and skrifa text paths do not use ab_glyph" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant via zbus 5 in dark-light (sigil-ui terminal) and accesskit_unix; unmaintained notice with no patched release; drop when both move to zbus 6" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names via zbus 5 in dark-light (sigil-ui terminal) and accesskit_unix; unmaintained notice with no patched release; drop when both move to zbus 6" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via zbus 5 in dark-light (sigil-ui terminal) and accesskit_unix; unmaintained notice with no patched release; drop when both move to zbus 6" },
+]
 
 [licenses]
 allow = [
@@ -21,13 +28,17 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "BSL-1.0",
     "CC0-1.0",
     "ISC",
+    "MPL-2.0",
     "Unicode-3.0",
     "Zlib",
 ]
 confidence-threshold = 0.93
-exceptions = []
+exceptions = [
+    { allow = ["OFL-1.1", "Bitstream-Vera"], crate = "sigil-fonts" },
+]
 
 [licenses.private]
 ignore = true

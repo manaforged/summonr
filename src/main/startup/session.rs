@@ -1,12 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use summonr::{
-    Budget, Client, Endpoint, Loop, Result, add_worktree, in_git, last_for, list_sessions,
-    list_worktrees, resolve_endpoint, resolve_session, system_prompt, workflow,
+use summonr_agent::{
+    Budget, Client, Endpoint, Loop, Result, add_worktree, in_git, resolve_endpoint, system_prompt,
+    workflow,
 };
 
 use super::lifecycle::provider;
-use crate::cli::Args;
+use crate::entry::cli::Args;
+
+#[path = "session/find.rs"]
+mod find;
+use find::load_session;
 
 pub(super) enum SessionAction {
     Create,
@@ -40,10 +44,45 @@ pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<
     workflow::default_name()
 }
 
+/// The skill set a session starts with: `--skills`, else `[skills] default` for a new session.
+fn chosen_set(
+    args: &Args,
+    workspace: &Path,
+    resumed: bool,
+) -> Result<Option<summonr_agent::skills::Set>> {
+    let name = match &args.skills {
+        Some(name) => Some(name.clone()),
+        None if resumed => None,
+        None => summonr_agent::skills::default_set()?,
+    };
+    name.as_deref()
+        .map(|name| summonr_agent::skills::Set::named(name, workspace))
+        .transpose()
+}
+
+/// Puts the session on `set`, or on the set a resumed journal records, rebuilding the prompt for it.
+fn apply_set(
+    loop_: &mut Loop<Client>,
+    set: Option<summonr_agent::skills::Set>,
+    resumed: bool,
+    prompt: impl Fn(Option<&summonr_agent::skills::Set>) -> String,
+) -> Result<()> {
+    let set = match (set, loop_.skills()) {
+        (Some(set), _) => set,
+        (None, Some(name)) if resumed => {
+            let set = summonr_agent::skills::Set::named(&name, loop_.workspace())?;
+            loop_.set_system_prompt(prompt(Some(&set)));
+            set
+        }
+        (None, _) => return Ok(()),
+    };
+    loop_.choose_skills(set)
+}
+
 pub(super) fn apply_workflow(
     loop_: &mut Loop<Client>,
     name: &str,
-    ui: Option<&summonr::tui::Ui>,
+    ui: Option<&summonr_agent::hub::Ui>,
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
@@ -51,7 +90,7 @@ pub(super) fn apply_workflow(
         let endpoint = resolve_endpoint(
             Some(&selection.endpoint),
             selection.model.as_deref(),
-            summonr::Need::ModelAndKey,
+            summonr_agent::Requirement::ModelAndKey,
         )?;
         let client = provider(&endpoint, ui, json)?;
         Ok((client, endpoint))
@@ -62,14 +101,22 @@ pub(super) fn apply_workflow(
 pub(super) fn isolate(
     args: &Args,
     cwd: &Path,
-) -> Result<(PathBuf, Option<summonr::Tree>, SessionAction)> {
+) -> Result<(PathBuf, Option<summonr_agent::Tree>, SessionAction)> {
     let (action, recorded) = load_session(args, cwd)?;
     match &action {
         SessionAction::Resume(path) | SessionAction::Fork(path) => {
+            let recorded = recorded.or_else(|| journal_workspace(path));
             let workspace = recorded
-                .or_else(|| journal_workspace(path))
+                .as_deref()
+                .filter(|folder| folder.is_dir())
+                .map(Path::to_path_buf)
+                .or_else(|| {
+                    recorded
+                        .as_deref()
+                        .and_then(summonr_agent::worktree::checkout_of)
+                })
                 .unwrap_or_else(|| cwd.to_path_buf());
-            let tree = summonr::worktree_at(&workspace);
+            let tree = summonr_agent::worktree_at(&workspace);
             Ok((workspace, tree, action))
         }
         SessionAction::Create if args.worktree => {
@@ -89,8 +136,54 @@ pub(super) fn isolate(
     }
 }
 
+pub(super) fn set_up(
+    cwd: &Path,
+    tree: Option<&summonr_agent::Tree>,
+    action: &SessionAction,
+    json: bool,
+) -> Result<()> {
+    if let (Some(tree), SessionAction::Create) = (tree, action)
+        && !same_folder(cwd, &tree.path)
+    {
+        return setup(tree, json);
+    }
+    Ok(())
+}
+
+fn same_folder(one: &Path, other: &Path) -> bool {
+    let real = |path: &Path| dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    real(one) == real(other)
+}
+
+fn setup(tree: &summonr_agent::Tree, json: bool) -> Result<()> {
+    use summonr_agent::scripts::{Script, Scripts, Workspace};
+
+    let scripts = Scripts::load(&tree.primary)?;
+    let workspace = Workspace::at(&tree.path)?;
+    scripts.copy_files(&workspace)?;
+    let Some(script) = scripts.get(Script::Setup) else {
+        return Ok(());
+    };
+    let mut command = scripts.command(&workspace, script);
+    if json {
+        command.stdout(std::io::stderr());
+    }
+    let status = command.status()?;
+    if status.success() {
+        return Ok(());
+    }
+    let ended = status.code().map_or_else(
+        || "was stopped by a signal".to_string(),
+        |code| format!("exited with code {code}"),
+    );
+    Err(summonr_agent::Error::Setup(format!(
+        "setup script `{script}` {ended} in {}",
+        tree.path.display()
+    )))
+}
+
 fn journal_workspace(path: &Path) -> Option<PathBuf> {
-    summonr::session_info(path.to_path_buf())
+    summonr_agent::session_info(path.to_path_buf())
         .cwd
         .map(PathBuf::from)
 }
@@ -103,33 +196,45 @@ pub(super) fn build(
     check: Option<Vec<String>>,
     action: SessionAction,
 ) -> Result<Loop<Client>> {
-    let switches = summonr::modules::load(workspace)?;
-    let images = summonr::catalog::accepts_images(endpoint);
-    let prompt = system_prompt(
-        workspace,
-        summonr::Sources {
-            trust: args.trust,
-            skills: switches.enabled(summonr::modules::ModuleId::Skills),
-            images,
-            memory: switches.enabled(summonr::modules::ModuleId::Memory),
-        },
-    );
+    let switches = summonr_agent::modules::load(workspace)?;
+    let images = summonr_agent::catalog::accepts_images(endpoint);
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
-    let mut loop_ = action.open(provider, endpoint.model.clone(), workspace, prompt)?;
+    let set = chosen_set(args, workspace, resumed)?;
+    let prompt = |set: Option<&summonr_agent::skills::Set>| {
+        system_prompt(
+            workspace,
+            summonr_agent::Sources {
+                trust: args.trust,
+                skills: switches.enabled(summonr_agent::modules::ModuleId::Skills),
+                set,
+                images,
+                memory: switches.enabled(summonr_agent::modules::ModuleId::Memory),
+                mcp: switches.enabled(summonr_agent::modules::ModuleId::Mcp),
+            },
+        )
+    };
+    let mut loop_ = action.open(
+        provider,
+        endpoint.model.clone(),
+        workspace,
+        prompt(set.as_ref()),
+    )?;
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",
-            summonr::short(&loop_.session_id()),
+            summonr_agent::short(&loop_.session_id()),
             loop_.workspace().display()
         );
     }
     if let Some(name) = &args.name {
         loop_.set_name(name)?;
     }
+    apply_set(&mut loop_, set, resumed, prompt)?;
     loop_.choose_effort(args.effort);
     loop_.apply_endpoint(endpoint);
-    loop_.set_images(images, summonr::vision_endpoint()?);
+    loop_.set_images(images, summonr_agent::vision_endpoint()?);
     loop_.set_modules(&switches)?;
+    loop_.set_trust(args.trust);
     configure(loop_, args, check)
 }
 
@@ -171,130 +276,4 @@ fn budget(args: &Args) -> Option<Budget> {
         max_tokens: args.max_tokens,
         max_secs: args.max_secs,
     })
-}
-
-fn candidates(workspace: &Path) -> Vec<(PathBuf, String)> {
-    let mut paths = vec![workspace.to_path_buf()];
-    if let Ok(trees) = list_worktrees(workspace) {
-        paths.extend(trees.into_iter().map(|tree| tree.path));
-    }
-    paths
-        .into_iter()
-        .map(|path| {
-            let canonical = dunce::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            (path, canonical.display().to_string())
-        })
-        .collect()
-}
-
-type Found = (SessionAction, Option<PathBuf>);
-
-struct Local<'a> {
-    id: String,
-    path: PathBuf,
-    cwd: Option<PathBuf>,
-    root: &'a Path,
-}
-
-impl Local<'_> {
-    fn resume(&self) -> Found {
-        (SessionAction::Resume(self.path.clone()), self.cwd.clone())
-    }
-}
-
-fn load_session(args: &Args, workspace: &Path) -> Result<Found> {
-    if (args.steps.is_some() || args.goal.is_some()) && args.fork {
-        return Err(summonr::Error::Config(
-            "cannot fork an active step or goal session".to_string(),
-        ));
-    }
-    if let Some(id) = args.session.as_deref() {
-        let path = resolve_session(id)?;
-        let action = if args.fork {
-            SessionAction::Fork(path)
-        } else {
-            SessionAction::Resume(path)
-        };
-        return Ok((action, None));
-    }
-    if (args.steps.is_some() || args.goal.is_some())
-        && let Some(found) = load_job(args, workspace)?
-    {
-        return Ok(found);
-    }
-    if args.resume || args.fork {
-        return load_last(workspace, args.fork);
-    }
-    Ok((SessionAction::Create, None))
-}
-
-fn load_last(workspace: &Path, fork: bool) -> Result<Found> {
-    let info = last_for(workspace)?
-        .ok_or_else(|| summonr::Error::Config("no prior session for this directory".to_string()))?;
-    let recorded = info.cwd.map(PathBuf::from);
-    if fork {
-        return Ok((SessionAction::Fork(info.path), recorded));
-    }
-    Ok((SessionAction::Resume(info.path), recorded))
-}
-
-fn local_sessions(roots: &[(PathBuf, String)]) -> Result<Vec<Local<'_>>> {
-    Ok(list_sessions()?
-        .into_iter()
-        .rev()
-        .filter_map(|info| {
-            let (root, _) = roots
-                .iter()
-                .find(|(_, canonical)| info.cwd.as_deref() == Some(canonical.as_str()))?;
-            Some(Local {
-                id: info.id,
-                path: info.path,
-                cwd: info.cwd.map(PathBuf::from),
-                root,
-            })
-        })
-        .collect())
-}
-
-fn load_job(args: &Args, workspace: &Path) -> Result<Option<Found>> {
-    let markdown = match args.steps.as_deref() {
-        Some(plan_path) => Some(std::fs::read_to_string(plan_path).map_err(|error| {
-            summonr::Error::Config(format!("cannot read {plan_path}: {error}"))
-        })?),
-        None => None,
-    };
-    let roots = candidates(workspace);
-    let local = local_sessions(&roots)?;
-    if let (Some(plan_path), Some(markdown)) = (args.steps.as_deref(), markdown.as_deref())
-        && let Some(hit) = local
-            .iter()
-            .find(|hit| Loop::<Client>::steps_at(&hit.path, hit.root, markdown))
-    {
-        eprintln!("resuming steps from {plan_path} in session {}", hit.id);
-        return Ok(Some(hit.resume()));
-    }
-    if let Some(objective) = args.goal.as_deref()
-        && let Some(hit) = local
-            .iter()
-            .find(|hit| Loop::<Client>::goal_at(&hit.path, hit.root, objective))
-    {
-        eprintln!("resuming goal in session {}", hit.id);
-        return Ok(Some(hit.resume()));
-    }
-    note_active(&local);
-    Ok(None)
-}
-
-fn note_active(local: &[Local<'_>]) {
-    if let Some((hit, (kind, objective))) = local
-        .iter()
-        .find_map(|hit| Some((hit, Loop::<Client>::job_at(&hit.path, hit.root)?)))
-    {
-        eprintln!(
-            "note: an interrupted {kind:?} run is still active in session {} ({}); rerun it unchanged or `--session {}` to resume it",
-            hit.id,
-            objective.lines().next().unwrap_or_default(),
-            hit.id
-        );
-    }
 }

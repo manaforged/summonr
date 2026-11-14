@@ -1,17 +1,25 @@
 mod background;
+/// The built-in tools table.
 pub mod catalog;
 mod child;
 mod diff;
+/// Endpoint wire protocols, regions, and access kinds.
 pub mod endpoint;
 mod event;
 mod form;
+/// Hook events, matchers, and payloads.
 pub mod hooks;
+/// MCP server config entries.
 pub mod mcp;
 mod message;
+/// Built-in modules and their switches.
 pub mod modules;
 mod notify;
+/// OAuth login settings.
 pub mod oauth;
+/// Plugin switches.
 pub mod plugins;
+/// Display preferences.
 pub mod prefs;
 mod reasoning;
 mod receipt;

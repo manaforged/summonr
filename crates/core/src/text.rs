@@ -5,6 +5,7 @@ use std::str::SplitInclusive;
 
 const IRREGULAR: &[(&str, &str)] = &[("child", "children"), ("entry", "entries")];
 
+/// `count` and `word`, with the plural form when `count` is not 1.
 pub fn plural(count: usize, word: &str) -> String {
     if count == 1 {
         return format!("{count} {word}");
@@ -19,11 +20,13 @@ pub fn plural(count: usize, word: &str) -> String {
     }
 }
 
+/// A kB figure as whole megabytes, such as `24 MB`.
 #[must_use]
 pub fn megabytes(kb: u64) -> String {
     format!("{:.0} MB", kb as f64 / 1024.0)
 }
 
+/// Elapsed seconds as `45s`, `12m34s`, or `1h02m03s`.
 pub fn duration(secs: u64) -> String {
     if secs < 60 {
         return format!("{secs}s");
@@ -36,12 +39,21 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
+/// The stable FNV-1a 64-bit hasher.
 #[derive(Clone, Copy)]
 pub struct Fnv64(u64);
 
 impl Default for Fnv64 {
     fn default() -> Self {
         Self(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl Fnv64 {
+    /// The hash as 16 hex digits.
+    #[must_use]
+    pub fn hex(self) -> String {
+        format!("{:016x}", self.finish())
     }
 }
 
@@ -58,12 +70,14 @@ impl Hasher for Fnv64 {
     }
 }
 
+/// The FNV-1a 64-bit hash of `bytes` as 16 hex digits.
 pub fn fnv64(bytes: &[u8]) -> String {
     let mut hasher = Fnv64::default();
     hasher.write(bytes);
-    format!("{:016x}", hasher.finish())
+    hasher.hex()
 }
 
+/// `text` with each of `secrets` replaced by `[secret]`.
 pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
     secrets
         .into_iter()
@@ -80,6 +94,7 @@ const KEY_ECHOES: &[&str] = &[
     "x-api-key:",
 ];
 
+/// `text` with the key after an "api key:" style echo replaced by `[key]`.
 pub fn hide_key_echo(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -108,15 +123,57 @@ pub fn hide_key_echo(text: &str) -> String {
     out
 }
 
+/// `text` with each run of whitespace collapsed to one space.
 #[must_use]
 pub fn squash(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The characters a name may hold besides ASCII letters and digits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Charset {
+    /// No other characters.
+    Plain,
+    /// `-`.
+    Dash,
+    /// `-` and `_`.
+    Word,
+    /// `-`, `_`, and `.`.
+    Dotted,
+}
+
+impl Charset {
+    fn holds(self, c: char) -> bool {
+        c.is_ascii_alphanumeric()
+            || match self {
+                Self::Plain => false,
+                Self::Dash => c == '-',
+                Self::Word => matches!(c, '-' | '_'),
+                Self::Dotted => matches!(c, '-' | '_' | '.'),
+            }
+    }
+}
+
+/// Whether `name` is non-empty and holds only characters in `charset`.
+#[must_use]
+pub fn is_name(name: &str, charset: Charset) -> bool {
+    !name.is_empty() && name.chars().all(|c| charset.holds(c))
+}
+
+/// `name` with characters outside `charset` set to `with`, cut to `max`.
+#[must_use]
+pub fn clean_name(name: &str, charset: Charset, with: char, max: usize) -> String {
+    name.chars()
+        .map(|c| if charset.holds(c) { c } else { with })
+        .take(max)
+        .collect()
 }
 
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;
 
+/// The fence line that opens and closes front matter.
 pub const FENCE: &str = "---";
 
 const ITEM: &str = "- ";
@@ -128,6 +185,7 @@ struct Field<'a> {
     items: Vec<&'a str>,
 }
 
+/// The fenced metadata fields of a document and the body after them.
 pub struct Frontmatter<'a> {
     fields: Vec<Field<'a>>,
     pub body: &'a str,
@@ -212,12 +270,13 @@ fn block_scalar(
 }
 
 impl<'a> Frontmatter<'a> {
+    /// Reads the front matter of `text` when its first line is `---`; any other text is all body.
     pub fn parse(text: &'a str) -> Self {
         let plain = Self {
             fields: Vec::new(),
             body: text,
         };
-        let Some(rest) = text.trim_start().strip_prefix(FENCE).and_then(|rest| {
+        let Some(rest) = text.strip_prefix(FENCE).and_then(|rest| {
             rest.strip_prefix('\n')
                 .or_else(|| rest.strip_prefix("\r\n"))
         }) else {
@@ -262,6 +321,7 @@ impl<'a> Frontmatter<'a> {
         plain
     }
 
+    /// The scalar value of `key`, if it is set and not empty.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.fields
             .iter()
@@ -269,6 +329,7 @@ impl<'a> Frontmatter<'a> {
             .map(|field| field.value.as_ref())
     }
 
+    /// The list value of `key`, from a block list or an inline list.
     pub fn list(&self, key: &str) -> Option<Vec<String>> {
         let field = self.fields.iter().find(|field| field.key == key)?;
         if field.value.is_empty() {
@@ -284,4 +345,48 @@ impl<'a> Frontmatter<'a> {
                 .collect(),
         )
     }
+
+    /// The tool or argument names `key` lists, split on commas and blanks outside parentheses and quotes.
+    pub fn names(&self, key: &str) -> Option<Vec<String>> {
+        let field = self.fields.iter().find(|field| field.key == key)?;
+        if field.value.is_empty() {
+            return self.list(key);
+        }
+        Some(listed(
+            field.value.trim_start_matches('[').trim_end_matches(']'),
+        ))
+    }
+}
+
+fn listed(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut depth = 0_usize;
+    let mut quote: Option<char> = None;
+    for ch in text.chars() {
+        if let Some(open) = quote {
+            if ch == open {
+                quote = None;
+            } else {
+                word.push(ch);
+            }
+        } else if QUOTES.contains(&ch) {
+            quote = Some(ch);
+        } else if depth == 0 && matches!(ch, ',' | ' ' | '\t') {
+            if !word.is_empty() {
+                out.push(std::mem::take(&mut word));
+            }
+        } else {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                depth = depth.saturating_sub(1);
+            }
+            word.push(ch);
+        }
+    }
+    if !word.is_empty() {
+        out.push(word);
+    }
+    out
 }

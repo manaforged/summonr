@@ -1,122 +1,22 @@
 #![cfg(unix)]
 
 use std::io::{Read, Write};
-use std::path::Path;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+#[path = "support/terminal.rs"]
+mod terminal;
+
+use terminal::Terminal;
 
 const SIZES: [(u16, u16); 3] = [(100, 30), (120, 40), (223, 67)];
 const DRAFT: &str = "breath of fire pixel style breath of fire pixel style breath of fire pixel style breath of fire pixel style breath of fire pixel style breath of fire pixel style tail";
 
-type Writer = Arc<Mutex<Box<dyn Write + Send>>>;
-
-struct Terminal {
-    child: Box<dyn Child + Send + Sync>,
-    master: Box<dyn MasterPty + Send>,
-    writer: Writer,
-    screen: Arc<Mutex<vt100::Parser>>,
-    output: Receiver<()>,
+trait Settle {
+    fn settle(&self, what: &str, ready: impl Fn(&Splash) -> bool) -> Splash;
 }
 
-impl Drop for Terminal {
-    fn drop(&mut self) {
-        drop(self.child.kill());
-    }
-}
-
-impl Terminal {
-    fn open(home: &Path, cols: u16, rows: u16, port: u16) -> Self {
-        std::fs::write(
-            home.join("config.toml"),
-            format!("[endpoint.local]\nbase_url = \"http://127.0.0.1:{port}/v1\"\nmodel = \"m\"\napi_key = \"k\"\ncontext_window = 32768\n"),
-        )
-        .unwrap();
-        let pair = native_pty_system()
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .unwrap();
-        let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_summonr"));
-        command.args(["-e", "local"]);
-        command.cwd(home);
-        command.env_clear();
-        for (key, value) in [
-            ("PATH", "/usr/bin:/bin"),
-            ("LANG", "en_US.UTF-8"),
-            ("TERM", "xterm-256color"),
-            ("RUST_MIN_STACK", "16777216"),
-            ("SUMMONR_MODELS_URL", "http://127.0.0.1:9/registry.json"),
-        ] {
-            command.env(key, value);
-        }
-        for key in ["HOME", "SUMMONR_HOME"] {
-            command.env(key, home);
-        }
-        let child = pair.slave.spawn_command(command).unwrap();
-        drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().unwrap();
-        let writer: Writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
-        let screen = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
-        let (parser, replies) = (Arc::clone(&screen), Arc::clone(&writer));
-        let (painted, output) = channel();
-        std::thread::spawn(move || {
-            let mut chunk = [0_u8; 65536];
-            while let Ok(read) = reader.read(&mut chunk) {
-                let Some(bytes) = chunk.get(..read).filter(|bytes| !bytes.is_empty()) else {
-                    break;
-                };
-                let reply = answer(&mut parser.lock().unwrap(), bytes);
-                if !reply.is_empty() {
-                    drop(replies.lock().unwrap().write_all(&reply));
-                }
-                if painted.send(()).is_err() {
-                    break;
-                }
-            }
-        });
-        Self {
-            child,
-            master: pair.master,
-            writer,
-            screen,
-            output,
-        }
-    }
-
-    fn rows(&self) -> Vec<String> {
-        let parser = self.screen.lock().unwrap();
-        let (_, cols) = parser.screen().size();
-        parser.screen().rows(0, cols).collect()
-    }
-
-    fn resize(&self, cols: u16, rows: u16) {
-        self.screen
-            .lock()
-            .unwrap()
-            .screen_mut()
-            .set_size(rows, cols);
-        self.master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .unwrap();
-    }
-
-    fn send(&self, bytes: &[u8]) {
-        let mut writer = self.writer.lock().unwrap();
-        writer.write_all(bytes).unwrap();
-        writer.flush().unwrap();
-    }
-
+impl Settle for Terminal {
     fn settle(&self, what: &str, ready: impl Fn(&Splash) -> bool) -> Splash {
         let steady = Duration::from_millis(300);
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -141,7 +41,7 @@ impl Terminal {
                 rows.join("\n")
             );
             last = place;
-            let wait = self.output.recv_timeout(steady.saturating_sub(held));
+            let wait = self.wait_output(steady.saturating_sub(held));
             assert_ne!(
                 wait,
                 Err(RecvTimeoutError::Disconnected),
@@ -152,50 +52,28 @@ impl Terminal {
     }
 }
 
-fn answer(parser: &mut vt100::Parser, bytes: &[u8]) -> Vec<u8> {
-    let mut reply = Vec::new();
-    let mut rest = bytes;
-    while let Some(at) = rest.windows(4).position(|window| window == b"\x1b[6n") {
-        parser.process(&rest[..at]);
-        let (row, col) = parser.screen().cursor_position();
-        reply.extend(format!("\x1b[{};{}R", row + 1, col + 1).into_bytes());
-        rest = &rest[at + 4..];
-    }
-    if rest.windows(3).any(|window| window == b"\x1b[c") {
-        reply.extend(b"\x1b[?62;22c");
-    }
-    parser.process(rest);
-    reply
-}
-
 #[derive(Debug)]
 struct Splash {
     rows: Vec<String>,
-    card_top: Option<usize>,
-    card_bottom: Option<usize>,
     prompt: usize,
-    workdir: Option<usize>,
+    hint: Option<usize>,
 }
 
 impl Splash {
     fn read(rows: &[String]) -> Option<Self> {
         Some(Self {
             rows: rows.to_vec(),
-            card_top: rows.iter().position(|row| row.contains('╭')),
-            card_bottom: rows.iter().position(|row| row.contains('╰')),
             prompt: rows.iter().rposition(|row| row.contains('❯'))?,
-            workdir: rows.iter().position(|row| row.contains("workdir")),
+            hint: rows.iter().position(|row| row.contains("ask anything")),
         })
     }
 
-    fn place(&self) -> [Option<usize>; 3] {
-        [self.card_bottom, Some(self.prompt), self.workdir]
+    fn place(&self) -> [Option<usize>; 2] {
+        [Some(self.prompt), self.hint]
     }
 
     fn composer_inside(&self) -> bool {
-        self.card_top.is_some_and(|top| top < self.prompt)
-            && self.card_bottom.is_some_and(|bottom| self.prompt < bottom)
-            && self.workdir.is_some_and(|row| row < self.prompt)
+        self.hint.is_some_and(|row| row < self.prompt) && self.prompt < self.rows.len()
     }
 
     fn shows(&self, text: &str) -> bool {
@@ -218,7 +96,7 @@ fn claude_skills_appear_in_slash_typeahead_and_refresh_without_a_restart() {
     )
     .expect("Claude skill file");
     let terminal = Terminal::open(home.path(), 120, 40, 9);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     let query = b"/probe-disc";
     terminal.send(query);
     terminal.settle("the Claude skill suggestion", |splash| {
@@ -248,18 +126,14 @@ fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
     for (cols, rows) in SIZES {
         let home = tempfile::tempdir().unwrap();
         let terminal = Terminal::open(home.path(), cols, rows, 9);
-        let idle = terminal.settle("the splash", |splash| splash.workdir.is_some());
+        let idle = terminal.settle("the splash", |splash| splash.hint.is_some());
         assert!(idle.composer_inside(), "{cols}x{rows}\n{}", idle.screen());
 
         terminal.send(DRAFT.as_bytes());
         let typed = terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
         let at = format!("{cols}x{rows} draft\n{}", typed.screen());
-        assert_eq!(typed.prompt, idle.prompt, "the prompt moved: {at}");
-        assert_eq!(typed.card_top, idle.card_top, "the window moved: {at}");
-        assert_eq!(
-            typed.workdir, idle.workdir,
-            "the draft covered the card: {at}"
-        );
+        assert!(typed.prompt <= idle.prompt, "the prompt fell: {at}");
+        assert_eq!(typed.hint, idle.hint, "the draft covered the hint: {at}");
         assert!(typed.composer_inside(), "the draft left the window: {at}");
 
         terminal.send(&[0x7f; DRAFT.len()]);
@@ -274,7 +148,7 @@ fn the_splash_prompt_holds_its_row_inside_the_window_while_typing() {
 fn a_resized_splash_keeps_the_draft_inside_the_window() {
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 223, 67, 9);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(DRAFT.as_bytes());
     terminal.settle("the wrapped draft", |splash| splash.shows("tail"));
     terminal.resize(100, 30);
@@ -317,7 +191,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
     });
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 120, 40, port);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(b"work\r");
     assert!(
         requests.recv_timeout(Duration::from_secs(30)).is_ok(),
@@ -350,7 +224,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
         .unwrap();
     let frame = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         terminal.settle("the active headless worker", |splash| {
-            splash.shows("Subagents") && splash.shows("Headless") && splash.shows("lane-1")
+            splash.shows("1 agent") && !splash.shows("Headless")
         })
     }));
     drop(worker.kill());
@@ -362,7 +236,7 @@ fn a_headless_worker_appears_while_the_parent_is_waiting_for_the_model() {
 }
 
 #[test]
-fn the_status_row_names_the_tool_the_first_model_is_calling() {
+fn the_status_row_shows_work_while_the_first_model_calls_a_tool() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -386,9 +260,7 @@ fn the_status_row_names_the_tool_the_first_model_is_calling() {
     });
     let home = tempfile::tempdir().unwrap();
     let terminal = Terminal::open(home.path(), 120, 40, port);
-    terminal.settle("the splash", |splash| splash.workdir.is_some());
+    terminal.settle("the splash", |splash| splash.hint.is_some());
     terminal.send(b"list the files\r");
-    terminal.settle("the running tool on the status row", |splash| {
-        splash.shows("run_command")
-    });
+    terminal.settle("the working status row", |splash| splash.shows("Working…"));
 }

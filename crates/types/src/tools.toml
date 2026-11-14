@@ -187,6 +187,27 @@ required = ["name"]
 additionalProperties = false
 
 [[tool]]
+kind = "monitor"
+claude = "Monitor"
+acp_kind = "execute"
+verb = "Monitor"
+readonly = false
+advertise = "task_list"
+run = "writable"
+description = "Watch a command. Each stdout line wakes this session. Silence does not. Print only when the check finds something to correct. timeout_ms kills the command (default 300000, max 3600000). persistent runs until the session ends."
+
+[tool.schema]
+type = "object"
+required = ["description", "command"]
+additionalProperties = false
+
+[tool.schema.properties]
+description = { type = "string" }
+command = { type = "string" }
+timeout_ms = { type = "integer", minimum = 1000, maximum = 3600000 }
+persistent = { type = "boolean" }
+
+[[tool]]
 kind = "lsp"
 claude_aliases = ["LSP"]
 acp_kind = "search"
@@ -194,7 +215,7 @@ verb = "Lsp"
 readonly = true
 advertise = "lsp_available"
 run = "language"
-description = "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics."
+description = "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics; op=goal returns a Lean tactic goal at line and character."
 
 [tool.schema]
 type = "object"
@@ -206,7 +227,7 @@ path = { type = "string" }
 line = { type = "integer", minimum = 1 }
 character = { type = "integer", minimum = 1 }
 references = { type = "boolean" }
-op = { type = "string", enum = ["diagnostics", "definition"] }
+op = { type = "string", enum = ["diagnostics", "definition", "goal"] }
 new_name = { type = "string" }
 
 [[tool]]
@@ -221,7 +242,7 @@ description = "Run builds, tests, and command-line tools in the workspace; use e
 help = """run_command reference.
 
 - command runs via the shell in the workspace; workdir changes the directory; cwd does not persist between calls; stdin is closed; the environment is a safe allowlist
-- at the wait limit a command keeps running as a background job and returns its id; an explicit timeout_secs stops it instead; when the shell exits, leftover processes it started with & are stopped; background true returns a job id at once and rejects timeout_secs; jobs keep their log and exit status after summonr exits; pass job to wait for it (a poll waits until the job exits or the wait limit), kill true to stop; cancelling a reply keeps background jobs, so inspect or wait on an existing id before launching another
+- at the wait limit a command keeps running as a background job and returns its id; timeout_secs sets that wait limit; stop a job with job and kill; when the shell exits, leftover processes it started with & are stopped; background true returns a job id at once and rejects timeout_secs; jobs keep their log and exit status after summonr exits; pass job to wait for it (a poll waits until the job exits or the wait limit), kill true to stop; cancelling a reply stops a command that became a job during that reply and keeps jobs started with background, so inspect or wait on an existing id before launching another
 - output is the exit code plus about 16 KB of head and tail; only when that cuts something is the full log path named; read it with the read tool; search command output gets clipped per file with an omission note
 - for a password use `sudo -A` or plain ssh (masked prompt); `summonr askpass "<label>"` prints a user-typed secret to pipe into a command; never echo or store it"""
 
@@ -232,7 +253,7 @@ additionalProperties = false
 [tool.schema.properties]
 command = { type = "string" }
 workdir = { type = "string" }
-timeout_secs = { type = "integer", minimum = 1, description = "Foreground only. Cannot be combined with background." }
+timeout_secs = { type = "integer", minimum = 1, description = "Wait before it continues as a job. Not with background." }
 background = { type = "boolean", description = "Return a job id immediately. Omit timeout_secs." }
 job = { type = "string" }
 kill = { type = "boolean" }
@@ -339,7 +360,7 @@ verb = "Tasks"
 readonly = true
 advertise = "task_list"
 run = "task_list"
-description = "Maintain the Work task list; status pending|active|done. Update statuses as tasks start or finish, not just when making the initial plan. A done item does not replace the completion check."
+description = "Maintain the Work task list; status pending|active|done|blocked. Keep one for any request with more than one step. Update statuses as tasks start or finish, not just when making the initial plan. The turn keeps going while any item is pending or active. Mark an item blocked only when the user or an outside event must act first, and name who in its text; keep working on the rest. A done item does not replace the completion check."
 
 [tool.schema]
 type = "object"
@@ -355,7 +376,7 @@ required = ["text"]
 
 [tool.schema.properties.items.items.properties]
 text = { type = "string" }
-status = { type = "string", enum = ["pending", "active", "done"] }
+status = { type = "string", enum = ["pending", "active", "done", "blocked"] }
 
 [[tool]]
 kind = "task"

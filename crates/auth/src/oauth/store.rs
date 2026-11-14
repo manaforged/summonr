@@ -1,8 +1,8 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Issued, Parts, Result, Store};
+use crate::{Error, ErrorKind, Issued, Parts, Result, Store};
 
 const LIFETIME_CEILING: u64 = 10 * 365 * 24 * 3600;
 
@@ -40,23 +40,20 @@ fn to_stored(issued: &Issued) -> Stored {
     }
 }
 
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or_default()
-}
-
 pub(super) fn from_unix(at: u64) -> Instant {
-    Instant::now() + crate::seconds(at.saturating_sub(now_unix()).min(LIFETIME_CEILING))
+    Instant::now()
+        + std::time::Duration::from_secs(
+            at.saturating_sub(summonr_core::clock::now())
+                .min(LIFETIME_CEILING),
+        )
 }
 
 fn to_unix(at: Instant) -> u64 {
-    now_unix() + at.saturating_duration_since(Instant::now()).as_secs()
+    summonr_core::clock::now() + at.saturating_duration_since(Instant::now()).as_secs()
 }
 
 pub(super) fn lifetime(seconds: u64) -> Instant {
-    Instant::now() + crate::seconds(seconds.min(LIFETIME_CEILING))
+    Instant::now() + std::time::Duration::from_secs(seconds.min(LIFETIME_CEILING))
 }
 
 pub(super) fn stored(parts: &Parts<'_>, store: &dyn Store) -> Result<Option<Issued>> {
@@ -64,13 +61,15 @@ pub(super) fn stored(parts: &Parts<'_>, store: &dyn Store) -> Result<Option<Issu
 }
 
 pub(crate) fn stale(parts: &Parts<'_>, store: &dyn Store) -> Result<()> {
-    let Some(mut grant) = stored(parts, store)? else {
-        return Ok(());
-    };
+    match stored(parts, store)? {
+        Some(grant) => expire(parts, store, grant),
+        None => Ok(()),
+    }
+}
+
+pub(super) fn expire(parts: &Parts<'_>, store: &dyn Store, mut grant: Issued) -> Result<()> {
     grant.expires = Some(Instant::now());
-    let raw = serde_json::to_string(&to_stored(&grant))
-        .map_err(|error| Error::Config(error.to_string()))?;
-    store.set(parts.name, &raw)
+    save(parts, store, &grant)
 }
 
 pub(super) fn held(parts: &Parts<'_>) -> Result<Option<Issued>> {
@@ -90,9 +89,8 @@ pub(super) fn keep(parts: &Parts<'_>, issued: Issued) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn save(parts: &Parts<'_>, store: &dyn Store, issued: Issued) -> Result<()> {
-    let raw = serde_json::to_string(&to_stored(&issued))
-        .map_err(|error| Error::Config(error.to_string()))?;
-    store.set(parts.name, &raw)?;
-    keep(parts, issued)
+pub(super) fn save(parts: &Parts<'_>, store: &dyn Store, issued: &Issued) -> Result<()> {
+    let raw = serde_json::to_string(&to_stored(issued))
+        .map_err(|error| Error::caused(ErrorKind::Config, error))?;
+    store.set(parts.name, &raw)
 }

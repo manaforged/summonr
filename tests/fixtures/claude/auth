@@ -1,0 +1,15 @@
+#!/bin/sh
+printf '%s\n' "$*" >> "$0.calls"
+case "$*" in
+  'auth status --json') cat "$0.status" ;;
+  'auth login --claudeai')
+    printf 'Opening browser to sign in…\nIf the browser did not open, visit: https://auth.example.test/login\nPaste code here if prompted > '
+    case $(cat "$0.mode") in
+      fail) exit 7 ;;
+      code) IFS= read -r code; printf '%s' "$code" > "$0.code" ;;
+      browser) : ;;
+    esac
+    printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai"}' > "$0.status"
+    ;;
+  *) exit 22 ;;
+esac

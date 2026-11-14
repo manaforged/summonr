@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// The wire protocol an endpoint speaks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Wire {
     #[default]
@@ -13,6 +14,7 @@ pub enum Wire {
 }
 
 impl Wire {
+    /// The wire protocol named by `value`, accepting common aliases.
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value.trim().to_ascii_lowercase().as_str() {
             "completions" => Self::Completions,
@@ -26,6 +28,7 @@ impl Wire {
     }
 }
 
+/// How long a prompt cache entry lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum CacheTtl {
     #[serde(rename = "5m")]
@@ -34,6 +37,7 @@ pub enum CacheTtl {
     OneHour,
 }
 
+/// The region of a provider's service.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Region {
@@ -42,6 +46,7 @@ pub enum Region {
 }
 
 impl Region {
+    /// The region's display name.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -51,6 +56,7 @@ impl Region {
     }
 }
 
+/// How an endpoint is paid for: an API key or a coding plan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Access {
@@ -59,6 +65,7 @@ pub enum Access {
 }
 
 impl Access {
+    /// The access kind's display name.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -68,6 +75,7 @@ impl Access {
     }
 }
 
+/// The region and access an endpoint setup chose, with any other keys kept.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct Choice {
     #[serde(default)]

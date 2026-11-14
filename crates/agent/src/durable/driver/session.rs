@@ -1,0 +1,201 @@
+use super::*;
+
+impl SessionDriver {
+    pub(crate) fn open(
+        home: &Path,
+        workspace: &Path,
+        model: &str,
+        system: &str,
+        parent: Option<Parent>,
+    ) -> Result<Self> {
+        let (parent, depth) = parent_depth(parent);
+        let id = SessionId::new();
+        let path = log::session_path(home, id);
+        let mut driver = Self {
+            partial: Partial::default(),
+            agent: None,
+            log: Log::create(&path).map_err(disk)?,
+            state: State::default(),
+            work: None,
+            workspace: canonical(workspace),
+            turn: None,
+            next: 1,
+            pending: Vec::new(),
+            saved: 0,
+            base: None,
+            fresh: false,
+            last: None,
+            notice: None,
+        };
+        driver.append(Line::Session {
+            id,
+            model: model.to_string(),
+            system: system.to_string(),
+            workspace: driver.workspace.clone(),
+            parent,
+            depth,
+            revision: Some(crate::revision().to_string()),
+            interactive: depth == 0 && crate::session::interactive(),
+            format: log::FORMAT,
+        })?;
+        Ok(driver)
+    }
+
+    pub(crate) fn resume(home: &Path, id: SessionId, workspace: &Path) -> Result<Self> {
+        let caller = workspace;
+        let path = log::session_path(home, id);
+        log::readable(&path)?;
+        let mut state = State::default();
+        log::records(&path, 0)
+            .try_for_each(|line| line.map(|line| state.apply(line)))
+            .map_err(disk)?;
+        if state.id != Some(id) {
+            return Err(Error::Config(format!(
+                "{} is not the log of session {id}",
+                path.display()
+            )));
+        }
+        let workspace = if state.workspace.as_os_str().is_empty() {
+            canonical(workspace)
+        } else {
+            state.workspace.clone()
+        };
+        let (work, notice) = match Work::restore(&path, state.work.take()).map_err(disk)? {
+            Ok(work) => (Some(work), None),
+            Err(notice) => (None, notice),
+        };
+        let workspace = if workspace.is_dir() {
+            workspace
+        } else if work.as_ref().is_none_or(Work::terminal) {
+            canonical(caller)
+        } else {
+            return Err(Error::Config(format!(
+                "session {id} was recorded in {}, which no longer exists",
+                workspace.display()
+            )));
+        };
+        let mut driver = Self {
+            agent: None,
+            partial: Partial::default(),
+            log: Log::open(&path).map_err(disk)?,
+            work,
+            state,
+            workspace,
+            turn: None,
+            next: 1,
+            pending: Vec::new(),
+            saved: 0,
+            base: None,
+            fresh: false,
+            last: None,
+            notice,
+        };
+        driver.recover()?;
+        Ok(driver)
+    }
+
+    fn recover(&mut self) -> Result<()> {
+        if self.state.opener.is_some() {
+            self.turn = Some(Turn {
+                stage: self.work.as_ref().and_then(Work::stage),
+                round: None,
+                calls: Vec::new(),
+            });
+            self.abort(
+                &summonr_types::Abort {
+                    code: summonr_types::AbortCode::Interrupted,
+                    reason: "process stopped before the turn finished".to_string(),
+                },
+                None,
+            )?;
+            if let Some(work) = &mut self.work
+                && !work.terminal()
+            {
+                work.pending.push(
+                    "[summon: the previous attempt at this turn was interrupted; the workspace is as it left it]"
+                        .to_string(),
+                );
+                self.checkpoint()?;
+            }
+            return Ok(());
+        }
+        if let Some(work) = &mut self.work
+            && work.interrupt()
+        {
+            self.checkpoint()?;
+        }
+        self.interrupt_children(
+            "process stopped before the child finished",
+            crate::child::ChildScope::All,
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn fork(&self, turn: Option<usize>) -> Result<PathBuf> {
+        if self.turn.is_some() {
+            return Err(busy());
+        }
+        let mut lines = log::records(self.log.path(), 0)
+            .collect::<std::io::Result<Vec<Line>>>()
+            .map_err(disk)?;
+        if let Some(turn) = turn {
+            truncate_to_turn(&mut lines, turn)?;
+        }
+        let home = log::home_of(self.log.path())
+            .ok_or_else(|| Error::Config("session log has no home".to_string()))?;
+        let child = SessionId::new();
+        let (parent, depth) = match self.state.id {
+            Some(id) => parent_depth(Some(Parent::Session(id))),
+            None => (None, 0),
+        };
+        let path = log::session_path(home, child);
+        let mut log = Log::create(&path).map_err(disk)?;
+        log.append(
+            &Line::Session {
+                id: child,
+                model: self.state.model.clone(),
+                system: self.state.system.clone(),
+                workspace: self.state.workspace.clone(),
+                parent,
+                depth,
+                revision: Some(crate::revision().to_string()),
+                interactive: false,
+                format: log::FORMAT,
+            },
+            store::Durability::Renamed,
+        )
+        .map_err(disk)?;
+        for line in lines {
+            if !matches!(line, Line::Session { .. } | Line::Work { .. }) {
+                log.append(&line, store::Durability::Renamed)
+                    .map_err(disk)?;
+            }
+        }
+        Ok(path)
+    }
+}
+
+fn parent_depth(parent: Option<Parent>) -> (Option<SessionId>, u8) {
+    match parent {
+        Some(Parent::Session(id)) => (Some(id), 0),
+        Some(Parent::Task(id)) => (Some(id), 1),
+        None => (None, 0),
+    }
+}
+
+fn truncate_to_turn(lines: &mut Vec<Line>, turn: usize) -> Result<()> {
+    let start = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| matches!(line, Line::User { start: true, .. }))
+        .nth(turn)
+        .map(|(index, _)| index)
+        .ok_or_else(|| Error::Config("Selected turn no longer exists".to_string()))?;
+    let close = lines[start + 1..]
+        .iter()
+        .take_while(|line| !matches!(line, Line::User { start: true, .. }))
+        .position(|line| matches!(line, Line::Close { .. }))
+        .ok_or_else(|| Error::Config("Selected turn has not ended".to_string()))?;
+    lines.truncate(start + close + 2);
+    Ok(())
+}

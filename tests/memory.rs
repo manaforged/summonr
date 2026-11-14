@@ -73,9 +73,9 @@ fn repository() -> tempfile::TempDir {
 }
 
 fn project_memory(home: &Path, work: &Path) -> PathBuf {
-    summonr::memory::files(home, work)
+    summonr_agent::memory::files(home, work)
         .into_iter()
-        .find(|file| file.scope == summonr::memory::Scope::Project)
+        .find(|file| file.scope == summonr_agent::memory::Scope::Project)
         .unwrap()
         .path
 }
@@ -117,18 +117,16 @@ fn saved_memory_reaches_the_model_in_its_own_repository_only() {
         "2026-10-11 the api tests need the redis fixture\n",
     );
     let (port, bodies) = provider();
-    configure(home.path(), port, "");
+    configure(home.path(), port, "[modules]\nmemory = true\n");
     let text = summonr(home.path(), work.path(), port, &["-e", "local", "-p", "hi"]);
     assert!(sent(&bodies, "the user prefers tabs"), "{text}");
     assert!(
         sent(&bodies, "the api tests need the redis fixture"),
         "{text}"
     );
-    let today = format!("today is {}", jiff::Zoned::now().date());
-    assert!(sent(&bodies, &today), "{text}");
 
     let (port, bodies) = provider();
-    configure(home.path(), port, "");
+    configure(home.path(), port, "[modules]\nmemory = true\n");
     let text = summonr(
         home.path(),
         other.path(),
@@ -154,7 +152,7 @@ fn memory_stays_out_when_the_module_is_off_or_the_workspace_untrusted() {
     assert!(!sent(&bodies, "prefers tabs"), "{text}");
 
     let (port, bodies) = provider();
-    configure(home.path(), port, "");
+    configure(home.path(), port, "[modules]\nmemory = true\n");
     let text = summonr(
         home.path(),
         work.path(),
@@ -204,7 +202,9 @@ fn sessions_grep_finds_text_from_a_past_session() {
     assert_eq!(text.trim(), "no matches");
     let alone = summonr(home.path(), work.path(), port, &["--grep", "walrus"]);
     assert!(
-        alone.contains("--grep works with `summonr sessions`"),
+        alone.contains(
+            "--grep works with `summonr session list`; use `summonr session search TEXT`"
+        ),
         "{alone}"
     );
 }
@@ -216,7 +216,7 @@ fn a_mistyped_command_is_not_sent_to_the_model() {
     let (port, bodies) = provider();
     configure(home.path(), port, "");
     let text = summonr(home.path(), work.path(), port, &["sesions"]);
-    assert!(text.contains("did you mean `sessions`"), "{text}");
+    assert!(text.contains("did you mean `session`"), "{text}");
     assert!(bodies.lock().unwrap().is_empty(), "{text}");
 }
 

@@ -1,0 +1,65 @@
+use std::fs::OpenOptions;
+use std::io::{ErrorKind, Write};
+use std::sync::Arc;
+use std::time::Instant;
+
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
+use super::{Cmd, Info, Msg};
+
+use crate::provider::Client;
+use crate::runtime::Loop;
+use crate::workflow::Workflow;
+
+mod command;
+mod diff;
+mod dispatch;
+mod export;
+
+pub(super) use export::export_session;
+mod execution;
+mod history;
+pub(crate) use history::journal;
+mod reader;
+mod settings;
+#[cfg(test)]
+mod startup_tests;
+mod state;
+mod steer;
+mod turn;
+
+use reader::Reader;
+
+pub(super) async fn worker(
+    loop_: Loop<Client>,
+    cmd: UnboundedReceiver<Cmd>,
+    ui: UnboundedSender<Msg>,
+    info: Info,
+    replace: bool,
+) {
+    Worker::new(loop_, cmd, ui, info).run(replace).await;
+}
+
+struct Worker {
+    loop_: Loop<Client>,
+    cmd: UnboundedReceiver<Cmd>,
+    ui: UnboundedSender<Msg>,
+    endpoint: String,
+    relay: Option<String>,
+    auto_reply: bool,
+    pending_mail: bool,
+    mail_held: bool,
+    last_auto: Instant,
+    queue: steer::InputQueue,
+    last_turn: Option<crate::Turn>,
+    mail_error: Option<String>,
+    announced: Vec<String>,
+    titled: bool,
+    workflow: Workflow,
+    dial: Option<crate::Effort>,
+    levels: Vec<crate::Effort>,
+    home: Option<std::path::PathBuf>,
+    last_diff: Option<crate::diff::Diff>,
+    last_peers: Option<Vec<crate::mail::Agent>>,
+    reader: Reader,
+}

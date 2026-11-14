@@ -8,10 +8,16 @@ use serde_json::{Value, json};
 
 use super::pause;
 
+const TITLE_REQUEST: &str = "Name this coding session";
+
 pub(crate) enum Step {
     Call(&'static str, Value),
+    #[allow(dead_code, reason = "only the acp target scripts a batch of calls")]
+    Calls(Vec<(&'static str, Value)>),
     Text(&'static str),
     After(Duration, Box<Step>),
+    #[allow(dead_code, reason = "not every test target scripts a failed reply")]
+    Fail(u16, &'static str, &'static str),
 }
 
 pub(crate) struct Model {
@@ -58,11 +64,19 @@ impl Model {
         self.requests.lock().unwrap().clone()
     }
 
-    pub(crate) fn tool_results(&self) -> Vec<String> {
+    pub(crate) fn after_tools(&self) -> Vec<Value> {
+        let has_results = |messages: &Vec<Value>| messages.iter().any(|m| m["role"] == "tool");
         self.requests()
-            .last()
-            .and_then(|body| body.get("messages").and_then(Value::as_array).cloned())
+            .iter()
+            .rev()
+            .filter_map(|body| body.get("messages").and_then(Value::as_array))
+            .find(|messages| has_results(messages))
+            .cloned()
             .unwrap_or_default()
+    }
+
+    pub(crate) fn tool_results(&self) -> Vec<String> {
+        self.after_tools()
             .iter()
             .filter(|message| message["role"] == "tool")
             .map(|message| message["content"].to_string())
@@ -102,6 +116,13 @@ fn serve(stream: TcpStream, script: &Mutex<Vec<Step>>, sink: &Mutex<Vec<Value>>)
         );
     }
     let mut body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    if body["messages"][0]["content"]
+        .as_str()
+        .is_some_and(|system| system.starts_with(TITLE_REQUEST))
+    {
+        let events = frames(0, Step::Text("Session title"));
+        return reply(&mut stream, "text/event-stream", &events);
+    }
     body["kept"] = json!(kept_sizes(&body));
     let index = {
         let mut requests = sink.lock().unwrap();
@@ -116,6 +137,15 @@ fn serve(stream: TcpStream, script: &Mutex<Vec<Step>>, sink: &Mutex<Vec<Value>>)
             script.remove(0)
         }
     };
+    if let Step::Fail(code, retry_after, text) = step {
+        drop(write!(
+            stream,
+            "HTTP/1.1 {code} Error\r\ncontent-type: application/json\r\nretry-after: {retry_after}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{text}",
+            text.len()
+        ));
+        drop(stream.flush());
+        return;
+    }
     let events = frames(index, step);
     reply(&mut stream, "text/event-stream", &events);
 }
@@ -127,15 +157,19 @@ fn frames(index: usize, step: Step) -> String {
             return frames(index, *step);
         }
         Step::Call(name, arguments) => (
-            json!({"role": "assistant", "tool_calls": [{
-                "index": 0,
-                "id": format!("call_{index}"),
-                "type": "function",
-                "function": {"name": name, "arguments": arguments.to_string()},
-            }]}),
+            json!({"role": "assistant", "tool_calls": [called(0, format!("call_{index}"), name, &arguments)]}),
+            "tool_calls",
+        ),
+        Step::Calls(calls) => (
+            json!({"role": "assistant", "tool_calls": calls
+                .iter()
+                .enumerate()
+                .map(|(at, (name, arguments))| called(at, format!("call_{index}_{at}"), name, arguments))
+                .collect::<Vec<_>>()}),
             "tool_calls",
         ),
         Step::Text(text) => (json!({"role": "assistant", "content": text}), "stop"),
+        Step::Fail(..) => return String::new(),
     };
     let chunks = [
         json!({"id": "r", "model": "replay", "choices": [{"index": 0, "delta": delta, "finish_reason": null}]}),
@@ -148,6 +182,15 @@ fn frames(index: usize, step: Step) -> String {
         .collect();
     out.push_str("data: [DONE]\n\n");
     out
+}
+
+fn called(at: usize, id: String, name: &str, arguments: &Value) -> Value {
+    json!({
+        "index": at,
+        "id": id,
+        "type": "function",
+        "function": {"name": name, "arguments": arguments.to_string()},
+    })
 }
 
 fn reply(stream: &mut TcpStream, kind: &str, body: &str) {

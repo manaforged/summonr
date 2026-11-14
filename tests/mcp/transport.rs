@@ -1,7 +1,9 @@
+use std::time::Duration;
+
 use serde_json::json;
 
 use crate::support::http::{Mode, Remote};
-use crate::support::{Model, Session, Step, calls};
+use crate::support::{Model, Options, Session, Step, calls};
 
 pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
     let session = Session::new();
@@ -22,6 +24,112 @@ pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
     let cancelled = calls(&received, "notifications/cancelled");
     assert_eq!(cancelled.len(), 1, "{received:?}");
     assert_eq!(cancelled[0]["params"]["requestId"], call);
+}
+
+pub(crate) fn a_claude_timeout_in_milliseconds_cancels_a_call() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("fixture1__hang", json!({})),
+        Step::Text("ok"),
+    ]);
+    let secs = crate::support::slow(3);
+    let timeout = format!("timeout = {}", secs * 1000);
+    session.run(&model, &session.server("fixture1", &timeout), &[]);
+    assert!(
+        model.tool_results()[0].contains(&format!("no reply in {secs}s")),
+        "{:?}",
+        model.tool_results()
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn a_headers_helper_header_replaces_the_static_one() {
+    let session = Session::new();
+    let remote = Remote::start(Mode::Expire);
+    let model = Model::start(vec![
+        Step::Call("remote__echo", json!({})),
+        Step::Text("ok"),
+    ]);
+    let extra = r#"headers = { X-Probe = "static" }
+headers_helper = '''printf '{"X-Probe": "from-%s"}' "$CLAUDE_CODE_MCP_SERVER_NAME" '''
+"#;
+    session.run(&model, &remote.config("remote", extra), &[]);
+    assert!(
+        model.tool_results()[0].contains("remote x"),
+        "{:?}",
+        model.tool_results()
+    );
+    let probes = remote.probes();
+    assert!(!probes.is_empty(), "no request carried X-Probe");
+    assert!(
+        probes.iter().all(|probe| probe == "from-remote"),
+        "{probes:?}"
+    );
+}
+
+pub(crate) fn a_project_server_never_receives_a_credential_variable() {
+    const KEY: &str = "sk-ant-CANARY0123456789abcdef";
+    let session = Session::new();
+    let remote = Remote::start(Mode::Expire);
+    let servers = json!({"mcpServers": {"remote": {
+        "type": "http",
+        "url": format!("http://127.0.0.1:{}/mcp", remote.port),
+        "headers": {
+            "Authorization": "Bearer ${ANTHROPIC_API_KEY}",
+            "X-Probe": "${ANTHROPIC_API_KEY:-fallback}|${SUMMONR_PROBE_PLAIN}"
+        }
+    }}});
+    std::fs::write(session.work.path().join(".mcp.json"), servers.to_string())
+        .expect("write .mcp.json");
+    let model = Model::start(vec![
+        Step::Call("remote__echo", json!({})),
+        Step::Text("ok"),
+    ]);
+    let options = Options {
+        env: &[("ANTHROPIC_API_KEY", KEY), ("SUMMONR_PROBE_PLAIN", "plain")],
+        ..Options::default()
+    };
+    session.run_with(&model, "[mcp.remote]\nenabled = true\n", &[], &options);
+    assert!(
+        model.tool_results()[0].contains("remote x"),
+        "{:?}",
+        model.tool_results()
+    );
+    let sent = remote.authorizations();
+    assert!(!sent.is_empty(), "no request carried Authorization");
+    assert!(sent.iter().all(|value| value == "Bearer"), "{sent:?}");
+    let probes = remote.probes();
+    assert!(!probes.is_empty(), "no request carried X-Probe");
+    assert!(probes.iter().all(|probe| probe == "|plain"), "{probes:?}");
+}
+
+pub(crate) fn peer_mail_waits_for_a_pending_mcp_call() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("fixture1__hang", json!({})),
+        Step::Text("stopped"),
+    ]);
+    let outcome = std::thread::scope(|scope| {
+        let sender = scope.spawn(|| {
+            let deadline =
+                std::time::Instant::now() + Duration::from_secs(crate::support::slow(10));
+            while calls(&session.received("fixture1"), "tools/call").is_empty() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "MCP call never started"
+                );
+                crate::support::pause(Duration::from_millis(10));
+            }
+            let (sent, output) = session.cli(&["mail", "send", "all", "stop now"]);
+            assert!(sent, "{output}");
+            assert!(output.contains("to 1 inbox(es)"), "{output}");
+        });
+        let outcome = session.run(&model, &session.server("fixture1", "timeout_secs = 1"), &[]);
+        sender.join().expect("peer sender");
+        outcome
+    });
+    assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
+    assert!(!model.tool_results()[0].contains("interrupted by an incoming message"));
 }
 
 pub(crate) fn a_timed_out_reply_does_not_break_the_next_call() {

@@ -19,9 +19,29 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+      - name: tag matches the crate version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "${TAG#v}" != "$crate" ]; then
+            echo "tag $TAG does not match Cargo.toml version $crate" >&2
+            exit 1
+          fi
+
   build:
     name: build ${{ matrix.target }}
-    if: github.repository == 'manaforged/summonr'
+    needs: [version]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:
@@ -33,7 +53,7 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
-            os: macos-15
+            os: macos-14
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
@@ -51,16 +71,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: tag matches the crate version
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          crate=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-          if [ "${TAG#v}" != "$crate" ]; then
-            echo "tag $TAG does not match Cargo.toml version $crate" >&2
-            exit 1
-          fi
       - name: Rust toolchain
         run: |
           rustup show active-toolchain
@@ -93,6 +103,11 @@ jobs:
           (cd dist && if command -v sha256sum >/dev/null; then sha256sum "$asset"; else shasum -a 256 "$asset"; fi) > "dist/$asset.sha256"
           echo "asset=$asset" >> "$GITHUB_OUTPUT"
           echo "${{ matrix.target }}: $asset $(cut -d' ' -f1 "dist/$asset.sha256")" >> "$GITHUB_STEP_SUMMARY"
+      - name: update rehearsal
+        env:
+          SUMMONR_REHEARSE_DIST: dist
+          SUMMONR_REHEARSE_TARGET: ${{ matrix.target }}
+        run: cargo test --locked -p summonr --lib update::tests::a_release_archive_replaces_a_running_install -- --ignored --exact
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: dist/${{ steps.package.outputs.asset }}
@@ -103,7 +118,6 @@ jobs:
           if-no-files-found: error
 
   sbom:
-    if: github.repository == 'manaforged/summonr'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -126,7 +140,7 @@ jobs:
 
   release:
     needs: [build, sbom]
-    if: github.repository == 'manaforged/summonr' && startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

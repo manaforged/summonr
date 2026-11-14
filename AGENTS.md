@@ -1,6 +1,6 @@
 # summonr for coding agents
 
-Point your coding agent at this file when it sets up summonr, runs it from a script or CI, or extends it. summonr is a terminal coding agent that works until your check command passes.
+Point your coding agent at this file when it sets up summonr, runs it from a script or CI, or extends it. summonr is a terminal coding agent for any model.
 
 ## Install
 
@@ -19,7 +19,7 @@ powershell -c "irm https://summonr.dev/install.ps1 | iex"
 The installer checks the archive against the release's SHA-256 and puts `summonr` in `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. `summonr update` moves it to the latest release. To build from source instead, you need Rust 1.98 or later, Git, CMake, and a C and C++ compiler:
 
 ```sh
-cargo install --git https://github.com/manaforged/summonr --locked
+cargo install --git https://github.com/manaforged/summonr --locked summonr
 ```
 
 ## Give it a key
@@ -31,7 +31,7 @@ export ANTHROPIC_API_KEY=...
 summonr anthropic -p "say hi"
 ```
 
-`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists the endpoints you have set up and where each key comes from; `--all` shows the rest and `--check` tests each one. Add any OpenAI-compatible server with `summonr login NAME --url URL [--model M]`, and remove it with `summonr logout NAME --remove`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
+`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoint list` lists the endpoints you have set up and where each key comes from; `--all` shows the rest and `--check` tests each one. Add any OpenAI-compatible server with `summonr endpoint add NAME --url URL [--model M]`, and remove it with `summonr endpoint remove NAME`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
 
 ## Drive it from a script
 
@@ -43,7 +43,7 @@ One prompt, with one JSON event per line on stdout:
 summonr anthropic -p --json "why does cargo test fail?"
 ```
 
-Work until a check passes, inside a time budget:
+Run a goal with a check, inside a time budget:
 
 ```sh
 mkdir -p .summonr
@@ -68,13 +68,13 @@ summonr cron log nightly      # what the last run did and whether the check pass
 
 `summonr cron add NAME --manual -p PROMPT` with `summonr cron token NAME` and `summonr gateway webhook` starts a job from `POST /run/NAME`. `summonr gateway telegram` drives sessions from a paired Telegram chat.
 
-summonr runs commands as your account with no sandbox, so run unattended goals in a container when they should not touch the rest of the machine. `--worktree` works in a separate git worktree: on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch, and on failure it keeps the worktree. `--steps PLAN.md` runs a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+summonr runs commands as your account with no sandbox, so run unattended goals in a container when they should not touch the rest of the machine. `--worktree` works in a separate git worktree: on exit 0 it commits, fast-forwards the branch you started from, and deletes its own branch, and on failure it keeps the worktree. `--steps PLAN.md` runs a numbered plan with a check per step. `summonr session diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 
-When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. Your user-level files load in every session: `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md`, from the account's home directory. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files. Memory files under `~/.summonr/memory` load into trusted sessions too; `memory = false` under `[modules]` turns them off.
+When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `.claude/rules/*.md`, and `SYSTEM.md` at the workspace root, and `CLAUDE.md`, `.claude/CLAUDE.md`, and `CLAUDE.local.md` in each folder above it. Trusted sessions also load your user-level files: `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.claude/rules/*.md`, and `~/.config/devin/AGENTS.md`, from the account's home directory. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores all of these files. Memory files under `~/.summonr/memory` load into trusted sessions too; `memory = false` under `[modules]` turns them off. `import_claude_settings = true` in `~/.summonr/config.toml` also reads the hooks, deny and ask rules, `env`, and `outputStyle` from `~/.claude/settings.json`, and from the workspace's `.claude/settings.json` and `.claude/settings.local.json` when it is trusted.
 
-An implement child works in `<repo>-children/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. When two children change the same lines, that checkout stays on disk, and summonr never deletes it. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
+A named implement child edits this checkout. An unnamed implement child works in `<repo>-children/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished unnamed child's edits on its own. When two of those children change the same lines, that checkout stays on disk, and summonr never deletes it. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
 
 ## Extend it
 
@@ -84,9 +84,10 @@ summonr loads no third-party code into its process. Add capability from outside:
 | --- | --- |
 | A skill | `~/.summonr/skills/NAME/SKILL.md`; Claude Code skills in `~/.claude/skills` and `.claude/skills` load as they are |
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
-| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
+| A hook | `[hooks]` in `~/.summonr/config.toml`: `session_start`, `user_prompt`, `pre_tool`, `post_tool`, `post_tool_failure`, `pre_compact`, `compact`, `stop`, or `session_end`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
+| A panel | A tab in the desktop's right panel: `summonr panel --help` has the file format, and `summonr panel check NAME` validates it |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |
-| A plugin | `summonr install PATH` for a Claude Code layout directory: skills, commands, agents, MCP servers, hooks, language servers, and `bin/` |
+| A plugin | `summonr plugin install PATH` for a Claude Code layout directory (skills, commands, agents, MCP servers, hooks, language servers, and `bin/`), or `summonr plugin install NAME@MARKETPLACE` after `summonr plugin marketplace add owner/repo` |
 
 [Extending summonr](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/extending.md) has the details. The [reference](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/reference.md) lists every flag, slash command, config key, and environment variable.
 

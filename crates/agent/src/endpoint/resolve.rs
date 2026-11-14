@@ -1,0 +1,294 @@
+use super::preset::presets;
+use super::*;
+
+mod pick;
+pub(super) use pick::choose;
+pub use pick::default_model_selection;
+pub(crate) use pick::{Keys, is_set_up};
+use pick::{first_ready, last_used};
+pub use pick::{ordered_names, set_up};
+
+pub fn fallbacks<P>(
+    endpoint: &Endpoint,
+    mut connect: impl FnMut(&Endpoint) -> Result<P>,
+) -> (Vec<(P, Endpoint)>, Vec<String>) {
+    let mut ready = Vec::new();
+    let mut skipped = Vec::new();
+    for name in &endpoint.fallback {
+        match resolve(Some(name), None, Requirement::ModelAndKey)
+            .and_then(|fallback| Ok((connect(&fallback)?, fallback)))
+        {
+            Ok(pair) => ready.push(pair),
+            Err(error) => skipped.push(format!("fallback {name} skipped: {error}")),
+        }
+    }
+    (ready, skipped)
+}
+
+pub fn vision() -> Result<Option<Endpoint>> {
+    let file = config::file()?;
+    let mut names: Vec<&str> = file
+        .endpoint
+        .iter()
+        .filter(|(_, row)| row.images == Some(true))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    names.sort_unstable();
+    Ok(names
+        .into_iter()
+        .find_map(|name| resolve(Some(name), None, Requirement::ModelAndKey).ok()))
+}
+
+const MODEL_ENV: &str = "SUMMONR_MODEL";
+
+fn env_base() -> Option<String> {
+    std::env::var("SUMMONR_BASE_URL")
+        .ok()
+        .filter(|base| !base.trim().is_empty())
+}
+
+pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Origin> {
+    if env_base().is_some() && name.is_none() {
+        return Some(Origin::Env);
+    }
+    let file = config::file().ok()?;
+    choose(&file, last_used(), name, model).2
+}
+
+pub fn resolve(name: Option<&str>, model: Option<&str>, need: Requirement) -> Result<Endpoint> {
+    if let Some(base) = env_base()
+        && matches!(name, None | Some(ENV_ENDPOINT))
+    {
+        return Ok(with_catalog_window(env_endpoint(&base, model)));
+    }
+
+    let file = config::file()?;
+    let (chosen, model_flag, _) = choose(&file, last_used(), name, model);
+
+    let chosen = match chosen {
+        Some(chosen) => chosen,
+        None => unchosen(&file, need)?,
+    };
+    let mut endpoint = selection(&file, &chosen).ok_or_else(|| unknown(&chosen))?;
+
+    let model_flag_unset = model_flag.is_none();
+    if let Some(model) = model_flag {
+        endpoint.model = named_model(&endpoint.name, &model);
+    } else if need.model() && endpoint.model.is_empty() {
+        return Err(Error::Config(format!(
+            "endpoint `{}` has no model; set model for it in config.toml or pass --model",
+            endpoint.name
+        )));
+    } else {
+        endpoint.model = named_model(&endpoint.name, &endpoint.model);
+    }
+
+    if let Some(spec) = file
+        .endpoint
+        .get(&endpoint.name)
+        .and_then(|row| row.models.get(&endpoint.model))
+    {
+        endpoint.overlay_model(spec);
+    }
+
+    let mut endpoint = fill_key(endpoint, need.key())?;
+    if model_flag_unset
+        && endpoint.oauth.is_some()
+        && let Some(row) = super::preset::preset(&endpoint.name)
+        && endpoint.model == row.model
+        && let Some(model) = &row.login_model
+    {
+        endpoint.model.clone_from(model);
+    }
+    Ok(with_catalog_window(endpoint))
+}
+
+fn with_catalog_window(mut endpoint: Endpoint) -> Endpoint {
+    let remote = endpoint
+        .base_url
+        .as_deref()
+        .is_some_and(|url| !super::local(url));
+    if endpoint.context_window.is_none() && remote {
+        endpoint.context_window = crate::catalog::context_limit(
+            &endpoint.name,
+            &endpoint.model,
+            endpoint.base_url.as_deref(),
+        );
+    }
+    endpoint
+}
+
+fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
+    let layer = Record {
+        base_url: Some(trim_slash(base)),
+        model: Some(
+            model
+                .map(str::to_string)
+                .or_else(|| std::env::var(MODEL_ENV).ok())
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| super::preset::env_default().map(|preset| preset.model.to_string()))
+                .unwrap_or_default(),
+        ),
+        api_key: env_key(&["SUMMONR_API_KEY"])
+            .or_else(|| super::preset::env_default().and_then(|preset| env_key(&preset.env_keys)))
+            .map(Secret::new),
+        body: std::env::var("SUMMONR_MAX_TOKENS")
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .map(|tokens| serde_json::json!({ "max_tokens": tokens })),
+        keep_reasoning: Some(std::env::var_os("SUMMONR_KEEP_REASONING").is_some()),
+        ..Record::default()
+    };
+    layer.endpoint(ENV_ENDPOINT, hosted(base))
+}
+
+fn unchosen(file: &File, need: Requirement) -> Result<String> {
+    match first_ready(file) {
+        Some(name) => Ok(name),
+        None if need.key() => Err(Error::Setup(no_endpoint())),
+        None => Ok(presets()
+            .next()
+            .map_or_else(String::new, |row| row.name.to_string())),
+    }
+}
+
+fn unknown(chosen: &str) -> Error {
+    let names = names().unwrap_or_default();
+    let hint = closest(chosen, &names, Near::Typo)
+        .map_or_else(String::new, |name| format!("did you mean `{name}`? "));
+    Error::Config(format!(
+        "unknown endpoint `{chosen}`: {hint}`summonr endpoint list` lists them"
+    ))
+}
+
+fn no_endpoint() -> String {
+    let config = config::shown();
+    format!(
+        "no provider is set up yet.\n  Fix: `summonr login NAME`, or `export ANTHROPIC_API_KEY=…`, or a local [endpoint.NAME] base_url in {config}.\n  `summonr login` lists every provider and its status."
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Near {
+    Relative,
+    Typo,
+}
+
+#[must_use]
+pub fn closest<'a>(name: &str, names: &'a [String], near: Near) -> Option<&'a str> {
+    let length = name.chars().count();
+    let typo = near == Near::Typo && length >= crate::limits::limits().typo_min_chars;
+    names
+        .iter()
+        .map(|other| (cost(name, other), other.as_str()))
+        .filter(|(cost, _)| {
+            cost.saturating_mul(100)
+                <= length.saturating_mul(crate::limits::limits().closest_percent)
+                || (typo && *cost <= 1)
+        })
+        .chain(
+            names
+                .iter()
+                // complexity: bounded by one endpoint name; this is a substring check, not a list scan
+                .filter(|other| typo && other.contains(name))
+                .map(|other| (other.chars().count() - length, other.as_str())),
+        )
+        .min()
+        .map(|(_, other)| other)
+}
+
+fn cost(name: &str, other: &str) -> usize {
+    let left: Vec<char> = name.chars().collect();
+    let right: Vec<char> = other.chars().collect();
+    let mut rows = vec![(0..=right.len()).collect::<Vec<usize>>()];
+    for (index, letter) in left.iter().enumerate() {
+        let mut row = vec![index + 1];
+        for (column, mark) in right.iter().enumerate() {
+            let above = &rows[index];
+            let mut next = (above[column] + usize::from(letter != mark))
+                .min(above[column + 1] + 1)
+                .min(row[column] + 1);
+            if index > 0 && column > 0 && *letter == right[column - 1] && left[index - 1] == *mark {
+                next = next.min(rows[index - 1][column - 1] + 1);
+            }
+            row.push(next);
+        }
+        rows.push(row);
+    }
+    rows[left.len()][right.len()]
+}
+
+pub(super) fn selection(file: &File, chosen: &str) -> Option<Endpoint> {
+    let typed = chosen;
+    let chosen = &super::route::pick(file, typed);
+    let own = file.endpoint.get(chosen);
+    let (facts, base) = match preset(chosen) {
+        Some(row) => (Some(row), Record::from(row)),
+        None => (own?.base_url.as_deref().and_then(hosted), Record::default()),
+    };
+    let routed = file.endpoint.get(typed).filter(|_| chosen != typed);
+    let record = [routed, own]
+        .into_iter()
+        .flatten()
+        .fold(base, |record, row| record.merge(Record::from(row)));
+    Some(record.endpoint(chosen, facts))
+}
+
+#[cfg(test)]
+pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
+    let row = file.endpoint.get(chosen)?;
+    Some(Record::from(row).endpoint(chosen, row.base_url.as_deref().and_then(hosted)))
+}
+
+pub(super) fn hosted(base: &str) -> Option<&'static super::preset::Preset> {
+    let base = trim_slash(base);
+    presets()
+        .filter(|preset| {
+            base.strip_prefix(&trim_slash(&preset.base_url))
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+        .reduce(|best, next| {
+            if next.base_url.len() > best.base_url.len() {
+                next
+            } else {
+                best
+            }
+        })
+}
+
+impl Endpoint {
+    fn overlay_model(&mut self, spec: &crate::config::Model) {
+        if let Some(body) = &spec.body {
+            let body = json(body);
+            match (&mut self.body, body) {
+                (Some(serde_json::Value::Object(existing)), serde_json::Value::Object(extra)) => {
+                    for (key, value) in extra {
+                        existing.insert(key, value);
+                    }
+                }
+                (slot, body) => *slot = Some(body),
+            }
+        }
+        if let Some(window) = spec.context_window {
+            self.context_window = Some(window);
+        }
+        if let Some(effort) = spec.effort {
+            self.effort = Some(effort);
+        }
+        if let Some(tokens) = spec.compact_tokens {
+            self.compact_tokens = Some(tokens);
+        }
+        if let Some(keep) = spec.keep_reasoning {
+            self.keep_reasoning = keep;
+        }
+        reasoning::overlay(
+            &mut self.reasoning,
+            spec.reasoning_levels.as_deref(),
+            spec.thinking_off,
+        );
+    }
+}
+
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod tests;

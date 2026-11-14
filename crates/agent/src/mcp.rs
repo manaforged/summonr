@@ -1,0 +1,199 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use serde_json::Value;
+
+use crate::policy::Policy;
+use crate::tools::ToolOutput;
+use summonr_core::error::{Error, Result};
+
+mod catalog;
+mod config;
+mod conn;
+mod defer;
+mod expand;
+
+mod handshake;
+mod helper;
+pub(crate) mod http;
+mod journal;
+mod link;
+mod manage;
+mod offer;
+mod output;
+mod probe;
+mod scope;
+mod status;
+mod tool;
+
+pub use config::Launch as McpLaunch;
+
+/// Joins an MCP server name to the name of one of its tools or prompts.
+pub(crate) const SEPARATOR: &str = "__";
+
+/// Spells `name` in `A-Z`, `a-z`, `0-9`, `_` and `-`, other characters becoming `_`, cut to `max`.
+#[must_use]
+pub(crate) fn clean(name: &str, max: usize) -> String {
+    summonr_core::text::clean_name(name, summonr_core::text::Charset::Word, '_', max)
+}
+
+/// Parses one `KEY=VALUE` environment variable or header.
+pub fn pair(raw: &str) -> summonr_core::error::Result<(String, String)> {
+    raw.split_once('=')
+        .filter(|(key, _)| !key.is_empty())
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .ok_or_else(|| {
+            summonr_core::error::Error::Config(format!("expected KEY=VALUE, got `{raw}`"))
+        })
+}
+pub use defer::call_label;
+pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
+pub(crate) use expand::wanted;
+use link::{Gate, Link};
+pub use manage::{add, remove};
+pub use offer::{Offer, OfferKind, instructions, offers};
+use output::output;
+pub use probe::probe;
+pub use status::{Board, McpState, McpTransport, ServerStatus, status};
+pub use summonr_types::{Choice, Field, FieldKind, Form, FormAction, FormAnswer, TextFormat};
+use tool::Tool;
+
+pub(crate) enum McpUpdate {
+    Progress(McpProgress),
+    Elicit { form: Form, answer: Answer },
+}
+
+pub(crate) struct Answer(tokio::sync::oneshot::Sender<crate::rpc::Reply>);
+
+impl Answer {
+    pub(crate) fn give(self, answer: &FormAnswer) {
+        drop(self.0.send(crate::rpc::Reply::Result(answer.wire())));
+    }
+}
+
+pub(crate) struct McpProgress {
+    pub(crate) progress: f64,
+    pub(crate) total: Option<f64>,
+    pub(crate) message: Option<String>,
+}
+
+pub struct Hub {
+    links: Vec<Arc<Link>>,
+    failures: Vec<(String, String)>,
+    pub(crate) notes: Vec<String>,
+}
+
+impl Hub {
+    /// Returns a hub for a child in `workspace` that offers these tools and starts each server on first call.
+    pub(crate) fn for_child(&self, workspace: &std::path::Path) -> Self {
+        Self {
+            links: self
+                .links
+                .iter()
+                .map(|link| link.for_child(workspace.to_path_buf()))
+                .collect(),
+            failures: self.failures.clone(),
+            notes: Vec::new(),
+        }
+    }
+
+    pub(crate) async fn connect(workspace: PathBuf, session: Vec<(String, config::Entry)>) -> Self {
+        let (found, failed) = match config::servers(&workspace, session) {
+            Ok(found) => (found, None),
+            Err(error) => (
+                config::Found {
+                    servers: Vec::new(),
+                    waiting: Vec::new(),
+                    skipped: Vec::new(),
+                },
+                Some(format!("mcp config: {error}")),
+            ),
+        };
+        let opened = futures::future::join_all(found.servers.into_iter().map(|server| {
+            let workspace = workspace.clone();
+            async move {
+                let name = server.name.clone();
+                Link::open(server, workspace)
+                    .await
+                    .map_err(|error| (name, error.to_string()))
+            }
+        }))
+        .await;
+        let mut hub = Self {
+            links: Vec::new(),
+            failures: Vec::new(),
+            notes: Vec::new(),
+        };
+        for result in opened {
+            match result {
+                Ok(link) => hub.links.push(link),
+                Err((name, error)) => {
+                    hub.notes.push(format!("mcp {name}: {error}"));
+                    hub.failures.push((name, error));
+                }
+            }
+        }
+        for (name, reason) in found.skipped {
+            hub.notes.push(format!("mcp {name}: skipped: {reason}"));
+            hub.failures.push((name, reason));
+        }
+        hub.notes.extend(failed);
+        if !found.waiting.is_empty() {
+            let file = crate::config::shown();
+            hub.notes.push(format!(
+                "project MCP servers wait for approval: {}. Set `enabled = true` under [mcp.NAME] in {file} to run one",
+                found.waiting.join(", ")
+            ));
+        }
+        hub
+    }
+
+    pub(crate) fn state(&self, name: &str) -> Option<(McpState, Option<String>)> {
+        if let Some(link) = self.links.iter().find(|link| link.name() == name) {
+            return Some(link.state());
+        }
+        self.failures
+            .iter()
+            .find(|(failed, _)| failed == name)
+            .map(|(_, error)| (McpState::Failed, Some(error.clone())))
+    }
+
+    pub(crate) async fn cancel_inflight(&self) {
+        futures::future::join_all(self.links.iter().map(|link| link.cancel_inflight())).await;
+    }
+
+    pub(crate) fn owns(&self, name: &str) -> bool {
+        name == SEARCH_TOOL || self.find(name).is_some()
+    }
+
+    pub(crate) async fn call(
+        &self,
+        alias: &str,
+        arguments: Value,
+        policy: &Policy,
+        report: &mut (dyn FnMut(McpUpdate) + Send),
+    ) -> Result<ToolOutput> {
+        let (link, item) = self
+            .find(alias)
+            .ok_or_else(|| Error::Tool(format!("unknown tool `{alias}`")))?;
+        let gate = Gate { policy };
+        let called = link.call_tool(item, arguments, &gate, report).await?;
+        let mut shown = output(called.value, true);
+        if called.changed {
+            shown.text.push_str(&format!(
+                "\n[mcp {} changed its tool list; the new list applies from the next session]",
+                link.name()
+            ));
+        }
+        Ok(shown)
+    }
+
+    fn find(&self, alias: &str) -> Option<(&Arc<Link>, &Tool)> {
+        self.links.iter().find_map(|link| {
+            link.tools
+                .iter()
+                .find(|item| item.alias == alias)
+                .map(|item| (link, item))
+        })
+    }
+}

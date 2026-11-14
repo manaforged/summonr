@@ -1,0 +1,621 @@
+use super::*;
+use crate::provider::Image;
+use crate::provider::scripted::{Reply, Scripted};
+
+#[path = "http_tests.rs"]
+mod http;
+#[path = "image_tests.rs"]
+mod images;
+
+const DONE: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+
+#[test]
+fn turn_prompts_summarize_tasks_and_show_background_job_state() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let mut driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    driver.prepare_turn_work("work", &[]).unwrap();
+    driver
+        .apply_todos(vec![
+            crate::tools::Todo {
+                text: "landed edit fix".to_string(),
+                status: crate::tools::TodoStatus::Done,
+            },
+            crate::tools::Todo {
+                text: "verify reads".to_string(),
+                status: crate::tools::TodoStatus::Active,
+            },
+            crate::tools::Todo {
+                text: "pending item must not repeat".to_string(),
+                status: crate::tools::TodoStatus::Pending,
+            },
+        ])
+        .unwrap();
+    for (code, command) in [
+        (None, "check the changed code"),
+        (Some(1), "failed verification"),
+        (Some(1), "recovered verification"),
+        (Some(0), "recovered verification"),
+    ] {
+        let (id, path, _, exit) = crate::jobs::prepare(workspace.path()).unwrap();
+        crate::jobs::write(
+            &path,
+            &crate::jobs::Record {
+                id,
+                pid: std::process::id(),
+                command: command.to_string(),
+                workspace: workspace.path().display().to_string(),
+                started: summonr_core::clock::now(),
+                background: true,
+                session: Some(driver.id().to_string()),
+                log: None,
+                detached: false,
+            },
+        )
+        .unwrap();
+        if let Some(code) = code {
+            std::fs::write(exit, code.to_string()).unwrap();
+        }
+    }
+    let mut loop_ =
+        Loop::open(Scripted::default(), "m", workspace.path(), "system", driver).unwrap();
+    let messages = loop_
+        .begin_turn(UserInput::from("work"), Trigger::User)
+        .unwrap();
+    let prompt = &messages.last().unwrap().content;
+    assert!(prompt.contains("Current: verify reads"), "{prompt}");
+    assert!(
+        prompt.contains("Last completed: landed edit fix"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("Tasks: 1 done, 1 pending"), "{prompt}");
+    assert!(
+        prompt.lines().any(|line| line.starts_with("Running job ") && line.contains("check the changed code")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .any(|line| line.starts_with("Unresolved job failure ")
+                && line.contains("failed verification")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .any(|line| line.starts_with("Latest successful job ")
+                && line.contains("recovered verification")),
+        "{prompt}"
+    );
+    assert!(
+        prompt
+            .lines()
+            .all(|line| !line.starts_with("Unresolved job failure ")
+                || !line.contains("recovered verification")),
+        "{prompt}"
+    );
+    assert!(!prompt.contains("pending item must not repeat"), "{prompt}");
+    assert!(!prompt.contains("Harness task list"), "{prompt}");
+}
+
+fn blind_session(workspace: &Path, home: &Path, provider: Scripted) -> Loop<Scripted> {
+    let driver =
+        super::super::super::configure::open_driver(home, workspace, "m", "system").unwrap();
+    let mut loop_ = Loop::open(provider, "m", workspace, "system", driver).unwrap();
+    loop_.set_images(false, None);
+    loop_
+}
+
+fn picture(text: &str) -> UserInput {
+    UserInput {
+        text: text.to_string(),
+        images: vec![Image::encode("image/png", b"not a real png")],
+        source: None,
+    }
+}
+
+fn assert_blind(sent: &[Vec<Message>]) {
+    assert!(
+        sent.iter()
+            .flatten()
+            .all(|message| message.images.is_empty()),
+        "a blind model received image content: {sent:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_image_on_a_blind_model_is_folded_to_text_not_sent() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let provider = Scripted::new([Reply::Text("ok")]);
+    let sent = provider.sent();
+    let mut loop_ = blind_session(workspace.path(), home.path(), provider);
+    loop_
+        .turn_with(picture("here is a pic of me"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    assert_blind(&sent);
+    assert!(
+        sent.iter()
+            .flatten()
+            .any(|message| message.content.contains("image(s)")),
+        "the fold note never reached the model: {sent:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_switch_to_a_blind_model_folds_the_next_attached_image() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let mut loop_ = blind_session(workspace.path(), home.path(), Scripted::new([]));
+    loop_.set_images(true, None);
+    let provider = Scripted::new([Reply::Text("ok")]);
+    let sent = provider.sent();
+    loop_.set_provider(provider, "glm-5.3");
+    loop_
+        .turn_with(picture("what is in this?"), |_| {})
+        .await
+        .unwrap();
+    assert_blind(&sent.lock().unwrap());
+}
+
+#[tokio::test]
+async fn a_fallback_to_a_blind_model_folds_the_next_attached_image() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let primary = Scripted::new([Reply::Fail("the primary is down")]);
+    let mut loop_ = blind_session(workspace.path(), home.path(), primary);
+    loop_.set_images(true, None);
+    let fallback = Scripted::new([Reply::Text("ok"), Reply::Text("ok")]);
+    let sent = fallback.sent();
+    let second =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Requirement::Config).unwrap();
+    loop_.set_fallbacks([(fallback, second)]);
+    loop_
+        .turn_with(UserInput::from("hi"), |_| {})
+        .await
+        .unwrap();
+    loop_
+        .turn_with(picture("what is in this?"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert_blind(&sent);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_empty_reply_is_continued_once_instead_of_failing_the_turn() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let (base, server) = http::server([
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+            .to_owned(),
+        DONE.to_owned(),
+    ])
+    .await?;
+    let client = crate::provider::Client::new("offline-fixture", base)?;
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
+    let mut loop_ = Loop::open(client, "m", workspace.path(), "system", driver)?;
+    let turn = loop_.turn_with(UserInput::from("hi"), |_| {}).await;
+    let bodies = server
+        .await
+        .map_err(|error| Error::Tool(format!("offline backend task: {error}")))??;
+    let turn = turn?;
+    assert!(format!("{turn:?}").contains("done"), "{turn:?}");
+    assert_eq!(bodies.len(), 2);
+    let last = bodies
+        .last()
+        .ok_or_else(|| Error::Tool("offline backend received no requests".to_owned()))?;
+    assert!(last.contains("Please continue"), "{last}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_fallback_takes_its_endpoint_settings_and_price() {
+    use crate::provider::{Effort, Price};
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let primary = Scripted::new([Reply::Fail("the primary is down")]);
+    let mut loop_ = blind_session(workspace.path(), home.path(), primary);
+    loop_.set_price(Some(Price {
+        input: 1.0,
+        output: 1.0,
+        cached: 0.0,
+        cache_write: None,
+    }));
+    loop_.set_context_window(Some(262_144));
+    loop_.set_compact_tokens(Some(200_000));
+    loop_.set_effort(Some(Effort::Low));
+    let mut second =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Requirement::Config).unwrap();
+    let price = Price {
+        input: 9.0,
+        output: 9.0,
+        cached: 0.0,
+        cache_write: None,
+    };
+    second.price = Some(price);
+    second.context_window = Some(4_096);
+    second.compact_tokens = Some(3_000);
+    second.effort = Some(Effort::High);
+    let fallback = Scripted::new([Reply::Text("ok")]);
+    loop_.set_fallbacks([(fallback, second)]);
+    loop_
+        .turn_with(UserInput::from("hi"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(loop_.model(), "glm-5.3");
+    assert_eq!(loop_.price, Some(price));
+    assert_eq!(loop_.context_window(), Some(4_096));
+    assert_eq!(loop_.compact_tokens, Some(3_000));
+    assert_eq!(loop_.effort(), Some(Effort::High));
+}
+
+#[tokio::test]
+async fn a_fallback_keeps_the_effort_the_user_chose_later() {
+    use crate::provider::Effort;
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let primary = Scripted::new([Reply::Fail("the primary is down")]);
+    let mut loop_ = blind_session(workspace.path(), home.path(), primary);
+    let mut second =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3"), crate::Requirement::Config).unwrap();
+    second.effort = Some(Effort::Low);
+    loop_.set_fallbacks([(Scripted::new([Reply::Text("ok")]), second)]);
+    loop_.choose_effort(Some(Effort::Max));
+    loop_
+        .turn_with(UserInput::from("hi"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(loop_.effort(), Some(Effort::Max));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelling_a_reply_preserves_its_job() -> crate::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
+    let mut parent = Loop::open(Scripted::new([]), "m", workspace.path(), "system", driver)?;
+    let call = |id: &str, name: &str, args: &serde_json::Value| crate::provider::ToolCall {
+        id: id.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: args.to_string(),
+        },
+        continuation: None,
+    };
+    parent.begin_turn(
+        crate::provider::UserInput::from("finish the kernel candidate"),
+        Trigger::User,
+    )?;
+    let release = workspace.path().join("release");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&release)
+            .status()?
+            .success()
+    );
+    let started = parent
+        .tools
+        .execute_outcome(&call(
+            "start",
+            "run_command",
+            &serde_json::json!({
+                "command": "printf '%s\\n' \"$SUMMONR_PARENT_SESSION\"; IFS= read -r line < release; printf finished",
+                "background": true
+            }),
+        ))
+        .await?;
+    let id = started
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("job id");
+    let record = crate::jobs::load(workspace.path(), id)?;
+    parent.abort_with(
+        &Abort {
+            code: crate::tools::AbortCode::Cancelled,
+            reason: "cancelled by user".to_string(),
+        },
+        |_| {},
+    )?;
+    assert_eq!(
+        crate::jobs::status(workspace.path(), &record)?.state,
+        crate::jobs::JobState::Running
+    );
+    let resumed = parent.begin_turn(
+        crate::provider::UserInput::from("what is the status"),
+        Trigger::User,
+    )?;
+    let prompt = &resumed.last().expect("resumed prompt").content;
+    assert!(prompt.contains("what is the status"), "{prompt}");
+    assert!(!prompt.contains("finish the kernel candidate"), "{prompt}");
+    std::fs::write(&release, "continue\n")?;
+    let completed = parent
+        .tools
+        .execute_outcome(&call(
+            "wait",
+            "run_command",
+            &serde_json::json!({"job": id}),
+        ))
+        .await?;
+    assert!(
+        completed.success && completed.text.contains("finished"),
+        "{}",
+        completed.text
+    );
+    assert!(
+        completed.text.contains(&parent.session_id()),
+        "worker lost its originating session"
+    );
+    let started = parent
+        .tools
+        .execute_outcome(&call(
+            "again",
+            "run_command",
+            &serde_json::json!({
+                "command": "IFS= read -r line < release; printf stopped",
+                "background": true
+            }),
+        ))
+        .await?;
+    let id = started
+        .text
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .expect("second job id");
+    let record = crate::jobs::load(workspace.path(), id)?;
+    parent.abort_with(
+        &Abort {
+            code: crate::tools::AbortCode::Interrupted,
+            reason: "shutdown".to_string(),
+        },
+        |_| {},
+    )?;
+    assert_eq!(
+        crate::jobs::status(workspace.path(), &record)?.state,
+        crate::jobs::JobState::Killed
+    );
+    Ok(())
+}
+
+fn call(name: &str, arguments: serde_json::Value) -> Reply {
+    Reply::Call(crate::provider::ToolCall {
+        id: name.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    })
+}
+
+#[tokio::test]
+async fn a_finished_task_list_stays_out_of_the_next_turn() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let provider = Scripted::new([
+        call(
+            "todo",
+            serde_json::json!({"items": [
+                {"text": "first", "status": "done"},
+                {"text": "second", "status": "done"}
+            ]}),
+        ),
+        call(
+            "write",
+            serde_json::json!({"path": "done.txt", "content": "done\n"}),
+        ),
+        Reply::Text("done"),
+        Reply::Text("answer"),
+    ]);
+    let sent = provider.sent();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_
+        .turn_with(UserInput::from("do the tasks"), |_| {})
+        .await
+        .unwrap();
+    loop_
+        .turn_with(UserInput::from("an unrelated question"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    let prompt = &sent.last().unwrap().last().unwrap().content;
+    assert!(prompt.contains("an unrelated question"), "{prompt}");
+    assert!(!prompt.contains("Tasks: 2 done"), "{prompt}");
+    assert!(!prompt.contains("Last completed"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_finished_turn_leaves_its_failed_jobs_out_of_the_next_turn() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(workspace.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let provider = Scripted::new([
+        call(
+            "todo",
+            serde_json::json!({"items": [{"text": "first", "status": "done"}]}),
+        ),
+        call(
+            "write",
+            serde_json::json!({"path": "done.txt", "content": "done\n"}),
+        ),
+        Reply::Text("done"),
+        Reply::Text("answer"),
+    ]);
+    let sent = provider.sent();
+    let mut loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    loop_
+        .turn_with(UserInput::from("do the tasks"), |_| {})
+        .await
+        .unwrap();
+    let (id, path, _, exit) = crate::jobs::prepare(workspace.path()).unwrap();
+    crate::jobs::write(
+        &path,
+        &crate::jobs::Record {
+            id,
+            pid: std::process::id(),
+            command: "old verification".to_string(),
+            workspace: workspace.path().display().to_string(),
+            started: summonr_core::clock::now(),
+            background: true,
+            session: Some(loop_.session_id()),
+            log: None,
+            detached: false,
+        },
+    )
+    .unwrap();
+    std::fs::write(exit, "1").unwrap();
+    loop_
+        .turn_with(UserInput::from("an unrelated question"), |_| {})
+        .await
+        .unwrap();
+    let sent = sent.lock().unwrap();
+    let prompt = &sent.last().unwrap().last().unwrap().content;
+    assert!(prompt.contains("an unrelated question"), "{prompt}");
+    assert!(!prompt.contains("old verification"), "{prompt}");
+}
+
+fn todo_session(
+    todos: serde_json::Value,
+    replies: Vec<Reply>,
+) -> (
+    Loop<Scripted>,
+    crate::provider::scripted::Sent,
+    [tempfile::TempDir; 2],
+) {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let driver =
+        super::super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .unwrap();
+    let mut script = vec![call("todo", serde_json::json!({ "items": todos }))];
+    script.extend(replies);
+    let provider = Scripted::new(script);
+    let sent = provider.sent();
+    let loop_ = Loop::open(provider, "m", workspace.path(), "system", driver).unwrap();
+    (loop_, sent, [workspace, home])
+}
+
+#[tokio::test]
+async fn a_reply_with_open_tasks_continues_the_turn() {
+    let (mut loop_, sent, _dirs) = todo_session(
+        serde_json::json!([
+            {"text": "ticket 1", "status": "done"},
+            {"text": "ticket 2", "status": "pending"}
+        ]),
+        vec![
+            Reply::Text("ticket 1 landed; ticket 2 is next"),
+            call(
+                "todo",
+                serde_json::json!({"items": [
+                    {"text": "ticket 1", "status": "done"},
+                    {"text": "ticket 2", "status": "done"}
+                ]}),
+            ),
+            Reply::Text("both tickets landed"),
+        ],
+    );
+    let turn = loop_
+        .turn_with(UserInput::from("land both tickets"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "both tickets landed");
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 4, "{sent:?}");
+    let note = &sent[2].last().unwrap().content;
+    assert!(note.contains("Open tasks:\n○ ticket 2"), "{note}");
+}
+
+#[tokio::test]
+async fn a_reply_with_only_blocked_tasks_ends_the_turn() {
+    let (mut loop_, sent, _dirs) = todo_session(
+        serde_json::json!([
+            {"text": "ticket 1", "status": "done"},
+            {"text": "push the release: waiting on the user", "status": "blocked"}
+        ]),
+        vec![Reply::Text("ticket 1 landed; the push waits on you")],
+    );
+    let turn = loop_
+        .turn_with(UserInput::from("land and push"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "ticket 1 landed; the push waits on you");
+    assert_eq!(sent.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn replies_that_never_act_end_the_turn_at_the_stall_cap() {
+    let (mut loop_, sent, _dirs) = todo_session(
+        serde_json::json!([{"text": "ticket 2", "status": "active"}]),
+        vec![
+            Reply::Text("first"),
+            Reply::Text("second"),
+            Reply::Text("third"),
+        ],
+    );
+    let turn = loop_
+        .turn_with(UserInput::from("land it"), |_| {})
+        .await
+        .unwrap();
+    assert_eq!(turn.text, "third");
+    assert_eq!(
+        sent.lock().unwrap().len(),
+        1 + 1 + crate::limits::limits().stall_rounds
+    );
+}
+
+#[tokio::test]
+async fn a_goal_with_a_green_check_and_open_tasks_is_not_complete() {
+    let (mut loop_, _sent, _dirs) = todo_session(
+        serde_json::json!([{"text": "ticket 14", "status": "pending"}]),
+        vec![
+            Reply::Text("tests pass"),
+            Reply::Text("tests pass"),
+            Reply::Text("tests pass"),
+            Reply::Text(r#"{"verdict": "continue", "reason": "ticket 14 is open"}"#),
+        ],
+    );
+    loop_
+        .select_goal("land all tickets", &["true".to_string()])
+        .unwrap();
+    loop_.set_mode(crate::WorkKind::Goal);
+    loop_
+        .turn_with(UserInput::from("land all tickets"), |_| {})
+        .await
+        .unwrap();
+    let progress = loop_.work_progress().unwrap();
+    assert_ne!(
+        progress.phase,
+        summonr_types::WorkPhase::Completed,
+        "{progress:?}"
+    );
+}

@@ -95,6 +95,7 @@ pub(crate) struct Options<'a> {
     pub(crate) images: bool,
     pub(crate) interrupt: Option<(&'a Path, &'a str)>,
     pub(crate) prompt: Option<&'a str>,
+    pub(crate) root: &'a str,
 }
 
 impl Session {
@@ -163,7 +164,7 @@ impl Session {
         );
         std::fs::write(
             self.home.path().join("config.toml"),
-            format!("{endpoint}{config}"),
+            format!("{}{endpoint}{config}", options.root),
         )
         .unwrap();
         let stdout = self.file("stdout");
@@ -181,6 +182,7 @@ impl Session {
             .env("HOME", self.home.path())
             .env("USERPROFILE", self.home.path())
             .env("SUMMONR_HOME", self.home.path())
+            .env_remove("SUMMONR_PARENT_SESSION")
             .env(
                 "SUMMONR_MODELS_URL",
                 format!("http://127.0.0.1:{}/registry.json", model.port),
@@ -235,6 +237,7 @@ impl Session {
             .env("HOME", self.home.path())
             .env("USERPROFILE", self.home.path())
             .env("SUMMONR_HOME", self.home.path())
+            .env_remove("SUMMONR_PARENT_SESSION")
             .stdin(Stdio::null())
             .output()
             .unwrap();

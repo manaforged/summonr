@@ -1,0 +1,479 @@
+use std::path::Path;
+use std::process::Command;
+
+pub(crate) fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "Dev")
+        .env("GIT_AUTHOR_EMAIL", "dev@example.com")
+        .env("GIT_COMMITTER_NAME", "Dev")
+        .env("GIT_COMMITTER_EMAIL", "dev@example.com")
+        .status()
+        .unwrap();
+    assert!(status.success(), "{args:?}");
+}
+
+pub(crate) fn repo() -> (tempfile::TempDir, std::path::PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let primary = root.path().join("repo");
+    std::fs::create_dir(&primary).unwrap();
+    git(&primary, &["init", "-q", "-b", "main"]);
+    git(&primary, &["config", "user.name", "Dev"]);
+    git(&primary, &["config", "user.email", "dev@example.com"]);
+    std::fs::create_dir(primary.join("target")).unwrap();
+    std::fs::write(primary.join("target").join("marker"), "cache").unwrap();
+    std::fs::write(primary.join("README"), "hi").unwrap();
+    git(&primary, &["add", "README"]);
+    git(&primary, &["commit", "-q", "-m", "init"]);
+    (root, primary)
+}
+
+#[test]
+fn an_implement_child_checks_out_in_repo_children() {
+    let (_root, primary) = repo();
+    let tree = super::open_delta(&primary).unwrap();
+    assert_eq!(
+        tree.path.parent().unwrap().file_name().unwrap(),
+        "repo-children"
+    );
+    let listed = crate::diff::git_env(&primary, &[], &["worktree", "list", "--porcelain"]).unwrap();
+    assert!(!listed.contains(&*tree.path.to_string_lossy()), "{listed}");
+}
+
+#[test]
+fn an_implement_child_shares_the_parent_build_cache() {
+    let (_root, primary) = repo();
+    let tree = super::open_delta(&primary).unwrap();
+    let cache = tree.path.join("target");
+    assert!(
+        std::fs::symlink_metadata(&cache)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read(cache.join("marker")).unwrap(), b"cache");
+}
+
+#[test]
+fn a_listed_cache_path_is_shared_into_the_delta() {
+    let (_root, primary) = repo();
+    std::fs::create_dir_all(primary.join(".summonr")).unwrap();
+    std::fs::create_dir_all(primary.join("vendor/cache")).unwrap();
+    std::fs::write(primary.join("vendor/cache/keep"), "k").unwrap();
+    std::fs::write(primary.join(".summonr/linked"), "vendor/cache\n").unwrap();
+    let tree = super::open_delta(&primary).unwrap();
+    let shared = tree.path.join("vendor/cache");
+    assert!(
+        std::fs::symlink_metadata(&shared)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(std::fs::read(shared.join("keep")).unwrap(), b"k");
+}
+
+#[test]
+fn an_untouched_delta_is_clean_until_the_child_edits() {
+    let (_root, primary) = repo();
+    let tree = super::open_delta(&primary).unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
+    assert!(!tree.unchanged().unwrap());
+}
+
+#[test]
+fn a_dirty_parent_opens_a_clean_delta() {
+    let (_root, primary) = repo();
+    std::fs::write(primary.join("README"), "dirty").unwrap();
+    std::fs::write(primary.join("note.txt"), "new").unwrap();
+    let tree = super::open_delta(&primary).unwrap();
+    let status = crate::diff::git_env(&tree.path, &[], &["status", "--porcelain"]).unwrap();
+    assert!(status.is_empty(), "{status}");
+}
+
+#[test]
+fn two_children_land_different_files_without_a_touched_list() {
+    let (_root, primary) = repo();
+    let left = super::open_delta(&primary).unwrap();
+    let right = super::open_delta(&primary).unwrap();
+    std::fs::write(left.path.join("left.txt"), "L").unwrap();
+    std::fs::write(right.path.join("right.txt"), "R").unwrap();
+    let landed = super::reconcile_children(
+        &primary,
+        &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
+    );
+    assert_eq!(std::fs::read(primary.join("left.txt")).unwrap(), b"L");
+    assert_eq!(std::fs::read(primary.join("right.txt")).unwrap(), b"R");
+    assert!(!left.path.exists());
+    assert!(!right.path.exists());
+    assert_eq!(landed[0].paths, vec!["left.txt".to_string()]);
+    assert_eq!(landed[1].paths, vec!["right.txt".to_string()]);
+    assert!(landed[0].kept.is_none() && landed[1].kept.is_none());
+}
+
+#[test]
+fn overlapping_edits_keep_the_later_delta() {
+    let (_root, primary) = repo();
+    let left = super::open_delta(&primary).unwrap();
+    let right = super::open_delta(&primary).unwrap();
+    std::fs::write(left.path.join("README"), "left\n").unwrap();
+    std::fs::write(right.path.join("README"), "right\n").unwrap();
+    let landed = super::reconcile_children(
+        &primary,
+        &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
+    );
+    assert_eq!(std::fs::read(primary.join("README")).unwrap(), b"left\n");
+    assert!(!left.path.exists());
+    assert!(right.path.exists());
+    assert!(landed[1].kept.is_some());
+    assert_eq!(landed[0].paths, vec!["README".to_string()]);
+}
+
+#[test]
+fn a_child_commit_on_the_delta_still_lands() {
+    let (_root, primary) = repo();
+    let tree = super::open_delta(&primary).unwrap();
+    std::fs::write(tree.path.join("extra.txt"), "x").unwrap();
+    git(&tree.path, &["add", "extra.txt"]);
+    git(&tree.path, &["commit", "-q", "-m", "child"]);
+    let landed = super::reconcile_children(&primary, &[(tree.clone(), Vec::new())]);
+    assert_eq!(std::fs::read(primary.join("extra.txt")).unwrap(), b"x");
+    assert!(!tree.path.exists());
+    assert!(landed[0].kept.is_none());
+}
+
+#[test]
+fn a_delta_that_leaves_the_parent_base_is_kept() {
+    let (_root, primary) = repo();
+    std::fs::write(primary.join("README"), "second").unwrap();
+    git(&primary, &["add", "README"]);
+    git(&primary, &["commit", "-q", "-m", "second"]);
+    let first = crate::diff::git_env(&primary, &[], &["rev-parse", "HEAD~1"]).unwrap();
+    let tree = super::open_delta(&primary).unwrap();
+    git(&tree.path, &["reset", "--hard", &first]);
+    std::fs::write(tree.path.join("lost.txt"), "nope").unwrap();
+    let landed = super::reconcile_children(&primary, &[(tree.clone(), Vec::new())]);
+    assert!(!primary.join("lost.txt").exists());
+    assert_eq!(std::fs::read(tree.path.join("lost.txt")).unwrap(), b"nope");
+    let kept = landed[0].kept.as_deref().unwrap();
+    assert!(kept.contains("moved off the parent base"), "{kept}");
+}
+
+#[test]
+fn generated_files_from_two_children_do_not_block_their_edits() {
+    let (_root, primary) = repo();
+    let left = super::open_delta(&primary).unwrap();
+    let right = super::open_delta(&primary).unwrap();
+    for (tree, name, bytes) in [(&left, "left.py", "L"), (&right, "right.py", "R")] {
+        std::fs::write(tree.path.join(name), bytes).unwrap();
+        std::fs::create_dir_all(tree.path.join("__pycache__")).unwrap();
+        std::fs::write(tree.path.join("__pycache__/m.cpython-312.pyc"), bytes).unwrap();
+    }
+    let landed = super::reconcile_children(
+        &primary,
+        &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
+    );
+    assert!(
+        landed.iter().all(|landing| landing.kept.is_none()),
+        "{:?}",
+        landed
+            .iter()
+            .map(|landing| &landing.kept)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(std::fs::read(primary.join("left.py")).unwrap(), b"L");
+    assert_eq!(std::fs::read(primary.join("right.py")).unwrap(), b"R");
+    assert!(!primary.join("__pycache__").exists());
+}
+
+#[test]
+fn a_child_edit_to_a_non_ascii_name_lands() {
+    let (_root, primary) = repo();
+    std::fs::write(primary.join("café.txt"), "original").unwrap();
+    git(&primary, &["add", "café.txt"]);
+    git(&primary, &["commit", "-q", "-m", "cafe"]);
+    let child = super::open_delta(&primary).unwrap();
+    std::fs::write(child.path.join("café.txt"), "changed").unwrap();
+    std::fs::write(child.path.join("naïve.txt"), "new").unwrap();
+    let landed = super::reconcile_children(&primary, &[(child.clone(), Vec::new())]);
+    assert_eq!(std::fs::read(primary.join("café.txt")).unwrap(), b"changed");
+    assert_eq!(std::fs::read(primary.join("naïve.txt")).unwrap(), b"new");
+    assert_eq!(
+        landed[0].paths,
+        vec!["café.txt".to_string(), "naïve.txt".to_string()]
+    );
+    assert!(landed[0].kept.is_none(), "{:?}", landed[0].kept);
+}
+
+#[test]
+fn a_worktree_run_commits_its_edits_without_caches_under_a_whole_word_subject() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(
+        tree.path.join("calc.py"),
+        "def add(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
+    std::fs::write(
+        tree.path.join("__pycache__/calc.cpython-312.pyc"),
+        "bytecode",
+    )
+    .unwrap();
+    let objective =
+        "fix calc.py so python3 run_tests.py passes on every supported interpreter version";
+    let committed = super::finish(
+        &tree,
+        "test",
+        objective,
+        &[
+            "calc.py".to_string(),
+            "__pycache__/calc.cpython-312.pyc".to_string(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(committed, vec!["calc.py".to_string()]);
+    let files = Command::new("git")
+        .args(["show", "--name-only", "--format=%s", "HEAD"])
+        .current_dir(&primary)
+        .output()
+        .unwrap();
+    let shown = String::from_utf8_lossy(&files.stdout);
+    let subject = shown.lines().next().unwrap_or_default();
+    assert!(!shown.contains("__pycache__"), "{shown}");
+    assert!(subject.len() <= 72, "{subject}");
+    let body = subject.trim_start_matches("summonr: ");
+    assert!(
+        objective.starts_with(body) && objective[body.len()..].starts_with(' '),
+        "{subject}"
+    );
+}
+
+#[test]
+fn a_worktree_run_whose_agent_already_committed_still_lands() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(
+        tree.path.join("calc.py"),
+        "def add(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    git(&tree.path, &["add", "calc.py"]);
+    git(&tree.path, &["commit", "-q", "-m", "agent commit"]);
+    std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
+    std::fs::write(
+        tree.path.join("__pycache__/calc.cpython-312.pyc"),
+        "bytecode",
+    )
+    .unwrap();
+    let landed = super::finish(&tree, "test", "fix calc", &["calc.py".to_string()]);
+    assert!(landed.is_ok(), "{landed:?}");
+    assert!(on_main(&primary).contains("calc.py"));
+}
+
+fn tracked(primary: &Path, path: &str) {
+    if let Some(dir) = Path::new(path).parent() {
+        std::fs::create_dir_all(primary.join(dir)).unwrap();
+    }
+    std::fs::write(primary.join(path), "kept\n").unwrap();
+    git(primary, &["add", "--", path]);
+    git(primary, &["commit", "-q", "-m", "track"]);
+}
+
+fn on_main(primary: &Path) -> String {
+    let out = Command::new("git")
+        .args(["ls-tree", "-r", "-z", "--name-only", "main"])
+        .current_dir(primary)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).replace('\0', "\n")
+}
+
+#[test]
+fn a_worktree_run_lands_a_deleted_non_ascii_file() {
+    let (_root, primary) = repo();
+    tracked(&primary, "café.rs");
+    let tree = super::add(&primary).unwrap();
+    std::fs::remove_file(tree.path.join("café.rs")).unwrap();
+    let committed = super::finish(&tree, "test", "drop café", &["café.rs".to_string()]).unwrap();
+    assert_eq!(committed, vec!["café.rs".to_string()]);
+    assert!(!on_main(&primary).contains("café.rs"));
+}
+
+#[test]
+fn a_glob_character_in_a_touched_path_stages_only_that_file() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("a[b].txt"), "touched\n").unwrap();
+    std::fs::write(tree.path.join("ab.txt"), "not part of the run\n").unwrap();
+    let result = super::finish(&tree, "test", "edit a[b]", &["a[b].txt".to_string()]);
+    assert!(result.is_err_and(|error| error.to_string().contains("ab.txt")));
+    assert!(!on_main(&primary).contains("ab.txt"));
+}
+
+#[test]
+fn a_rename_into_a_cache_path_is_not_thrown_away() {
+    let (_root, primary) = repo();
+    tracked(&primary, "a.c");
+    let tree = super::add(&primary).unwrap();
+    std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
+    git(&tree.path, &["mv", "a.c", "__pycache__/a.c"]);
+    let result = super::finish(&tree, "test", "move a.c", &[]);
+    assert!(result.is_err_and(|error| error.to_string().contains("a.c")));
+    assert!(tree.path.join("__pycache__/a.c").exists());
+}
+
+#[test]
+fn a_worktree_holding_only_summonr_state_is_unchanged() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::create_dir_all(tree.path.join(".summonr/jobs")).unwrap();
+    std::fs::write(tree.path.join(".summonr/jobs/1.log"), "check output").unwrap();
+    assert!(tree.unchanged().unwrap());
+    std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
+    assert_eq!(tree.changes().unwrap(), vec!["note.txt".to_string()]);
+    drop(tree.remove());
+}
+
+#[test]
+fn a_large_file_changed_only_on_the_moved_base_does_not_block_the_run() {
+    let (_root, primary) = repo();
+    let big = "x".repeat(6 * 1024 * 1024);
+    std::fs::write(primary.join("data.bin"), &big).unwrap();
+    git(&primary, &["add", "data.bin"]);
+    git(&primary, &["commit", "-q", "-m", "data"]);
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(primary.join("data.bin"), format!("{big}y")).unwrap();
+    git(&primary, &["commit", "-q", "-am", "base moves"]);
+    std::fs::write(tree.path.join("calc.py"), "x = 1\n").unwrap();
+    let error = super::finish(&tree, "test", "add calc", &["calc.py".to_string()]).unwrap_err();
+    assert!(!error.to_string().contains("data.bin"), "{error}");
+}
+
+#[test]
+fn a_linked_worktree_is_found_from_its_own_folder_and_the_primary_is_not() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    let found = super::tree_at(&tree.path).map(|found| found.branch);
+    assert_eq!(found, Some(tree.branch.clone()));
+    assert!(super::tree_at(&primary).is_none());
+    drop(tree.remove());
+}
+
+#[test]
+fn a_sweep_reports_the_worktrees_it_pruned() {
+    let (root, primary) = repo();
+    let gone = root.path().join("gone");
+    git(
+        &primary,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "gone",
+            gone.to_str().unwrap(),
+        ],
+    );
+    std::fs::remove_dir_all(&gone).unwrap();
+    let pruned = super::sweep(&primary).unwrap();
+    let names: Vec<_> = pruned.iter().filter_map(|path| path.file_name()).collect();
+    assert_eq!(names, ["gone"]);
+}
+
+#[test]
+fn merge_all_lands_uncommitted_work() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("new.txt"), "work").unwrap();
+    super::merge_all(&tree, "test", "add the new file").unwrap();
+    assert_eq!(std::fs::read(primary.join("new.txt")).unwrap(), b"work");
+    assert!(!tree.path.exists());
+}
+
+#[test]
+fn merge_all_merges_when_the_base_moved() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("mine.txt"), "mine").unwrap();
+    std::fs::write(primary.join("theirs.txt"), "theirs").unwrap();
+    git(&primary, &["add", "theirs.txt"]);
+    git(&primary, &["commit", "-q", "-m", "moved on"]);
+    super::merge_all(&tree, "test", "add my file").unwrap();
+    assert_eq!(std::fs::read(primary.join("mine.txt")).unwrap(), b"mine");
+    assert_eq!(
+        std::fs::read(primary.join("theirs.txt")).unwrap(),
+        b"theirs"
+    );
+    assert!(!tree.path.exists());
+}
+
+#[test]
+fn merge_all_keeps_a_worktree_that_conflicts() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("same.txt"), "mine").unwrap();
+    std::fs::write(primary.join("same.txt"), "theirs").unwrap();
+    git(&primary, &["add", "same.txt"]);
+    git(&primary, &["commit", "-q", "-m", "moved on"]);
+    let error = super::merge_all(&tree, "test", "edit")
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("does not merge cleanly"), "{error}");
+    assert_eq!(std::fs::read(primary.join("same.txt")).unwrap(), b"theirs");
+    assert!(tree.path.join("same.txt").exists());
+    assert!(!primary.join(".git/MERGE_HEAD").exists());
+}
+
+#[test]
+fn throw_away_removes_uncommitted_and_unmerged_work() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(tree.path.join("kept.txt"), "kept").unwrap();
+    git(&tree.path, &["add", "kept.txt"]);
+    git(&tree.path, &["commit", "-q", "-m", "unmerged"]);
+    std::fs::write(tree.path.join("dirty.txt"), "dirty").unwrap();
+    super::throw_away(&tree, "test").unwrap();
+    assert!(!tree.path.exists());
+    assert!(!primary.join("kept.txt").exists());
+}
+
+#[test]
+fn the_primary_checkout_on_a_summonr_branch_is_not_a_worktree() {
+    let (_root, primary) = repo();
+    let primary = primary.canonicalize().unwrap();
+    git(&primary, &["checkout", "-q", "-b", "summonr/primary"]);
+    let tree = super::add(&primary).unwrap();
+    assert_ne!(tree.path, primary);
+    let listed: Vec<_> = super::list(&primary)
+        .unwrap()
+        .into_iter()
+        .map(|tree| tree.path)
+        .collect();
+    assert_eq!(listed, vec![tree.path.clone()]);
+    drop(tree.remove());
+}
+
+#[test]
+fn a_conductor_workspace_is_a_linked_worktree_on_its_branch() {
+    let (root, primary) = repo();
+    let folder = root.path().join("conductor/workspaces/repo/tokyo");
+    std::fs::create_dir_all(folder.parent().unwrap()).unwrap();
+    let target = folder.to_str().unwrap();
+    git(
+        &primary,
+        &["worktree", "add", "-q", "-b", "tokyo-lights", target],
+    );
+    let folder = folder.canonicalize().unwrap();
+    for from in [&primary, &folder] {
+        let found: Vec<_> = super::linked(from)
+            .unwrap()
+            .into_iter()
+            .map(|tree| (tree.path, tree.branch))
+            .collect();
+        assert_eq!(found, vec![(folder.clone(), "tokyo-lights".to_owned())]);
+    }
+    assert!(super::list(&primary).unwrap().is_empty());
+}

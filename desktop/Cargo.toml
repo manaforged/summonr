@@ -1,0 +1,19 @@
+[package]
+name = "summonr-desktop"
+description = "Summonr desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "summonr-desktop"
+path = "src/main.rs"
+
+[dependencies]
+summonr = { path = "..", features = ["gui"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+summonr = { path = "..", features = ["gui", "menu"] }

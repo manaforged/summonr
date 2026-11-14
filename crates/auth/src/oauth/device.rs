@@ -1,12 +1,10 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use leyline::Session;
 use serde_json::Value;
 
-use crate::{
-    DEVICE_EXPIRY, Error, POLL_CEILING, POLL_FLOOR, POLL_STEP, Parts, Prompt, Result, Store,
-    seconds,
-};
+use crate::{Error, Parts, Prompt, Result, Store, TIMED_OUT, WAITS};
 
 use super::pkce::{challenge, random};
 use super::token::{minted, post, settle, told};
@@ -16,7 +14,7 @@ const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 pub(super) async fn login(
     parts: &Parts<'_>,
     http: &Session,
-    store: &dyn Store,
+    shared: &Arc<dyn Store>,
     prompt: &mut Prompt,
 ) -> Result<()> {
     let device_url = parts
@@ -32,25 +30,25 @@ pub(super) async fn login(
     let code = body
         .get("device_code")
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::Denied(format!("no device_code in the reply: {}", told(&body))))?;
+        .ok_or_else(|| crate::refused(format!("no device_code in the reply: {}", told(&body))))?;
     announce(&body, prompt);
     let wait = body
         .get("interval")
         .and_then(Value::as_u64)
-        .map_or(POLL_STEP, seconds)
-        .clamp(POLL_FLOOR, POLL_CEILING);
+        .map_or(WAITS.poll_step, Duration::from_secs)
+        .clamp(WAITS.poll_floor, WAITS.poll_ceiling);
     let stop = Instant::now()
         + body
             .get("expires_in")
             .and_then(Value::as_u64)
-            .map_or(DEVICE_EXPIRY, seconds);
+            .map_or(WAITS.device_expiry, Duration::from_secs);
     let poll = Poll {
         parts,
         http,
         code,
         verifier: verifier.as_deref(),
     };
-    poll.until(store, wait, stop).await
+    poll.until(shared, wait, stop).await
 }
 
 async fn requested(
@@ -69,7 +67,7 @@ async fn requested(
     }
     let (status, body) = post(http, device_url, &form, parts.spec.token_style).await?;
     if status >= 400 {
-        return Err(Error::Denied(format!(
+        return Err(crate::refused(format!(
             "the device request failed: HTTP {status} {}",
             told(&body)
         )));
@@ -87,12 +85,7 @@ fn announce(body: &Value, prompt: &mut Prompt) {
         .or_else(|| body.get("verification_uri"))
         .and_then(Value::as_str)
         .unwrap_or_default();
-    prompt.notice(&format!("open {uri} and enter {shown}"));
-    if let Err(error) = crate::open::external(uri) {
-        prompt.notice(&format!(
-            "the browser did not open ({error}); open the link"
-        ));
-    }
+    super::open_browser(prompt, uri, shown, "open the link");
 }
 
 struct Poll<'a> {
@@ -103,7 +96,12 @@ struct Poll<'a> {
 }
 
 impl Poll<'_> {
-    async fn until(&self, store: &dyn Store, mut wait: Duration, stop: Instant) -> Result<()> {
+    async fn until(
+        &self,
+        shared: &Arc<dyn Store>,
+        mut wait: Duration,
+        stop: Instant,
+    ) -> Result<()> {
         while Instant::now() < stop {
             tokio::time::sleep(wait).await;
             let (status, body) = post(
@@ -116,21 +114,21 @@ impl Poll<'_> {
             match body.get("error").and_then(Value::as_str) {
                 Some("authorization_pending") => continue,
                 Some("slow_down") => {
-                    wait = (wait + POLL_STEP).min(POLL_CEILING);
+                    wait = (wait + WAITS.poll_step).min(WAITS.poll_ceiling);
                     continue;
                 }
                 Some(other) => {
-                    return Err(Error::Denied(format!("the login was refused: {other}")));
+                    return Err(crate::refused(format!("the login was refused: {other}")));
                 }
                 None => {}
             }
             if status >= 400 {
-                return Err(Error::Denied(format!("the login failed: HTTP {status}")));
+                return Err(crate::refused(format!("the login failed: HTTP {status}")));
             }
             let grant = minted(&body)?;
-            return settle(self.parts, self.http, store, grant).await;
+            return settle(self.parts, self.http, shared, grant).await;
         }
-        Err(Error::Denied("the login timed out".to_string()))
+        Err(crate::refused(TIMED_OUT.to_string()))
     }
 
     fn form(&self) -> Vec<(String, String)> {
@@ -143,9 +141,7 @@ impl Poll<'_> {
         if let Some(verifier) = self.verifier {
             form.push(("code_verifier".to_string(), verifier.to_string()));
         }
-        for (key, value) in &spec.token_params {
-            form.push((key.clone(), value.clone()));
-        }
+        spec.extend_token_form(&mut form, false);
         form
     }
 }

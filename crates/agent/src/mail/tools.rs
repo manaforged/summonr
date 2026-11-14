@@ -1,0 +1,65 @@
+use crate::provider::ToolDefinition;
+use crate::tools::tool;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tool {
+    Agents,
+    Send,
+    Inbox,
+    Board,
+}
+
+const NAMES: &[(&str, Tool)] = &[
+    ("agents", Tool::Agents),
+    ("send", Tool::Send),
+    ("inbox", Tool::Inbox),
+    ("board", Tool::Board),
+];
+
+impl Tool {
+    #[must_use]
+    pub(crate) fn of(name: &str) -> Option<Self> {
+        NAMES
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|(_, tool)| *tool)
+    }
+
+    #[must_use]
+    pub(crate) fn name(self) -> &'static str {
+        NAMES
+            .iter()
+            .find(|(_, tool)| *tool == self)
+            .map_or("", |(name, _)| *name)
+    }
+}
+
+pub(crate) fn definitions() -> Vec<ToolDefinition> {
+    let none =
+        serde_json::json!({"type": "object", "properties": {}, "additionalProperties": false});
+    [
+        (
+            Tool::Agents,
+            "Live agent sessions on this machine: id, kind, model, workspace, status.",
+            none.clone(),
+        ),
+        (
+            Tool::Send,
+            "Send text to one agent by name or id, or to \"all\". It lands in their inbox and reaches them at their next step; they reply to your id.",
+            serde_json::json!({"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}, "reply_to": {"type": "string", "description": "message id this replies to; retained in the mail audit"}}, "required": ["to", "text"], "additionalProperties": false}),
+        ),
+        (Tool::Inbox, "Read mail that arrived since the last read. New messages arrive automatically between rounds; polling is unnecessary.", none),
+        (
+            Tool::Board,
+            "The board every agent in this swarm shares. post: say value to all of them; it wakes only agents it @mentions (@all wakes everyone), the rest read it at their next step. set key=value: claim files or record a decision. get key. list: the claims and the newest posts.",
+            serde_json::json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["post", "get", "set", "list"]}, "key": {"type": "string"}, "value": {"type": "string"}}, "required": ["action"], "additionalProperties": false}),
+        ),
+    ]
+    .into_iter()
+    .map(|(kind, description, schema)| tool(kind.name(), description, schema))
+    .collect()
+}
+
+pub(crate) fn is_mail_tool(name: &str) -> bool {
+    Tool::of(name).is_some()
+}

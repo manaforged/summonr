@@ -20,9 +20,9 @@ Typing `/` opens the command list above the composer. Each row shows the `/comma
 
 ## Send and steer a turn
 
-While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the round, the seconds so far, the output rate, and the queue count. The composer status counts waiting input, as in `2 queued, ↑ edits`.
+While a turn runs, a row above the composer shows a spinner, what the model is doing (`thinking`, or the tool it runs), the seconds so far, the output rate, and the waiting count. Waiting messages appear as text above the composer, marked `next` or `after turn`.
 
-A message you send during a turn goes into the running turn. The model reads it after its current tool calls. It carries a note that asks the model to answer it in its next reply. The message waits in the queue for the next turn instead when:
+`enter` during a turn sends a message into it. A reply in progress stops, and the model starts again with your message. A running command moves to a background job and keeps running, so the model reads the message at once, and background jobs keep running. An MCP call or a read-only tool stops, and the model can run it again. A foreground task and an open dialog wait. The message joins the transcript when the model receives it, and `↑` on an empty composer pulls waiting messages back until then. `esc` is the interrupt: waiting messages return to the composer, and explicit background jobs keep running. `tab` queues a message for after the turn, and it also waits for the next turn when:
 
 - an approval or a question is open,
 - earlier messages or commands still wait, or
@@ -61,7 +61,7 @@ In the files tree, `ctrl+→` focuses it, `↑↓` move, `←→` collapse or ex
 
 ### Worktrees and jobs
 
-`/pane worktrees` lists this repository's `summonr/*` worktrees: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens its diff. The right-click menu offers show diff, merge (fast-forward only; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktrees` prints the same rows, `--json` as JSON, and `summonr worktrees prune --json` prints the removed paths as a JSON array.
+`/pane worktrees` lists this repository's `summonr/*` worktrees: branch, commits ahead of the base, dirty or clean, the session that ran there, and the directory. Enter or `→` opens its diff. The right-click menu offers show diff, merge (fast-forward only; a dirty tree is refused), remove worktree (only when clean and fully merged), and insert path. `summonr worktree list` prints the same rows, `--json` as JSON, and `summonr worktree prune --json` prints the removed paths as a JSON array.
 
 `/pane jobs` lists this workspace's background commands. Each row is the command and its state: `running`, `exit N`, `killed`, or `dead`. Enter or `→` expands its status lines. The right-click menu offers view log (the job's `.log` in the view pane) and kill job, the same stop as `run_command` with `{"job": ID, "kill": true}`.
 
@@ -101,9 +101,9 @@ A pane `diff_split_min_cols` columns or wider (100 by default) shows a file's hu
 
 ### From the command line
 
-The same data is `summonr diff [PATH]` (the patch), `summonr diff --stat`, and `summonr diff --json`. `summonr diff` never lists generated caches (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`) or summonr state under `.summonr/` other than `check.toml` and `policy.toml`, even without a `.gitignore`.
+The same data is `summonr session diff [PATH]` (the patch), `summonr session diff --stat`, and `summonr session diff --json`. `summonr session diff` never lists generated caches (`__pycache__/`, `*.pyc`, `.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`) or summonr state under `.summonr/` other than `check.toml` and `policy.toml`, even without a `.gitignore`.
 
-`summonr diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn.
+`summonr session diff --turn N` shows what turn N changed: from the checkpoint taken at its start to the next turn's checkpoint, or to the workspace for the newest turn.
 
 | `--turn` value | Shows |
 | --- | --- |
@@ -127,9 +127,9 @@ Press `e` to edit in place. The keyboard goes to the file (type, Enter, arrows, 
 | --- | --- |
 | Name a session | `summonr --name TEXT` or `/name TEXT` |
 | Resume a session | `--session` with a name, the short id, or an id prefix |
-| List sessions | `summonr sessions` (names and short ids, with a header row on a terminal) |
-| Search past sessions | `summonr sessions --grep TEXT` |
-| Export a transcript as Markdown | `summonr export [ID\|NAME]`, or `/export [PATH]` in the session |
+| List sessions | `summonr session list` (names and short ids, with a header row on a terminal) |
+| Search past sessions | `summonr session search TEXT` |
+| Export a transcript as Markdown | `summonr session export [ID\|NAME]`, or `/export [PATH]` in the session |
 | Show the binary path and crashed or incomplete runs | `summonr doctor` |
 | List the last 20 per-run diagnostic logs | `summonr doctor --logs` |
 
@@ -137,9 +137,9 @@ Press `e` to edit in place. The keyboard goes to the file (type, Enter, arrows, 
 
 Every place that shows a session id shows the short id, its first 12 characters. They encode the start time, so two sessions started in the same millisecond share one; resuming by it then lists the full ids to choose from.
 
-`/undo` continues in a copy of the session with a new id, so `summonr sessions` lists both.
+`/undo` continues in a copy of the session with a new id, so `summonr session list` lists both.
 
-`summonr sessions --grep TEXT` searches past sessions newest first, case-insensitively. It prints the session id, its start time, its directory, and each matching line, and exits 1 when nothing matches. The model can run it through `run_command` to recall earlier work.
+`summonr session search TEXT` searches past sessions newest first, case-insensitively. It prints the session id, its start time, its directory, and each matching line, and exits 1 when nothing matches. The model can run it through `run_command` to recall earlier work.
 
 Diagnostic logs older than 14 days are removed unless their process is still active. Session directories under `~/.summonr/sessions/` with no file change for 30 days are removed once per start, except the session that run opens. Set another period in days, 1 or more, in `~/.summonr/config.toml`:
 
@@ -150,28 +150,29 @@ retain_days = 90
 
 ## Child sessions
 
-The `task` tool delegates work to fresh child sessions. Only an interactive session offers it; `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. The model can emit several `task` calls in one response, and summonr runs them concurrently. Every child tool call, result, and answer streams into the parent transcript under the child id.
+The `task` tool delegates work to fresh child sessions. Only an interactive session offers it; `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. The model can emit several `task` calls in one response, and summonr runs them concurrently. A child tool call does not start a parent turn. Mail to the child's name does, and it stops that child's running command and background jobs. The parent transcript keeps the child's answers under the child id.
 
 | Kind | Workspace | Can |
 | --- | --- | --- |
-| `implement` | An isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules` | Use the parent's file, shell, and language-server tools; background commands stay with the parent |
+| `implement`, named | This checkout. Pass `workspace` `isolated` to force a separate checkout | Use the parent's file, shell, and language-server tools. Edits are visible immediately |
+| `implement`, unnamed | An isolated checkout in `<repo>-children/<id>` that shares the parent's `target/` and `node_modules` | Use the parent's file, shell, and language-server tools; background commands stay with the parent |
 | `research` | The parent workspace | Read and search; a foreground shell command; no writes, no background commands |
 
 The `task` module is on by default. Turn it off in the Modules rows of `/settings`, or with `task = false` under `[modules]` in `~/.summonr/config.toml`.
 
 ### Implement children
 
-The parent applies each finished child's edits on its own, then verifies. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. The receipt lists the files that landed.
+The parent applies each finished unnamed child's edits on its own, then verifies. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) and summonr state under `.summonr/` other than `check.toml` and `policy.toml` never land. The receipt lists the files that landed.
 
-A child never inherits goal or steps mode: it works in plain working mode. Its first message names only its own checkout, and children started together do not see each other's edits.
+A child never inherits goal or steps mode: it works in plain working mode. A named child edits this checkout, so the other children see those edits. An unnamed child's first message names only its own checkout.
 
-When two children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done. summonr never deletes a kept checkout. Pass `--worktree` on the session to isolate the whole run in a git worktree.
+When two unnamed children change the same lines, that child's checkout stays on disk and the others still land. The child shows as a conflict, not a failure: `kept <repo>-children/<id>: conflicts with the parent`, followed by an `rm -rf` hint that removes the checkout when you are done. summonr never deletes a kept checkout. Pass `--worktree` on the session to isolate the whole run in a git worktree.
 
 ### Limits and budgets
 
 Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message.
 
-A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal. A research child that calls `edit` or `write` is told it is read-only. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A child that calls `task` gets a refusal; every other tool works in a child, research children included. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 A `task` call can name a plugin agent with `agent`. Its instructions open the child's first message, its `tools` list limits what the child can call, and the child's row names that agent. Task card titles use workspace-relative paths, and a card with one child takes that child's title.
 
@@ -182,6 +183,8 @@ A `task` call can name a plugin agent with `agent`. Its instructions open the ch
 | `task` with `background: true` | Starts the child and returns its id at once |
 | `task` with `child: ID` | Reports state, elapsed time, and last action while it runs; the full result once it finishes |
 | `task` with `child: ID` and `kill: true` | Stops the child |
+| `task` with `child: ID` and `clear: true` | Dismisses its background status card without stopping it or deleting history |
+| `task` with `child: ID`, `kill: true`, and `clear: true` | Stops the child and dismisses its background status card |
 
 A turn does not end while a background child runs. summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it. **Clear** on a background status row dismisses that row for the current view without stopping the child; its completion report and session log stay available, and new children still appear.
 
@@ -205,7 +208,7 @@ The mailbox is also a CLI, so any agent CLI (Claude Code, Codex, a script) can t
 
 ```
 summonr mail                  # who is on this machine
-summonr mail send <name|id|all> <text>
+summonr mail send [--json] [--reply-to ID] <name|id|all> <text>
 summonr mail inbox <id> [--clear]
 summonr mail board [get <key>|set <key> <text>]
 ```
@@ -214,9 +217,13 @@ A foreign agent picks an id and reads `summonr mail inbox <id>`; anyone can writ
 
 `inbox <id> --clear` prints the mail and empties that inbox; it refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost.
 
+## Project instructions
+
+In a trusted workspace, summonr reads your instruction files into the system prompt at session start: `AGENTS.md`, Claude Code's `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, and `.claude/rules/*.md`, from the workspace and the folders above it, plus your user files such as `~/.claude/CLAUDE.md` and `~/.claude/rules/`. `@path` imports other files into them. A rule with `paths` in its front matter does not load at session start. The [reference](reference.md) lists every file, the order, and the import rules. `--no-trust` skips all of them. Edits apply to new sessions.
+
 ## Memory
 
-summonr remembers across sessions through two Markdown files that load into every trusted session:
+With `memory = true` under `[modules]`, summonr remembers across sessions through two Markdown files that load into every trusted session. The module is off by default.
 
 | Memory | File |
 | --- | --- |
@@ -263,16 +270,16 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 
 ## Theme
 
-`theme` in `config.toml` selects a preset. The Theme row in `/settings` cycles them.
+`theme` in `config.toml` selects a preset. The Theme editor in `/settings` has System, Light, and Dark buttons. Arrow keys cycle individual presets.
 
 | `theme` | Look |
 | --- | --- |
-| `space` (default) | The default preset |
+| `space` | Dark |
 | `nord` | The Nord palette |
 | `dawn` | Low-glare light |
-| `auto` | `space` or `dawn`, from the terminal's background |
+| `auto` (default) | `space` or `dawn`, from the terminal's background |
 
-`background = "terminal"` leaves the background unpainted so the terminal's own background (and any transparency) shows through. `"theme"`, the default, paints the theme's `base` color. The Background row in `/settings` switches between them.
+`background = "terminal"`, the default, leaves the background unpainted so the terminal's own background (and any transparency) shows through. `"theme"` paints the theme's `base` color. The Background row in `/settings` switches between them.
 
 Every other color is a named token you can override in a theme file. Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`, or to `<workspace>/.summonr/theme.toml` for one project:
 
@@ -288,7 +295,7 @@ The tokens are `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought
 
 ## Desktop window
 
-`summonr --gui` opens the session in a desktop window, in a build with `--features gui`. The window runs the same app and layouts as the terminal.
+The desktop app, `summonr-desktop`, opens the session in a native window. The window runs the same app and layouts as the terminal.
 
 The left rail starts with a row of buttons for the Files, Changes, Worktrees, Jobs, Peers, and Ledger panes, then lists this workspace's sessions. `+` starts a new session, and the branch button starts one in its own git worktree; merge or discard it from the Worktrees pane. Right-click a session for Rename and, on a past session, Delete.
 
@@ -336,4 +343,4 @@ Every URL the browser opens passes the same check as `web`: no private hosts and
 
 ## Herdr
 
-When summonr runs inside a [Herdr](https://herdr.dev) pane, it reports lifecycle state through Herdr's CLI (`pane report-agent`): `idle` is the prompt and `working` is a turn. The summonr session id is the native session reference, and `/name TEXT` becomes the pane title and `$summary` token. Child sessions do not report, so a nested `task` does not take over the pane. Herdr has no built-in `summonr` kind; this reporter is the integration.
+When summonr runs inside a [Herdr](https://herdr.dev) pane, it reports lifecycle state through Herdr's CLI (`pane report-agent`): `idle` is the prompt and `working` is a turn. The summonr session id is the native session reference, and `/name TEXT` becomes the pane title and `$summary` token. Child sessions do not report, so a nested `task` does not take over the pane. Herdr has no built-in `summonr` kind; this reporter is the integration. The Herdr desktop app does not run that CLI. There, the interactive terminal reports `idle`, `working`, and `blocked` (an approval is waiting) with the OSC 7501 escape sequence, and clears the report when summonr exits.

@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 
-use summonr::{Result, last_for, list_sessions, resolve_session, sweep_worktrees, workflow};
+use summonr_agent::child::ChildState;
+use summonr_agent::{Result, last_for, list_sessions, resolve_session, sweep_worktrees, workflow};
 
-use crate::cli::{Args, McpCommand};
+use crate::entry::cli::{Args, McpCommand};
 
 pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
     match args.prompt.first() {
@@ -13,23 +14,34 @@ pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
         None => last_for(&workspace()?)?
             .map(|info| info.path)
             .ok_or_else(|| {
-                summonr::Error::Config("no prior session for this directory".to_string())
+                summonr_agent::Error::Config("no prior session for this directory".to_string())
             }),
     }
 }
 
 pub(super) fn export_session_cmd(args: &Args) -> Result<()> {
-    let text = summonr::export_session(&session_path(args)?)?;
+    if args.json {
+        if args.digest {
+            return Err(summonr_agent::Error::Config(
+                "--json and --digest cannot be combined".to_string(),
+            ));
+        }
+        return summonr_agent::export_json(&session_path(args)?, &mut std::io::stdout().lock());
+    }
+    let text = summonr_agent::export_session(&session_path(args)?)?;
     if args.digest {
-        print!("{}", summonr::classify::digest::digest(&text));
+        print!("{}", summonr_agent::classify::digest::digest(&text));
     } else {
         print!("{text}");
     }
     Ok(())
 }
 
-pub(super) fn print_sessions() -> Result<()> {
+pub(super) fn print_sessions(json: bool) -> Result<()> {
     let sessions = list_sessions()?;
+    if json {
+        return print_sessions_json(&sessions);
+    }
     if sessions.is_empty() {
         println!("no sessions");
         return Ok(());
@@ -43,10 +55,42 @@ pub(super) fn print_sessions() -> Result<()> {
     for info in sessions.iter().rev() {
         println!(
             "{}\t{}\t{}\t{}",
-            summonr::short(&info.id),
+            summonr_agent::short(&info.id),
             info.name.as_deref().unwrap_or("-"),
             info.cwd.as_deref().unwrap_or("-"),
             info.preview
+        );
+    }
+    Ok(())
+}
+
+fn print_sessions_json(sessions: &[summonr_agent::session::SessionInfo]) -> Result<()> {
+    println!("{}", summonr_agent::session::rows(sessions));
+    Ok(())
+}
+
+pub(super) fn print_children(args: &Args) -> Result<()> {
+    let children = summonr_agent::diff::children(&session_path(args)?)?;
+    if args.json {
+        println!("{}", serde_json::to_string(&children)?);
+        return Ok(());
+    }
+    for child in &children {
+        let state = match child.state {
+            ChildState::Running => "running",
+            ChildState::Completed(_) => "completed",
+            ChildState::Aborted(_) => "aborted",
+            ChildState::Failed(_) => "failed",
+            ChildState::Interrupted(_) => "interrupted",
+        };
+        let name = [&child.name, &child.agent]
+            .into_iter()
+            .find(|name| !name.is_empty())
+            .map_or("-", String::as_str);
+        println!(
+            "{}\t{state}\t{name}\t{}",
+            summonr_agent::short(&child.id.to_string()),
+            child.assignment.lines().next().unwrap_or_default()
         );
     }
     Ok(())
@@ -91,7 +135,7 @@ pub(super) fn grep_sessions(pattern: &str) -> Result<()> {
                 let info = &sessions[index];
                 format!(
                     "{}\t{}\t{}",
-                    summonr::short(&info.id),
+                    summonr_agent::short(&info.id),
                     started(&info.id),
                     info.cwd.as_deref().unwrap_or("-")
                 )
@@ -134,7 +178,7 @@ fn print_in_order(
 }
 
 fn matching(journal: &Path, needle: &str) -> Vec<String> {
-    let Ok(text) = summonr::export_session(journal) else {
+    let Ok(text) = summonr_agent::export_session(journal) else {
         return Vec::new();
     };
     text.lines()
@@ -179,7 +223,7 @@ pub(super) fn print_workflows() -> Result<()> {
 }
 
 pub(super) fn workspace() -> Result<PathBuf> {
-    std::env::current_dir().map_err(|error| summonr::Error::Config(error.to_string()))
+    std::env::current_dir().map_err(|error| summonr_agent::Error::Config(error.to_string()))
 }
 
 pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
@@ -198,14 +242,14 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
         }
         return Ok(());
     }
-    let trees = summonr::worktree_status(&cwd)?;
+    let trees = summonr_agent::worktree_status(&cwd)?;
     if args.json {
         let rows: Vec<serde_json::Value> = trees
             .iter()
             .map(|row| {
                 serde_json::json!({
                     "branch": row.tree.branch,
-                    "base": row.tree.base,
+                    "base": (!row.tree.base.is_empty()).then_some(&row.tree.base),
                     "path": row.tree.path,
                     "ahead": row.ahead,
                     "dirty": row.dirty,
@@ -226,62 +270,15 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
             row.tree.branch,
             row.ahead,
             if row.dirty { "dirty" } else { "clean" },
-            row.session.as_deref().map_or("-", summonr::short),
+            row.session.as_deref().map_or("-", summonr_agent::short),
             row.tree.path.display()
         );
     }
     Ok(())
 }
 
-pub(super) fn print_diff(args: &Args) -> Result<()> {
-    let cwd = workspace()?;
-    let path = args.prompt.first().map(String::as_str);
-    let turn = args
-        .turn
-        .as_deref()
-        .map(|turn| session_turn(&cwd, turn))
-        .transpose()?;
-    if turn.is_none() && !args.json && !args.stat {
-        print!("{}", summonr::diff::patch(&cwd, path)?);
-        return Ok(());
-    }
-    let mut diff = match &turn {
-        Some((session, turn)) => summonr::diff::turn_stats(&cwd, session, *turn)?,
-        None => summonr::diff::stats(&cwd)?,
-    };
-    diff.files
-        .retain(|stat| path.is_none_or(|path| stat.path == path));
-    let Some((session, turn)) = turn.filter(|_| !args.json && !args.stat) else {
-        return print_stats(&diff, args.json);
-    };
-    eprintln!("{}", diff.summary());
-    print!("{}", summonr::diff::turn_patch(&cwd, &session, turn, path)?);
-    Ok(())
-}
-
-fn session_turn(cwd: &Path, turn: &str) -> Result<(String, summonr::diff::TurnId)> {
-    let turn = turn.parse()?;
-    let session = summonr::last_for(cwd)?
-        .map(|info| info.id)
-        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))?;
-    Ok((session, turn))
-}
-
-fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
-    if json {
-        println!("{}", serde_json::to_string(diff)?);
-        return Ok(());
-    }
-    for stat in &diff.files {
-        let new = if stat.new { "  new" } else { "" };
-        println!("+{} −{} {}{new}", stat.added, stat.removed, stat.path);
-    }
-    println!("{}", diff.summary());
-    Ok(())
-}
-
 pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
-    let moved = summonr::adopt_keys()?;
+    let moved = summonr_agent::adopt_keys()?;
     if !moved.is_empty() && !args.json {
         eprintln!(
             "moved {} out of config.toml into the credential store",
@@ -291,21 +288,21 @@ pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
     Ok(moved)
 }
 
-pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
+pub(super) async fn mcp(command: &McpCommand, json: bool) -> Result<()> {
     match command {
-        McpCommand::List { json } => mcp_list(*json || json_flag),
-        McpCommand::Get { name, json } => mcp_get(name, *json || json_flag),
+        McpCommand::List => mcp_list(json),
+        McpCommand::Get { name } => mcp_get(name, json),
         McpCommand::Add { name, launch } => {
-            let kept = summonr::mcp_add(name, launch)?;
-            let count = summonr::mcp_probe(&workspace()?, name)
+            let kept = summonr_agent::mcp_add(name, launch)?;
+            let count = summonr_agent::mcp_probe(&workspace()?, name)
                 .await
                 .and_then(|count| {
                     count.ok_or_else(|| {
-                        summonr::Error::Config(format!("no MCP server named {name}"))
+                        summonr_agent::Error::Config(format!("no MCP server named {name}"))
                     })
                 })
                 .map_err(|error| {
-                    summonr::Error::Setup(format!(
+                    summonr_agent::Error::Setup(format!(
                         "{name}: not reachable: {error}\nkept in {kept}; fix the command or run `summonr mcp remove {name}`"
                     ))
                 })?;
@@ -313,8 +310,8 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
             Ok(())
         }
         McpCommand::Remove { name } => {
-            if !summonr::mcp_remove(name)? {
-                return Err(summonr::Error::Config(format!(
+            if !summonr_agent::mcp_remove(name)? {
+                return Err(summonr_agent::Error::Config(format!(
                     "no MCP server named {name} in ~/.summonr/config.toml"
                 )));
             }
@@ -325,7 +322,7 @@ pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
 }
 
 fn mcp_list(json: bool) -> Result<()> {
-    let rows = summonr::mcp_status(&workspace()?, None)?;
+    let rows = summonr_agent::mcp_status(&workspace()?, None)?;
     if json {
         println!("{}", serde_json::to_string(&rows)?);
     } else if rows.is_empty() {
@@ -337,10 +334,10 @@ fn mcp_list(json: bool) -> Result<()> {
 }
 
 fn mcp_get(name: &str, json: bool) -> Result<()> {
-    let row = summonr::mcp_status(&workspace()?, None)?
+    let row = summonr_agent::mcp_status(&workspace()?, None)?
         .into_iter()
         .find(|row| row.name == name)
-        .ok_or_else(|| summonr::Error::Config(format!("no MCP server named {name}")))?;
+        .ok_or_else(|| summonr_agent::Error::Config(format!("no MCP server named {name}")))?;
     if json {
         println!("{}", serde_json::to_string(&row)?);
         return Ok(());
@@ -355,8 +352,10 @@ fn mcp_get(name: &str, json: bool) -> Result<()> {
 
 const STATE_WIDTH: usize = 22;
 
-fn server_line(row: &summonr::ServerStatus) -> String {
-    let transport = row.transport.map_or("-", summonr::McpTransport::label);
+fn server_line(row: &summonr_agent::ServerStatus) -> String {
+    let transport = row
+        .transport
+        .map_or("-", summonr_agent::McpTransport::label);
     let line = format!(
         "{:<20} {:<STATE_WIDTH$} {transport:<6} {} tools  {}",
         row.name,
@@ -364,7 +363,7 @@ fn server_line(row: &summonr::ServerStatus) -> String {
         row.tools.len(),
         row.schema_size()
     );
-    if let (summonr::McpState::Failed, Some(detail)) = (row.state, &row.detail) {
+    if let (summonr_agent::McpState::Failed, Some(detail)) = (row.state, &row.detail) {
         format!("{line}\n  failed: {detail}")
     } else {
         line

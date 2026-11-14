@@ -80,6 +80,11 @@ pub(crate) fn an_unreadable_skill_fails_before_the_model_is_called() {
     let result = session.run_with(&model, "", &[], &options);
     assert_eq!(result.code, Some(1), "{}", result.stdout);
     assert!(model.requests().is_empty());
+    let stderr = crate::support::read(&session.file("stderr"));
+    assert!(
+        stderr.contains("skill `probe-unreadable`: stream did not contain valid UTF-8"),
+        "{stderr}"
+    );
 }
 
 fn asked(session: &Session, model: &Model, prompt: &str) -> String {
@@ -114,6 +119,20 @@ pub(crate) fn a_server_prompt_becomes_the_user_message() {
     assert_eq!(
         got[0]["params"],
         json!({"name": "review", "arguments": {"code": "fn main() {}", "lang": "rust"}})
+    );
+}
+
+pub(crate) fn a_server_prompt_runs_from_its_mcp_spelling() {
+    let session = Session::new();
+    let model = Model::start(vec![Step::Text("ok")]);
+    let sent = asked(
+        &session,
+        &model,
+        "/mcp__fixture1__review \"fn main() {}\" rust",
+    );
+    assert!(
+        sent.contains("Review this rust code carefully: fn main() {}"),
+        "{sent}"
     );
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn paths(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<PathBuf>> {
     let mut paths = match fs::read_dir(dir) {
@@ -110,7 +111,7 @@ pub(super) fn sweep(dir: &Path) -> Option<String> {
                     .map_err(io::Error::other)
             });
         let expired = match (now, age) {
-            (Some(now), Ok(age)) => now.saturating_sub(age) > summonr::limits::log_retain(),
+            (Some(now), Ok(age)) => now.saturating_sub(age) > summonr_agent::limits::log_retain(),
             _ => false,
         };
         if !expired {

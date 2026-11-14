@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -46,8 +45,12 @@ struct RunInfo {
 
 impl Log {
     pub(super) fn start() -> Option<Self> {
-        let run = format!("{}-{}", millis(), std::process::id());
-        let home = match summonr::summonr_home() {
+        let run = format!(
+            "{}-{}",
+            summonr_core::clock::now_millis(),
+            std::process::id()
+        );
+        let home = match summonr_agent::summonr_home() {
             Ok(home) => home,
             Err(error) => {
                 eprintln!("summonr: cannot create the diagnostic log: {error}");
@@ -72,7 +75,7 @@ impl Log {
             }
         }
         let path = dir.join(format!("{run}.jsonl"));
-        let held = summonr::lock_file(&path, false)
+        let held = summonr_agent::lock_file(&path, false)
             .and_then(|held| held.ok_or_else(|| io::Error::from(ErrorKind::WouldBlock)));
         let lock = match held {
             Ok(lock) => lock,
@@ -84,13 +87,13 @@ impl Log {
         let result = append(
             &path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": run,
                 "event": "start",
                 "pid": std::process::id(),
                 "binary": binary(),
                 "version": env!("CARGO_PKG_VERSION"),
-                "revision": summonr::revision(),
+                "revision": summonr_agent::revision(),
                 "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
                 "cwd": std::env::current_dir()
                     .ok()
@@ -101,7 +104,7 @@ impl Log {
         let result = result.and_then(|()| {
             append(
                 &path,
-                &json!({"time_unix_ms": millis(), "run": run, "event": "exit", "code": 0}),
+                &json!({"time_unix_ms": summonr_core::clock::now_millis(), "run": run, "event": "exit", "code": 0}),
                 false,
             )
         });
@@ -121,7 +124,7 @@ impl Log {
         if let Err(source) = append(
             &self.path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": self.run,
                 "event": "session",
                 "session": session,
@@ -138,7 +141,7 @@ impl Log {
         if let Err(source) = append(
             &self.path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": self.run,
                 "event": "exit",
                 "code": code,
@@ -153,8 +156,8 @@ impl Log {
     }
 }
 
-pub(super) fn print_logs(exclude: Option<&Path>) -> summonr::Result<i32> {
-    let dir = summonr::summonr_home()?.join("logs");
+pub(super) fn print_logs(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
+    let dir = summonr_agent::summonr_home()?.join("logs");
     println!("{}", dir.display());
     let runs = runs(&dir, exclude)?;
     if runs.is_empty() {
@@ -166,8 +169,8 @@ pub(super) fn print_logs(exclude: Option<&Path>) -> summonr::Result<i32> {
     Ok(0)
 }
 
-pub(super) fn doctor(exclude: Option<&Path>) -> summonr::Result<i32> {
-    let home = summonr::summonr_home()?;
+pub(super) fn doctor(exclude: Option<&Path>, trust: bool) -> summonr_agent::Result<i32> {
+    let home = summonr_agent::summonr_home()?;
     let dir = home.join("logs");
     let runs = runs(&dir, exclude)?;
     let incomplete = runs
@@ -175,17 +178,30 @@ pub(super) fn doctor(exclude: Option<&Path>) -> summonr::Result<i32> {
         .filter(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
         .count();
     println!("version\t{}", env!("CARGO_PKG_VERSION"));
-    println!("revision\t{}", summonr::revision());
+    println!("revision\t{}", summonr_agent::revision());
     println!("profile\t{}", profile());
     println!("binary\t{}", binary());
     println!("home\t{}", home.display());
     println!("logs\t{}", dir.display());
     println!("incomplete runs\t{incomplete}");
+    let claude = summonr_agent::claude_settings(&std::env::current_dir()?, trust);
+    let shown: Vec<String> = claude
+        .iter()
+        .map(|path| summonr_agent::tilde(path))
+        .collect();
+    println!(
+        "claude settings\t{}",
+        if shown.is_empty() {
+            "none".to_string()
+        } else {
+            shown.join(", ")
+        }
+    );
     Ok(i32::from(incomplete > 0))
 }
 
-pub(super) fn report(exclude: Option<&Path>) -> summonr::Result<i32> {
-    let dir = summonr::summonr_home()?.join("logs");
+pub(super) fn report(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
+    let dir = summonr_agent::summonr_home()?.join("logs");
     let runs = runs(&dir, exclude)?;
     let Some(run) = runs.iter().rev().find(|run| {
         matches!(
@@ -201,7 +217,7 @@ pub(super) fn report(exclude: Option<&Path>) -> summonr::Result<i32> {
     println!(
         "summonr {} ({})",
         env!("CARGO_PKG_VERSION"),
-        summonr::revision()
+        summonr_agent::revision()
     );
     println!(
         "{} {} {}",
@@ -248,13 +264,53 @@ const fn profile() -> &'static str {
     }
 }
 
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "std has no dup2 or tcgetattr wrapper")]
+pub(crate) fn park_stderr() -> Option<i32> {
+    let null = File::options().write(true).open("/dev/null").ok()?;
+    // SAFETY: dup and dup2 take plain descriptors; stderr and the open null file are valid here.
+    unsafe {
+        let saved = libc::dup(libc::STDERR_FILENO);
+        (saved >= 0 && libc::dup2(std::os::fd::AsRawFd::as_raw_fd(&null), libc::STDERR_FILENO) >= 0)
+            .then_some(saved)
+    }
+}
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "std has no dup2 or tcgetattr wrapper")]
+pub(crate) fn restore_stderr(saved: Option<i32>) {
+    let Some(saved) = saved else { return };
+    // SAFETY: saved came from dup in park_stderr, and termios is a plain out buffer for tcgetattr.
+    unsafe {
+        let mut termios = std::mem::zeroed::<libc::termios>();
+        let alive = libc::isatty(saved) == 0 || libc::tcgetattr(saved, &raw mut termios) == 0;
+        if alive {
+            libc::dup2(saved, libc::STDERR_FILENO);
+        }
+        libc::close(saved);
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) fn park_stderr() -> Option<i32> {
+    None
+}
+
+#[cfg(not(unix))]
+pub(crate) fn restore_stderr(_saved: Option<i32>) {}
+
+const HANGUP_EXIT: i32 = 129;
+
 fn hook(path: PathBuf, run: String) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        if info.to_string().contains("failed printing to stderr") {
+            std::process::exit(HANGUP_EXIT);
+        }
         let result = append(
             &path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": run,
                 "event": "panic",
                 "message": info.to_string(),
@@ -262,13 +318,14 @@ fn hook(path: PathBuf, run: String) {
             }),
             true,
         );
-        match result {
-            Ok(()) => eprintln!("summonr: crash recorded in {}", path.display()),
-            Err(error) => eprintln!(
-                "summonr: cannot write crash record to {}: {error}",
+        let note = match result {
+            Ok(()) => format!("summonr: crash recorded in {}\n", path.display()),
+            Err(error) => format!(
+                "summonr: cannot write crash record to {}: {error}\n",
                 path.display()
             ),
-        }
+        };
+        drop(io::stderr().write_all(note.as_bytes()));
         previous(info);
     }));
 }
@@ -279,13 +336,6 @@ fn append(path: &Path, value: &serde_json::Value, durable: bool) -> io::Result<(
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     file.write_all(&line)?;
     if durable { file.sync_data() } else { Ok(()) }
-}
-
-fn millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
 }
 
 fn binary() -> String {

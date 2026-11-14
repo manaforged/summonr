@@ -1,0 +1,112 @@
+use sigil::prelude::{AlignItems, NodeBuilder, Space, hint_bar};
+
+use crate::canvas;
+use summonr_agent::prefs::{Hotkey, Hotkeys};
+
+use super::rows::row;
+use sigil::prelude::Widget;
+
+const SEPARATOR: &str = " · ";
+const WINDOW_KEYS: usize = 2;
+
+pub(crate) const FILTER_HINT: &str = "type to filter";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Key {
+    Enter,
+    Esc,
+    Tab,
+    Space,
+    UpDown,
+    Hotkey(Hotkey),
+    Alt(char),
+    Fixed(&'static str),
+}
+
+impl Key {
+    #[must_use]
+    pub(crate) fn label(self, keys: &Hotkeys) -> String {
+        match self {
+            Self::Enter => "↵".to_string(),
+            Self::Esc => "esc".to_string(),
+            Self::Tab => "tab".to_string(),
+            Self::Space => "space".to_string(),
+            Self::UpDown => "↑↓".to_string(),
+            Self::Hotkey(action) => keys.label(action),
+            Self::Alt(key) => alt_label(key),
+            Self::Fixed(chord) => chord.to_string(),
+        }
+    }
+}
+
+#[must_use]
+pub(crate) fn alt_label(key: char) -> String {
+    let chord = format!("alt+{key}");
+    chord
+        .parse::<sigil::events::Shortcut>()
+        .map_or(chord, |shortcut| shortcut.label())
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Hints {
+    keys: Vec<(Key, String)>,
+    right: String,
+}
+
+impl Hints {
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub(crate) fn key(mut self, key: Key, action: impl Into<String>) -> Self {
+        self.keys.push((key, action.into()));
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn without(mut self, taken: &[Key]) -> Self {
+        self.keys.retain(|(key, _)| !taken.contains(key));
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn right(mut self, text: impl Into<String>) -> Self {
+        self.right = text.into();
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn count(self, selected: usize, total: usize) -> Self {
+        if total == 0 {
+            return self;
+        }
+        self.right(format!("{} / {total}", selected.min(total - 1) + 1))
+    }
+
+    #[must_use]
+    pub(crate) fn text(&self, keys: &Hotkeys) -> String {
+        let shown = if canvas::is_window() {
+            WINDOW_KEYS
+        } else {
+            self.keys.len()
+        };
+        self.keys
+            .iter()
+            .take(shown)
+            .map(|(key, action)| format!("{} {action}", key.label(keys)))
+            .collect::<Vec<_>>()
+            .join(SEPARATOR)
+    }
+
+    #[must_use]
+    pub(crate) fn bar(&self, keys: &Hotkeys) -> NodeBuilder {
+        row(hint_bar(self.text(keys), self.right.clone()), Space::Lg)
+            .align_items(AlignItems::Center)
+            .gap(Space::raw(
+                canvas::cell().w * 2.0,
+                "two terminal cells between hints",
+            ))
+    }
+}

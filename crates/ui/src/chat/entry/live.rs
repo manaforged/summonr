@@ -1,0 +1,47 @@
+use std::rc::Rc;
+
+use sigil::prelude::Signal;
+use sigil::reactive::{derived, untrack};
+
+use super::super::{Entry, Model, canvas};
+use crate::model::Entries;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Revision {
+    Entry(u64),
+    Assistant { empty: bool, done: bool },
+    Thinking { empty: bool },
+}
+
+pub(crate) fn revision(entries: &Entries, index: usize) -> Revision {
+    if !canvas::is_window() {
+        match entries.get(index) {
+            Some(Entry::Assistant { text, done }) => {
+                return Revision::Assistant {
+                    empty: text.trim().is_empty(),
+                    done: *done,
+                };
+            }
+            Some(Entry::Thinking(text)) => {
+                return Revision::Thinking {
+                    empty: text.trim().is_empty(),
+                };
+            }
+            _ => {}
+        }
+    }
+    Revision::Entry(entries.rev(index))
+}
+
+pub(crate) fn text_of(model: Signal<Rc<Model>>, index: usize) -> Signal<String> {
+    let rev = derived(move || model.with(|model| model.entries.rev(index)));
+    derived(move || {
+        rev.with(|_| ());
+        untrack(|| {
+            model.with(|model| match model.entries.get(index) {
+                Some(Entry::Assistant { text, .. } | Entry::Thinking(text)) => text.clone(),
+                _ => String::new(),
+            })
+        })
+    })
+}

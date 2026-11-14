@@ -1,16 +1,18 @@
 use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
 use crate::{Image, ToolKind, Usage};
 
+/// A function tool definition.
 pub fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {
     ToolDefinition {
         kind: ToolKind::Function,
         function: FunctionDefinition {
             name: name.to_string(),
             description: description.to_string(),
-            parameters: object_root(parameters),
+            parameters: raw(&object_root(parameters)),
         },
     }
 }
@@ -60,6 +62,10 @@ fn object_root(parameters: Value) -> Value {
     Value::Object(root)
 }
 
+fn raw(schema: &Value) -> Box<RawValue> {
+    serde_json::value::to_raw_value(schema).unwrap_or_default()
+}
+
 fn required(schema: &Value) -> BTreeSet<String> {
     schema
         .get("required")
@@ -71,6 +77,7 @@ fn required(schema: &Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// A tool definition sent to a provider.
 #[derive(Clone, Debug, Serialize)]
 pub struct ToolDefinition {
     #[serde(rename = "type")]
@@ -78,13 +85,28 @@ pub struct ToolDefinition {
     pub function: FunctionDefinition,
 }
 
+/// The name, description, and JSON schema of a function tool.
 #[derive(Clone, Debug, Serialize)]
 pub struct FunctionDefinition {
     pub name: String,
     pub description: String,
-    pub parameters: Value,
+    pub parameters: Box<RawValue>,
 }
 
+impl FunctionDefinition {
+    /// The parameters schema as a JSON value.
+    #[must_use]
+    pub fn schema(&self) -> Value {
+        serde_json::from_str(self.parameters.get()).unwrap_or_default()
+    }
+
+    /// Replaces the parameters schema with `schema`.
+    pub fn set_schema(&mut self, schema: &Value) {
+        self.parameters = raw(schema);
+    }
+}
+
+/// The approval a tool call needs before it runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Grant {
     Write(std::path::PathBuf),
@@ -93,6 +115,7 @@ pub enum Grant {
 }
 
 impl Grant {
+    /// The approval as the text the prompt shows.
     #[must_use]
     pub fn prompt(&self) -> String {
         match self {
@@ -108,6 +131,7 @@ impl Grant {
     }
 }
 
+/// The result of a tool call.
 pub struct ToolOutput {
     pub text: String,
     pub success: bool,
@@ -118,6 +142,7 @@ pub struct ToolOutput {
 }
 
 impl ToolOutput {
+    /// A successful result that changed nothing.
     pub fn ok(text: String) -> Self {
         Self {
             text,
@@ -129,6 +154,7 @@ impl ToolOutput {
         }
     }
 
+    /// A successful result that changed files, with its patch.
     pub fn mutated(text: String, patch: Option<String>) -> Self {
         Self {
             mutated: true,
@@ -137,12 +163,14 @@ impl ToolOutput {
         }
     }
 
+    /// This result with `success` set.
     #[must_use]
     pub fn with_success(mut self, success: bool) -> Self {
         self.success = success;
         self
     }
 
+    /// This result with `mutated` set.
     #[must_use]
     pub fn with_mutated(mut self, mutated: bool) -> Self {
         self.mutated = mutated;
@@ -150,6 +178,7 @@ impl ToolOutput {
     }
 }
 
+/// The text, reasoning, and usage streamed so far.
 #[derive(Default)]
 pub struct Partial {
     pub text: String,

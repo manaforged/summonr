@@ -1,0 +1,276 @@
+use super::*;
+
+impl Work {
+    pub(super) fn repair_steps(&mut self) {
+        if self.policy != WorkKind::Steps || self.checks.is_empty() {
+            return;
+        }
+        let planned = self
+            .plan
+            .as_deref()
+            .and_then(|plan| crate::steps::parse(plan).ok())
+            .is_some_and(|parsed| {
+                parsed
+                    .iter()
+                    .map(|step| step.text.as_str())
+                    .eq(self.steps.iter().map(|step| step.title.as_str()))
+            });
+        if planned {
+            return;
+        }
+        let all: Vec<usize> = (0..self.checks.len()).collect();
+        for step in &mut self.steps {
+            if step.checks.is_empty() {
+                step.checks = all.clone();
+            }
+        }
+    }
+
+    pub(crate) fn adopt_checks(
+        &mut self,
+        commands: &[String],
+        protected: BTreeMap<String, Option<String>>,
+    ) -> bool {
+        if self.policy != WorkKind::Goal || !self.checks.is_empty() || commands.is_empty() {
+            return false;
+        }
+        self.checks = commands
+            .iter()
+            .map(|command| Check {
+                command: command.clone(),
+                observation: None,
+            })
+            .collect();
+        self.protected = protected;
+        true
+    }
+
+    pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> crate::Result<()> {
+        let checks = checks(markdown, self.policy, commands)?;
+        if self.policy == WorkKind::Steps {
+            let parsed = crate::steps::parse(markdown)?;
+            let last = parsed.len().saturating_sub(1);
+            self.steps = parsed
+                .iter()
+                .enumerate()
+                .map(|(index, step)| {
+                    let mut owned = Vec::new();
+                    for command in commands.iter().chain(&step.checks) {
+                        if let Some(position) = checks.iter().position(|check| {
+                            check.observation.is_none() && check.command == *command
+                        }) && !owned.contains(&position)
+                        {
+                            owned.push(position);
+                        }
+                    }
+                    if index == last {
+                        owned = (0..checks.len()).collect();
+                    }
+                    Step::new(&step.text, step.phase.as_deref(), owned)
+                })
+                .collect();
+            self.active = None;
+        }
+        self.checks = checks;
+        self.plan = Some(markdown.to_string());
+        Ok(())
+    }
+
+    pub(crate) fn execute(&mut self, base: Option<Snapshot>) -> crate::Result<()> {
+        if self.plan.is_none() {
+            return Err(crate::Error::Config(
+                "Execute requires a selected plan".to_string(),
+            ));
+        }
+        if let Some(first) = self.steps.first_mut() {
+            first.state = StepStatus::Active;
+        }
+        self.active = (!self.steps.is_empty()).then_some(0);
+        self.status = Status::Active(Stage::Execute);
+        self.base = base;
+        Ok(())
+    }
+
+    pub(crate) fn verify(&mut self, capture: Snapshot) -> crate::Result<Vec<String>> {
+        if self.stage() != Some(Stage::Execute) {
+            return Err(crate::Error::Config("Verify requires Execute".to_string()));
+        }
+        let base = self
+            .base
+            .as_ref()
+            .ok_or_else(|| crate::Error::Config("Execute has no workspace base".to_string()))?;
+        let paths = changed(base, &capture);
+        self.touched.extend(paths.iter().cloned());
+        self.jobs.clear();
+        self.candidate = Some(Candidate {
+            paths: paths.clone(),
+            snapshot: capture,
+        });
+        self.status = Status::Active(Stage::Verify);
+        Ok(paths)
+    }
+
+    pub(crate) fn verdict(&mut self, passed: bool, decision: Decision) -> crate::Result<()> {
+        if !matches!(self.stage(), Some(Stage::Verify)) {
+            return Err(crate::Error::Config(
+                "a verdict requires Verify".to_string(),
+            ));
+        }
+        if passed
+            && matches!(
+                (self.policy, &decision),
+                (WorkKind::Goal, Decision::Automatic)
+            )
+        {
+            return Err(crate::Error::Config(DECISION.to_string()));
+        }
+        self.record_check(passed);
+        if !passed {
+            return self.fail("The completion check failed. The objective is unchanged: keep working toward it, and leave the check green.".to_string());
+        }
+        let Some(active) = self.resume_index() else {
+            self.status = Status::Completed;
+            return Ok(());
+        };
+        self.active = Some(active);
+        let policy = self.policy;
+        let step = self
+            .steps
+            .get_mut(active)
+            .ok_or_else(|| crate::Error::Config("active item is not in the plan".to_string()))?;
+        step.rounds = step.rounds.saturating_add(1);
+        step.attempts = 0;
+        match (policy, decision) {
+            (WorkKind::Single, _) | (WorkKind::Goal, Decision::GoalComplete) => {
+                step.state = StepStatus::Completed;
+                self.active = None;
+                self.status = Status::Completed;
+            }
+            (WorkKind::Steps, _) => {
+                step.state = StepStatus::Completed;
+                self.advance_step();
+            }
+            (WorkKind::Goal, Decision::GoalStop(reason)) => {
+                step.state = StepStatus::Blocked;
+                self.active = None;
+                self.status = Status::Abandoned(reason);
+            }
+            (WorkKind::Goal, Decision::GoalContinue(reason)) => {
+                step.state = StepStatus::Active;
+                self.status = Status::Active(Stage::Execute);
+                self.rebase();
+                self.pending.push(format!(
+                    "[summon goal: the objective is not complete; {reason}]"
+                ));
+            }
+            (WorkKind::Goal, Decision::Automatic) => {
+                return Err(crate::Error::Config(DECISION.to_string()));
+            }
+        }
+        Ok(())
+    }
+
+    fn resume_index(&self) -> Option<usize> {
+        self.active.or_else(|| {
+            self.steps
+                .iter()
+                .position(|step| step.state == StepStatus::Active)
+                .or_else(|| {
+                    self.steps
+                        .iter()
+                        .position(|step| step.state == StepStatus::Pending)
+                })
+        })
+    }
+
+    fn advance_step(&mut self) {
+        match self
+            .steps
+            .iter()
+            .position(|step| step.state == StepStatus::Pending)
+        {
+            Some(next) => {
+                if let Some(step) = self.steps.get_mut(next) {
+                    step.state = StepStatus::Active;
+                }
+                self.active = Some(next);
+                self.status = Status::Active(Stage::Execute);
+                self.rebase();
+            }
+            None => {
+                self.active = None;
+                self.status = Status::Completed;
+            }
+        }
+    }
+
+    pub(crate) fn defer(&mut self, note: String, jobs: Vec<String>) -> crate::Result<bool> {
+        if self.stage() != Some(Stage::Execute) {
+            return Err(crate::Error::Config(
+                "a deferral requires Execute".to_string(),
+            ));
+        }
+        self.pending.push(note);
+        self.jobs = jobs;
+        Ok(true)
+    }
+
+    fn fail(&mut self, continuation: String) -> crate::Result<()> {
+        let active = match self.active.or_else(|| {
+            self.steps
+                .iter()
+                .position(|step| step.state != StepStatus::Completed)
+        }) {
+            Some(active) => active,
+            None => {
+                self.status = Status::Failed(continuation);
+                return Ok(());
+            }
+        };
+        self.active = Some(active);
+        let step = self
+            .steps
+            .get_mut(active)
+            .ok_or_else(|| crate::Error::Config("active item is not in the plan".to_string()))?;
+        step.rounds = step.rounds.saturating_add(1);
+        step.attempts = step.attempts.saturating_add(1);
+        if !matches!(self.policy, WorkKind::Goal)
+            && step.attempts >= crate::limits::limits().step_attempts
+        {
+            self.active = Some(active);
+            self.status = Status::Failed(continuation);
+            return Ok(());
+        }
+        step.state = StepStatus::Active;
+        self.status = Status::Active(Stage::Execute);
+        self.rebase();
+        self.pending.push(continuation);
+        Ok(())
+    }
+
+    fn rebase(&mut self) {
+        if let Some(candidate) = self.candidate.take() {
+            self.base = Some(candidate.snapshot);
+        }
+    }
+
+    pub(crate) fn abandon(&mut self, reason: &str) {
+        if self.terminal() {
+            return;
+        }
+        if let Some(step) = self.active.and_then(|index| self.steps.get_mut(index)) {
+            step.state = StepStatus::Blocked;
+        }
+        self.active = None;
+        self.status = Status::Abandoned(reason.to_string());
+    }
+
+    pub(crate) fn interrupt(&mut self) -> bool {
+        if !matches!(self.stage(), Some(Stage::Verify)) {
+            return false;
+        }
+        self.status = Status::Active(Stage::Execute);
+        self.candidate = None;
+        true
+    }
+}

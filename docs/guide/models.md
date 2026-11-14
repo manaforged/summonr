@@ -108,7 +108,7 @@ The next turn in the same summonr process resumes the Claude Code session. A new
 
 Claude Code runs with your environment, so `CLAUDE_CONFIG_DIR`, proxies, and CA settings apply. summonr's system prompt reaches it through a temporary file (`--system-prompt-file`) with `--system-prompt-snapshot off`, so a changed prompt applies on resumed turns too.
 
-`base_url` names the program: `[endpoint.claude] base_url = "/path/to/claude"` picks another install. summonr never starts Claude Code just to list models. `summonr endpoints --check` looks for the program and says when it is missing, and the `/model` picker shows the models Claude Code offered in its last session, or the Anthropic models from the catalog before the first one.
+`base_url` names the program: `[endpoint.claude] base_url = "/path/to/claude"` picks another install. summonr never starts Claude Code just to list models. `summonr endpoint list --check` looks for the program and says when it is missing, and the `/model` picker shows the models Claude Code offered in its last session, or the Anthropic models from the catalog before the first one.
 
 ## Add your own server
 
@@ -158,7 +158,7 @@ In the `/model` picker, `alt+d` sets the selected row as the default, and `alt+d
 
 ## List and check endpoints
 
-`summonr endpoints` lists the endpoints that are set up, from files on disk and with no network call. With none set up, it lists them all.
+`summonr endpoint list` lists the endpoints that are set up, from files on disk and with no network call. With none set up, it lists them all.
 
 | Flag | Effect |
 | --- | --- |
@@ -169,7 +169,7 @@ A server you added that has no cached model list is asked on a plain listing too
 
 Each row shows the key state and where the key comes from: `key: ANTHROPIC_API_KEY`, `key: file`, `key: keychain`, `signed in`, or `no key needed`. `--check` adds `key rejected`, `rate limited`, `offline`, or `error`. A keyless built-in with no model reads `needs model`.
 
-Both `summonr login` and `summonr endpoints` size each column to its longest value. A row with no model shows only its URL, and endpoints that are set up come first in each group.
+Both `summonr login` and `summonr endpoint list` size each column to its longest value. A row with no model shows only its URL, and endpoints that are set up come first in each group.
 
 ## Where keys live
 
@@ -198,7 +198,7 @@ A locked keychain is reported, never worked around with a file. The file and key
 
 ## Providers and routes
 
-The provider list comes from one data table in the source, `src/endpoint/presets.toml`, where each `[[preset]]` row is one route. A row summonr cannot honor fails startup by name.
+The provider list comes from one data table in the source, `crates/agent/src/endpoint/presets.toml`, where each `[[preset]]` row is one route. A row summonr cannot honor fails startup by name.
 
 ### Choosing a route
 
@@ -230,7 +230,7 @@ GPT-5, GPT-6, and Codex models also see `apply_patch`, which runs through the sa
 
 ## Model catalog
 
-`summonr endpoints --check` and the `/model` picker download the [models.dev](https://models.dev) catalog (`https://models.dev/api.json`, about 350 KB) for model names, context windows, reasoning and vision support, and prices. They fetch it even when every endpoint is local. `-p` runs, interface start, and a plain `summonr endpoints` do not fetch it.
+`summonr endpoint list --check` and the `/model` picker download the [models.dev](https://models.dev) catalog (`https://models.dev/api.json`, about 350 KB) for model names, context windows, reasoning and vision support, and prices. They fetch it even when every endpoint is local. `-p` runs, interface start, and a plain `summonr endpoint list` do not fetch it.
 
 The copy is cached in `~/.summonr/models-dev.json` and fetched again at most once every `models_catalog_secs` (an hour), with `If-None-Match`. Without a cached copy, summonr uses a snapshot built into the binary. The picker shows cached models at once and asks an endpoint again only when its list is missing or stale.
 

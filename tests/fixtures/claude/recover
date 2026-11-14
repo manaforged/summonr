@@ -1,0 +1,30 @@
+#!/bin/sh
+n=$(cat "$0.n" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$0.n"
+{ printf '%s\n' "$@"; echo ===; } >> "$0.args"
+printf '%s\n' "$CARGO_MANIFEST_DIR" > "$0.env"
+prev=""; for a in "$@"; do if [ "$prev" = "--system-prompt-file" ]; then cat "$a" > "$0.prompt"; fi; prev="$a"; done
+say() { printf '%s\n' "$1"; }
+take() { IFS= read -r line; printf '%s\n' "$line" >> "$0.log"; }
+take
+say '{"type":"control_response","response":{"subtype":"success","request_id":"init","response":{}}}'
+take
+if [ "$MODE" = "" ]; then MODE=$(cat "$0.mode"); fi
+case "$MODE$n" in
+  tool1)
+    say '{"type":"assistant","message":{"id":"a","content":[{"type":"tool_use","id":"toolu_9","name":"mcp__summonr__read","input":{}}]}}'
+    say '{"type":"control_request","request_id":"m9","request":{"subtype":"mcp_message","server_name":"summonr","message":{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"read","arguments":{},"_meta":{"claudecode/toolUseId":"toolu_9"}}}}}'
+    IFS= read -r line
+    exit 0 ;;
+  deny1)
+    say '{"type":"control_request","request_id":"p7","request":{"subtype":"can_use_tool","tool_name":"EndConversation","input":{},"tool_use_id":"toolu_7"}}'
+    take
+    ;;
+  fail1)
+    say '{"type":"assistant","message":{"id":"a","content":[{"type":"text","text":"x"}]}}'
+    say '{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["boom"],"usage":{}}'
+    IFS= read -r line
+    exit 0 ;;
+esac
+say "{\"type\":\"assistant\",\"message\":{\"id\":\"b$n\",\"content\":[{\"type\":\"text\",\"text\":\"run $n\"}]}}"
+say '{"type":"result","subtype":"success","is_error":false,"result":"done","usage":{}}'
+IFS= read -r line

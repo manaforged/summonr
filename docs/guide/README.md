@@ -20,7 +20,7 @@ summonr is a terminal coding agent written in Rust. This book holds the task pag
 Read these pages before you change the source.
 
 - [Module API](internals/module-api.md): the locked list of jobs, one name per job.
-- [TUI API](internals/tui.md): the shared surface inside `src/tui`.
+- [TUI API](internals/tui.md): the shared surface inside `crates/ui`.
 - [Glossary](internals/glossary.md): the domain terms.
 
 ## Build the book

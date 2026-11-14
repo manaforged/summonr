@@ -1,0 +1,262 @@
+use std::path::PathBuf;
+
+use crate::jobs;
+use crate::tools::spill::full_output_note;
+use crate::tools::{ToolOutput, ToolRegistry};
+use summonr_core::error::{Error, Result};
+
+use super::digest::digest;
+use super::proc::{
+    ProcessGroup, StartedCommand, background_result, spawn_command, stop_command, wait_shell,
+};
+
+const LOG_READ_BYTES: usize = 512 * 1024;
+const COMMAND_LOG_PREFIX: &str = "command-";
+const EXIT: &str = "exit ";
+
+#[derive(Clone, Copy)]
+pub(super) enum Wait {
+    Background,
+    Kill(u64),
+    Detach(u64),
+}
+
+impl Wait {
+    pub(super) fn chosen(explicit: Option<u64>, detach: bool) -> Self {
+        match explicit {
+            Some(seconds) if detach => Self::Detach(seconds),
+            Some(seconds) => Self::Kill(seconds),
+            None if detach => Self::Detach(crate::limits::limits().command_wait().as_secs()),
+            None => Self::Kill(crate::limits::limits().command_kill().as_secs()),
+        }
+    }
+
+    fn seconds(self) -> u64 {
+        match self {
+            Self::Background => 0,
+            Self::Kill(seconds) | Self::Detach(seconds) => seconds,
+        }
+    }
+}
+
+impl ToolRegistry {
+    pub(super) fn start_command(
+        &self,
+        command: &str,
+        wait: Wait,
+        cwd: PathBuf,
+    ) -> Result<StartedCommand> {
+        let persist = matches!(wait, Wait::Background | Wait::Detach(_));
+        let (id, log_path, record_path) = if persist {
+            let (id, record_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
+            let script = summonr_core::shell::wrap(command, &exit_path, &cwd);
+            (id, log_path, Some((record_path, script)))
+        } else {
+            (
+                String::new(),
+                self.spill_file(COMMAND_LOG_PREFIX, &[])?,
+                None,
+            )
+        };
+        let script = record_path
+            .as_ref()
+            .map_or(command, |(_, script)| script.as_str());
+        let mut env = self.command_vars();
+        if let Some(session) = self.session_id() {
+            env.push((crate::session::SESSION_ENV.to_string(), session.clone()));
+            env.push((crate::session::PARENT_ENV.to_string(), session));
+        }
+        let child = spawn_command(&env, script, &log_path, persist, &cwd)?;
+        let pid = child
+            .id()
+            .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
+        let group = ProcessGroup::new(pid);
+        if let Some((record_path, _)) = record_path.filter(|_| matches!(wait, Wait::Background)) {
+            jobs::write(&record_path, &self.job_record(&id, pid, command)?)?;
+        }
+        Ok(StartedCommand {
+            id,
+            pid,
+            log_path,
+            child,
+            group,
+        })
+    }
+
+    pub(super) async fn wait_command(
+        &self,
+        mut started: StartedCommand,
+        command: &str,
+        wait: Wait,
+    ) -> Result<ToolOutput> {
+        let began = std::time::Instant::now();
+        let mut yielded = self.command_yield.subscribe();
+        let waited = tokio::select! {
+            biased;
+            () = async {
+                drop(yielded.wait_for(|yielded| *yielded).await);
+                tokio::time::sleep(crate::limits::limits().tool_yield()).await;
+            }, if matches!(wait, Wait::Detach(_)) => None,
+            waited = crate::limits::within(
+                std::time::Duration::from_secs(wait.seconds()),
+                "the command",
+                wait_shell(&mut started.child),
+            ) => Some(waited),
+        };
+        self.yield_command(false);
+        let Some(waited) = waited else {
+            let elapsed = Wait::Detach(began.elapsed().as_secs());
+            return self.timed_out(started, command, elapsed).await;
+        };
+        match waited {
+            Ok(Ok(status)) => {
+                stop_command(&mut started.child, started.pid)
+                    .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
+                started.group.disarm();
+                self.discard_job(&started.id);
+                let code = status.code().unwrap_or(-1);
+                self.finished(started.log_path, command, code)
+            }
+            Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
+            Err(_) => self.timed_out(started, command, wait).await,
+        }
+    }
+
+    /// Sets whether a running foreground command moves to a background job now.
+    pub(crate) fn yield_command(&self, yielded: bool) {
+        self.command_yield.send_replace(yielded);
+    }
+
+    pub(super) fn can_detach(&self, read_only: bool) -> bool {
+        !read_only && self.background && self.session_id().is_some()
+    }
+
+    fn job_record(&self, id: &str, pid: u32, command: &str) -> Result<jobs::Record> {
+        jobs::stamp(id, pid, command, &self.workspace, true, self.session_id())
+    }
+
+    fn finished(&self, log_path: PathBuf, command: &str, code: i32) -> Result<ToolOutput> {
+        let (note, text) = match logged(&log_path, command) {
+            Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                Default::default()
+            }
+            logged => logged?,
+        };
+        Ok(ToolOutput {
+            success: code == 0,
+            mutated: may_write(command),
+            ..ToolOutput::ok(format!("{EXIT}{code}{note}\n{text}").trim_end().to_string())
+        })
+    }
+
+    async fn timed_out(
+        &self,
+        mut started: StartedCommand,
+        command: &str,
+        wait: Wait,
+    ) -> Result<ToolOutput> {
+        let seconds = wait.seconds();
+        let mut detail = String::new();
+        if matches!(wait, Wait::Detach(_)) {
+            match self.register(command, &started) {
+                Ok(()) => return self.detach(started, command, seconds),
+                Err(error) => detail = format!(" ({error}; could not continue it as a job)"),
+            }
+        }
+        let cleanup =
+            |error: std::io::Error| Error::Tool(format!("command cleanup failed: {error}"));
+        stop_command(&mut started.child, started.pid).map_err(cleanup)?;
+        started.child.wait().await.map_err(cleanup)?;
+        started.group.disarm();
+        self.discard_job(&started.id);
+        let (note, text) = logged(&started.log_path, command)?;
+        let mutated = may_write(command);
+        let warning = if mutated {
+            "\nthe command may have changed workspace files before timeout"
+        } else {
+            ""
+        };
+        let text = format!("command timed out after {seconds}s{detail}{warning}{note}\n{text}");
+        Ok(ToolOutput {
+            success: false,
+            mutated,
+            ..ToolOutput::ok(text.trim_end().to_string())
+        })
+    }
+
+    fn register(&self, command: &str, started: &StartedCommand) -> Result<()> {
+        let record = jobs::Record {
+            detached: true,
+            ..self.job_record(&started.id, started.pid, command)?
+        };
+        jobs::write(
+            &jobs::dir(&self.workspace).join(format!("{}.json", started.id)),
+            &record,
+        )?;
+        self.detached_jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(started.id.clone());
+        Ok(())
+    }
+
+    fn discard_job(&self, id: &str) {
+        if !id.is_empty() {
+            drop(std::fs::remove_file(jobs::exit_path(&self.workspace, id)));
+        }
+    }
+
+    fn detach(&self, started: StartedCommand, command: &str, seconds: u64) -> Result<ToolOutput> {
+        let raw = crate::askpass::scrub(&jobs::preview(&started.log_path, LOG_READ_BYTES)?);
+        let shown = digest(command, &raw);
+        let mut output = background_result(started);
+        output.text = format!(
+            "command still running after {seconds}s; it continues as a background job\n{}\n{}",
+            output.text, shown.text
+        )
+        .trim_end()
+        .to_string();
+        output.mutated = may_write(command);
+        Ok(output)
+    }
+}
+
+fn logged(log_path: &std::path::Path, command: &str) -> Result<(String, String)> {
+    let shown = digest(command, &scrubbed_preview(log_path)?);
+    let lines = crate::diff::line_count(log_path).ok().flatten();
+    let note = full_output_note(log_path, shown.cut, lines);
+    if !shown.cut {
+        drop(std::fs::remove_file(log_path));
+    }
+    Ok((note, shown.text))
+}
+
+fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {
+    let scrubbed = crate::askpass::scrub_file(log_path);
+    let preview = jobs::preview(log_path, LOG_READ_BYTES)?;
+    Ok(if scrubbed {
+        crate::askpass::scrub(&preview)
+    } else {
+        preview
+    })
+}
+
+fn may_write(command: &str) -> bool {
+    !crate::policy::reads_only(command)
+}
+
+/// The output of `command` without its bare status line, or `None` when it failed; exit 1 passes for a search or comparison.
+pub(in crate::tools) fn passed(command: &str, output: &ToolOutput) -> Option<String> {
+    let (first, rest) = output
+        .text
+        .split_once('\n')
+        .unwrap_or((output.text.as_str(), ""));
+    let code = first.strip_prefix(EXIT).and_then(|code| {
+        let digits = code.find(|ch: char| ch != '-' && !ch.is_ascii_digit());
+        code[..digits.unwrap_or(code.len())].parse::<i32>().ok()
+    });
+    let ok = output.success || (code == Some(1) && crate::policy::benign_exit(command));
+    let bare = code.is_some_and(|code| first == format!("{EXIT}{code}"));
+    let text = if bare { rest } else { output.text.as_str() };
+    ok.then(|| text.to_owned())
+}

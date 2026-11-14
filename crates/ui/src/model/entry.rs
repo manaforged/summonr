@@ -1,0 +1,178 @@
+use std::borrow::Cow;
+use std::path::Path;
+
+use super::*;
+
+#[derive(Clone, Debug)]
+pub(crate) enum Entry {
+    User(String),
+    Thinking(String),
+    Receipt(String),
+    Assistant {
+        text: String,
+        done: bool,
+    },
+    Tool {
+        name: String,
+        calls: Vec<Call>,
+    },
+    Verify {
+        command: String,
+        passed: bool,
+    },
+    Mail {
+        from: String,
+        text: String,
+    },
+    Aborted(String),
+    System(String),
+    Injected(String),
+    Error(String),
+    Chart(Vec<Round>),
+    Image {
+        source: ImageSource,
+        bytes: std::rc::Rc<[u8]>,
+        label: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Call {
+    pub(crate) id: String,
+    pub(crate) arg: String,
+    pub(crate) state: ToolState,
+    pub(crate) output: String,
+    pub(crate) expanded: bool,
+    pub(crate) compacted: bool,
+    pub(crate) patch: Option<String>,
+}
+
+impl Call {
+    pub(crate) fn new(id: String, arg: String, state: ToolState, output: String) -> Self {
+        Self {
+            id,
+            arg,
+            state,
+            output,
+            expanded: false,
+            compacted: false,
+            patch: None,
+        }
+    }
+
+    pub(crate) fn compact_read(&mut self, workspace: &Path) {
+        if self.expanded || self.patch.is_some() || !matches!(self.state, ToolState::Ok) {
+            return;
+        }
+        self.compacted = summonr_agent::tools::compact_read(&self.arg, &mut self.output, workspace);
+    }
+
+    pub(crate) fn resolved_output(&self, workspace: &Path) -> Cow<'_, str> {
+        if !self.compacted || workspace.as_os_str().is_empty() {
+            return Cow::Borrowed(&self.output);
+        }
+        summonr_agent::tools::rehydrate_read(workspace, &self.output)
+            .map(Cow::Owned)
+            .unwrap_or(Cow::Borrowed(&self.output))
+    }
+}
+
+pub(crate) fn entry_markdown_in(entry: &Entry, workspace: &Path) -> String {
+    match entry {
+        Entry::User(text) => format!("### You\n{text}"),
+        Entry::Thinking(text) => format!("> **Thinking**\n> {}", text.replace('\n', "\n> ")),
+        Entry::Receipt(text) => text.clone(),
+        Entry::Assistant { text, .. } => text.clone(),
+        Entry::Tool { name, calls } => calls
+            .iter()
+            .map(|call| {
+                let output = call.resolved_output(workspace);
+                tool_markdown(name, &call.arg, &call.state, &output)
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Entry::Verify { command, passed } => {
+            format!("{} **verify** `{command}`", if *passed { "✓" } else { "✗" })
+        }
+        Entry::Mail { from, text } => {
+            format!("> **mail from {from}**\n> {}", text.replace('\n', "\n> "))
+        }
+        Entry::Aborted(reason) => format!("⚠ **aborted:** {reason}"),
+        Entry::System(text) | Entry::Injected(text) => format!("> {text}"),
+        Entry::Error(text) => format!("**Error:** {text}"),
+        Entry::Chart(rounds) => super::app::presentation::stats(rounds),
+        Entry::Image { .. } => "[attached image]".to_string(),
+    }
+}
+
+pub(crate) fn linked(text: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("![") {
+        let after = &rest[start + 2..];
+        let Some(open) = after.find("](") else { break };
+        let target = &after[open + 2..];
+        let Some(close) = target.find(')') else { break };
+        let path = target[..close]
+            .trim()
+            .trim_matches(|c| c == '<' || c == '>' || c == '"');
+        let remote = path.contains("://") || path.starts_with("data:");
+        if !path.is_empty() && !remote {
+            let full = if std::path::Path::new(path).is_absolute() {
+                std::path::PathBuf::from(path)
+            } else {
+                std::env::current_dir()
+                    .map(|dir| dir.join(path))
+                    .unwrap_or_default()
+            };
+            if full.is_file() {
+                paths.push(path.to_string());
+            }
+        }
+        rest = &target[close + 1..];
+    }
+    paths
+}
+
+pub(crate) fn preview(bytes: &[u8]) -> Result<ImageSource, String> {
+    decode(bytes, 480, 320)
+}
+
+pub(crate) fn decode(bytes: &[u8], width: u32, height: u32) -> Result<ImageSource, String> {
+    let image = load_from_memory(bytes).map_err(|error| format!("invalid image: {error}"))?;
+    let rgba = image
+        .thumbnail(image.width().min(width), image.height().min(height))
+        .into_rgba8();
+    ImageSource::from_rgba8(rgba.width(), rgba.height(), rgba.into_raw())
+        .ok_or_else(|| "image has no pixels".to_string())
+}
+
+pub(crate) fn tool_markdown(name: &str, arg: &str, state: &ToolState, output: &str) -> String {
+    let mark = match state {
+        ToolState::Running => "⏳",
+        ToolState::Ok => "✓",
+        ToolState::Failed => "✗",
+    };
+    if output.is_empty() {
+        format!("{mark} **{name}** `{arg}`")
+    } else {
+        format!("{mark} **{name}** `{arg}`\n```text\n{output}\n```")
+    }
+}
+
+impl super::Model {
+    pub(super) fn approval_note(&mut self, text: String) {
+        let last = self.entries.len().checked_sub(1);
+        let placed = self.approval_at.as_ref().is_some_and(|(at, note)| {
+            Some(*at) == last
+                && *at >= self.committed
+                && matches!(self.entries.get(*at), Some(Entry::System(shown)) if shown == note)
+        });
+        if placed && let Some(entry) = self.entries.last_mut() {
+            *entry = Entry::System(text.clone());
+        } else {
+            self.entries.push(Entry::System(text.clone()));
+        }
+        self.approval_at = self.entries.len().checked_sub(1).map(|at| (at, text));
+    }
+}

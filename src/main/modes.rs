@@ -1,4 +1,4 @@
-use summonr::{
+use summonr_agent::{
     Client, Event, Job, Loop, NextAction, Result, StepState, Turn, UserInput, WorkKind,
     WorkProgress,
 };
@@ -15,13 +15,15 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
         args.prompt.join(" ")
     };
     if let Some(command) = slash(&prompt) {
-        return Err(summonr::Error::Config(format!(
+        return Err(summonr_agent::Error::Config(format!(
             "`{command}` is an interface command; -p takes a prompt"
         )));
     }
-    let input = summonr::attach(loop_.workspace(), &prompt)?;
-    announce(&loop_, args.json);
-    let turn = complete(&mut loop_, input, args.json).await?;
+    let input = summonr_agent::attach(loop_.workspace(), &prompt)?;
+    open(&mut loop_, args.json).await;
+    let ran = complete(&mut loop_, input, args.json).await;
+    close(&loop_, args.json).await;
+    let turn = ran?;
     if !args.json {
         println!();
     }
@@ -31,7 +33,7 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
 
 pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str) -> Result<i32> {
     let path = std::path::absolute(plan_path)?;
-    let (plan, markdown, steps) = summonr::steps::load(loop_.workspace(), &path)?;
+    let (plan, markdown, steps) = summonr_agent::steps::load(loop_.workspace(), &path)?;
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
     work(loop_, args, Job::Steps { plan, steps }).await
@@ -45,9 +47,15 @@ pub(super) async fn goal(mut loop_: Loop<Client>, args: &Args, objective: &str) 
 }
 
 async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
-    announce(&loop_, args.json);
+    open(&mut loop_, args.json).await;
+    let code = drive(&mut loop_, args, &job).await;
+    close(&loop_, args.json).await;
+    code
+}
+
+async fn drive(loop_: &mut Loop<Client>, args: &Args, job: &Job) -> Result<i32> {
     let code = loop {
-        let (prompt, step) = match loop_.next_action(&job)? {
+        let (prompt, step) = match loop_.next_action(job)? {
             NextAction::Done(code) => break code,
             NextAction::Run { prompt, step } => (prompt, step),
         };
@@ -60,9 +68,9 @@ async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
                 job.check(index).as_deref(),
             );
         }
-        let turn = complete(&mut loop_, prompt.into(), args.json).await?;
+        let turn = complete(loop_, prompt.into(), args.json).await?;
         if turn.aborted {
-            return stop(&mut loop_, job.aborted(), args.json).await;
+            return stop(loop_, job.aborted(), args.json).await;
         }
         if let Some((index, total)) = step {
             step_outcome(args.json, index, total, &turn, &loop_.work_progress()?);
@@ -97,11 +105,19 @@ fn step_outcome(json: bool, index: usize, total: usize, turn: &Turn, after: &Wor
     }
 }
 
-fn announce(loop_: &Loop<Client>, json: bool) {
+async fn open(loop_: &mut Loop<Client>, json: bool) {
     if json {
         print_json(&Event::Session {
             id: loop_.session_id(),
         });
+    }
+    loop_.begin().await;
+}
+
+async fn close(loop_: &Loop<Client>, json: bool) {
+    let emit = printer(json);
+    for text in loop_.close().await {
+        emit(&Event::Note { text });
     }
 }
 
@@ -119,7 +135,7 @@ async fn complete(loop_: &mut Loop<Client>, input: UserInput, json: bool) -> Res
 
 fn slash(prompt: &str) -> Option<&str> {
     let line = prompt.trim_start().lines().next()?;
-    summonr::parse_command(line)?;
+    summonr_agent::parse_command(line)?;
     line.split_whitespace().next()
 }
 
@@ -134,7 +150,7 @@ fn print_live(event: &Event) {
     match event {
         Event::ToolCall {
             name, arguments, ..
-        } => eprintln!("\n→ {}", summonr::mcp_call_label(name, arguments)),
+        } => eprintln!("\n→ {}", summonr_agent::mcp_call_label(name, arguments)),
         Event::ToolResult { success: false, .. } => eprintln!("  (failed)"),
         Event::Verify { passed: true, .. } => eprintln!("\n✓ verify passed"),
         Event::Verify { .. } => eprintln!("\n✗ verify failed"),
@@ -147,11 +163,14 @@ fn print_live(event: &Event) {
         Event::Receipt { .. } => {}
         Event::Aborted { reason, .. } => eprintln!("\n{reason}"),
         Event::Child { id, event } => {
-            let tag = summonr::child::tag(id);
+            let tag = summonr_agent::child::tag(id);
             match &**event {
                 Event::ToolCall {
                     name, arguments, ..
-                } => eprintln!("  [{tag}] → {}", summonr::mcp_call_label(name, arguments)),
+                } => eprintln!(
+                    "  [{tag}] → {}",
+                    summonr_agent::mcp_call_label(name, arguments)
+                ),
                 Event::ToolResult { success: false, .. } => eprintln!("  [{tag}] (failed)"),
                 Event::Assistant { text } => {
                     eprintln!("  [{tag}] {}", text.lines().next().unwrap_or_default());

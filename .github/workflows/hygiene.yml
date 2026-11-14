@@ -9,28 +9,48 @@ on:
   merge_group:
   workflow_dispatch:
 
-concurrency:
-  group: hygiene-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
-
 permissions:
   contents: read
 
 jobs:
   hygiene:
-    if: github.repository == 'manaforged/summonr'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: main
           fetch-depth: 0
           persist-credentials: false
+      - name: Fetch pull request objects without checking them out
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags "$SERVER/$REPO" "+refs/pull/$NUMBER/head:refs/remotes/pr/head"
+      - name: Fetch merge group objects without checking them out
+        if: github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.merge_group.head_ref }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags "$SERVER/$REPO" "+$REF:refs/remotes/mq/head"
       - name: Check repository content and change metadata
         env:
           HYGIENE_PATTERNS: ${{ secrets.HYGIENE_PATTERNS }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -39,11 +59,6 @@ jobs:
           if [ ! -s "$patterns" ]; then
             echo '::error::Configure the HYGIENE_PATTERNS repository secret.'
             exit 1
-          fi
-          target=HEAD
-          if [ -n "$PR_NUMBER" ]; then
-            git fetch --no-tags --no-recurse-submodules origin "+refs/pull/$PR_NUMBER/head"
-            target=FETCH_HEAD
           fi
           failed=0
           scan() {
@@ -58,22 +73,18 @@ jobs:
           }
           banned_paths='(^|/)\.DS_Store$|\.bak([.-].*)?$|\.(orig|rej|swp|swo)$|~$|(^|/)\.env(\..+)?$'
           allowed_env='(^|/)\.env\.(example|sample|template)$'
-          while IFS=$'\t' read -r -d '' meta path; do
+          while IFS= read -r -d '' path; do
             if printf '%s\n' "$path" | grep -qiE "$banned_paths" && ! printf '%s\n' "$path" | grep -qiE "$allowed_env"; then
               echo "::error::Tracked path $path is an ignored editor, backup, or environment file"
               failed=1
             fi
-            read -r _ type object <<<"$meta"
-            [ "$type" = blob ] || continue
-            git cat-file blob "$object" | strings > "$RUNNER_TEMP/hygiene-content"
+            git show "$HEAD:$path" | strings > "$RUNNER_TEMP/hygiene-content"
             scan "$RUNNER_TEMP/hygiene-content" "Repository content"
-          done < <(git ls-tree -r -z "$target")
-          if [ -n "$BASE" ] && [[ ! "$BASE" =~ ^0+$ ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            range="$BASE..$target"
-          elif previous=$(git describe --tags --abbrev=0 --match 'v*' "$target^" 2>/dev/null); then
-            range="$previous..$target"
+          done < <(git ls-tree -r --name-only -z "$HEAD")
+          if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            range="$HEAD"
           else
-            range="$target"
+            range="$BASE..$HEAD"
           fi
           git log --format=%B "$range" > "$RUNNER_TEMP/hygiene-messages"
           scan "$RUNNER_TEMP/hygiene-messages" "Commit messages"

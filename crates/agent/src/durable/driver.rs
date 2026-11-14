@@ -1,0 +1,373 @@
+use std::path::{Path, PathBuf};
+
+use super::id::{Attempt, Call, SessionId};
+use super::log::{self, Line, Log, State, Usage, UsageMeta};
+use super::store;
+use super::tree::{self, Snapshot};
+use super::work::{Check, Decision, Stage, Work, WorkKind};
+use crate::{Error, Result, WorkProgress};
+use summonr_core::error::ErrorKind;
+use summonr_types::{Message, Partial, ToolCall, UserInput};
+
+fn refused(text: &str) -> Error {
+    Error::Config(text.to_string())
+}
+
+fn empty() -> Error {
+    refused("input is empty")
+}
+
+pub(crate) fn busy() -> Error {
+    refused("a turn is already open")
+}
+
+fn no_turn() -> Error {
+    refused("no open turn")
+}
+
+fn no_provider() -> Error {
+    refused("no open provider round")
+}
+
+fn no_tool() -> Error {
+    refused("no planned tool for this call")
+}
+
+fn no_work() -> Error {
+    refused("session has no Work")
+}
+
+pub(super) fn disk(error: std::io::Error) -> Error {
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Error::Held
+    } else {
+        Error::caused(ErrorKind::Config, error)
+    }
+}
+
+pub(crate) struct Exposure {
+    pub(crate) max_input_tokens: u64,
+    pub(crate) max_output_tokens: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Purpose {
+    Agent,
+    Summary,
+    Judge,
+    Scout,
+    Title,
+}
+
+struct Round {
+    attempt: Attempt,
+    purpose: Purpose,
+    exposure: Exposure,
+    model: String,
+}
+
+struct Turn {
+    stage: Option<Stage>,
+    round: Option<Round>,
+    calls: Vec<(Call, String)>,
+}
+
+pub(crate) struct Verdict {
+    pub(crate) passed: bool,
+    pub(crate) diagnostic: Option<String>,
+}
+
+pub(crate) enum Parent {
+    Session(SessionId),
+    Task(SessionId),
+}
+
+pub(crate) struct SessionDriver {
+    pub(crate) partial: Partial,
+    agent: Option<String>,
+    log: Log,
+    state: State,
+    work: Option<Work>,
+    workspace: PathBuf,
+    turn: Option<Turn>,
+    next: u64,
+    pending: Vec<Line>,
+    saved: u64,
+    base: Option<tree::base::Pending>,
+    fresh: bool,
+    last: Option<Snapshot>,
+    notice: Option<String>,
+}
+
+mod base;
+mod children;
+mod session;
+mod turns;
+mod verdict;
+mod work;
+
+impl SessionDriver {
+    pub(crate) fn charge(
+        &mut self,
+        usage: Usage,
+        note: &str,
+        model: &str,
+        reported: bool,
+        meta: UsageMeta,
+    ) -> Result<()> {
+        self.append(Line::Charge {
+            reported,
+            usage,
+            note: note.to_string(),
+            model: model.to_string(),
+            prefix_hash: meta.prefix_hash,
+            cost: meta.cost,
+        })
+    }
+
+    pub(crate) fn turn_open(&self) -> bool {
+        self.turn.is_some()
+    }
+
+    pub(crate) fn usage(&self) -> (u64, u64) {
+        (self.state.spent, self.state.unreported)
+    }
+
+    pub(crate) fn compact(&mut self, summary: &str, tail: &[Message]) -> Result<()> {
+        self.append(Line::Summary {
+            text: summary.to_string(),
+            tail: tail.to_vec(),
+        })
+    }
+
+    pub(crate) fn rewrite(&mut self, edits: Vec<(usize, Message)>) -> Result<()> {
+        self.append(Line::Rewrite { edits })
+    }
+
+    pub(crate) fn clear(&mut self) -> Result<()> {
+        if self.turn.is_some() {
+            return Err(busy());
+        }
+        if let Some(work) = self.work.as_mut().filter(|work| !work.todos.is_empty()) {
+            work.todos.clear();
+            self.checkpoint()?;
+        }
+        self.append(Line::Clear)
+    }
+
+    pub(crate) fn note_schema(&mut self, bytes: u64) -> Result<()> {
+        self.append(Line::Tools { bytes })
+    }
+
+    pub(crate) fn set_budget(&mut self, tokens: Option<u64>, millis: Option<u64>) -> Result<()> {
+        if (self.state.tokens, self.state.millis) == (tokens, millis) {
+            return Ok(());
+        }
+        self.append(Line::Budget { tokens, millis })
+    }
+
+    pub(crate) fn budget_limits(&self) -> (Option<u64>, Option<u64>) {
+        (self.state.tokens, self.state.millis)
+    }
+
+    pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
+        if self.state.workflow.as_deref() == name {
+            return Ok(());
+        }
+        self.append(Line::Workflow {
+            name: name.map(str::to_string),
+        })
+    }
+
+    pub(crate) fn touched(&self) -> Vec<String> {
+        self.work
+            .as_ref()
+            .map(|work| work.touched.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn workflow(&self) -> Option<&str> {
+        self.state.workflow.as_deref()
+    }
+
+    pub(crate) fn stage(&self) -> Option<Stage> {
+        self.turn.as_ref().and_then(|turn| turn.stage)
+    }
+
+    pub(crate) fn history(&self) -> &[Message] {
+        &self.state.history
+    }
+
+    pub(crate) fn opener(&self) -> Option<usize> {
+        self.state.opener
+    }
+
+    pub(crate) fn spent_tokens(&self) -> u64 {
+        self.state.spent
+    }
+
+    pub(crate) fn set_agent(&mut self, route: Option<String>) {
+        self.agent = route;
+    }
+
+    pub(crate) fn set_topic(&mut self, id: String) -> Result<()> {
+        self.append(Line::Topic { id })
+    }
+
+    pub(crate) fn set_skills(&mut self, set: String) -> Result<()> {
+        if self.state.skills.as_deref() == Some(set.as_str()) {
+            return Ok(());
+        }
+        self.append(Line::Skills { set })
+    }
+
+    pub(crate) fn skills(&self) -> Option<&str> {
+        self.state.skills.as_deref()
+    }
+
+    pub(crate) fn turns(&self) -> usize {
+        self.state.turns
+    }
+
+    pub(crate) fn elapsed_millis(&self) -> u64 {
+        self.state.elapsed
+    }
+
+    pub(crate) fn last_close_reason(&self) -> Option<&str> {
+        self.state.last_close_reason.as_deref()
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        self.log.path()
+    }
+
+    pub(crate) fn workspace(&self) -> &Path {
+        &self.workspace
+    }
+
+    pub(crate) fn id(&self) -> SessionId {
+        self.state.id.expect("an open session has a header")
+    }
+
+    pub(crate) fn depth(&self) -> u8 {
+        self.state.depth
+    }
+
+    pub(crate) fn parent(&self) -> Option<SessionId> {
+        self.state.parent
+    }
+
+    fn execute(&mut self) -> Result<()> {
+        self.work.as_mut().ok_or_else(no_work)?.execute(None)?;
+        self.begin_base();
+        self.checkpoint()
+    }
+
+    fn remember_tree(&mut self) {
+        if let (Some(cache), Some(last)) =
+            (tree::base::cache_path(self.log.path()), self.last.as_mut())
+        {
+            tree::remember(&cache, &self.workspace, last);
+        }
+    }
+
+    fn snapshot(&mut self, previous: Option<&Snapshot>, scope: &[String]) -> Result<Snapshot> {
+        let snapshot = tree::snapshot(
+            &self.workspace,
+            &tree::base::excludes(self.log.path()),
+            previous.or(self.last.as_ref()),
+            scope,
+        )
+        .map_err(disk)?;
+        self.last = Some(snapshot.clone());
+        Ok(snapshot)
+    }
+
+    fn checkpoint(&mut self) -> Result<()> {
+        let Some(work) = &self.work else {
+            return Ok(());
+        };
+        let mark = work.trees_mark();
+        if self.saved != mark {
+            work.save_trees(self.log.path()).map_err(disk)?;
+        }
+        let line = Line::Work {
+            work: Box::new(work.clone()),
+        };
+        self.saved = mark;
+        self.append(line)
+    }
+
+    fn append(&mut self, line: Line) -> Result<()> {
+        let durability = match &line {
+            Line::Work { work } => work.durability(),
+            _ => store::Durability::Renamed,
+        };
+        self.log.append(&line, durability).map_err(disk)?;
+        self.pending.push(line.clone());
+        self.state.apply(line);
+        Ok(())
+    }
+
+    pub(crate) fn take_pending(&mut self) -> Vec<Line> {
+        std::mem::take(&mut self.pending)
+    }
+
+    pub(crate) fn take_notice(&mut self) -> Option<String> {
+        self.notice.take()
+    }
+
+    fn take(&mut self) -> u64 {
+        let value = self.next;
+        self.next = self.next.saturating_add(1);
+        value
+    }
+}
+
+pub(crate) fn work_at(path: &Path, workspace: &Path, policy: WorkKind, text: &str) -> bool {
+    let Some(Ok(Line::Session {
+        workspace: recorded,
+        ..
+    })) = log::records(path, 0).next()
+    else {
+        return false;
+    };
+    if recorded != canonical(workspace) {
+        return false;
+    }
+    Work::at(path).is_some_and(|work| {
+        std::mem::discriminant(&work.policy) == std::mem::discriminant(&policy)
+            && work.objective == text
+            && !work.terminal()
+    })
+}
+
+pub(crate) fn touched_at(path: &Path) -> Vec<String> {
+    Work::at(path)
+        .map(|work| work.touched.into_iter().collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(WorkKind, String)> {
+    let Some(Ok(Line::Session {
+        workspace: recorded,
+        ..
+    })) = log::records(path, 0).next()
+    else {
+        return None;
+    };
+    if recorded != canonical(workspace) {
+        return None;
+    }
+    Work::at(path)
+        .filter(|work| work.policy != WorkKind::Single && !work.terminal())
+        .map(|work| (work.policy, work.objective))
+}
+
+pub(crate) fn canonical(path: &Path) -> PathBuf {
+    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(test)]
+#[path = "driver_tests.rs"]
+mod tests;

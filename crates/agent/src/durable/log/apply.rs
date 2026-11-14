@@ -1,0 +1,196 @@
+use super::*;
+
+impl State {
+    pub(crate) fn apply(&mut self, line: Line) {
+        match line {
+            Line::Session {
+                id,
+                model,
+                system,
+                workspace,
+                parent,
+                depth,
+                ..
+            } => {
+                self.id = Some(id);
+                self.model = model;
+                self.system = system;
+                self.workspace = workspace;
+                self.parent = parent;
+                self.depth = depth;
+            }
+            Line::Agent { .. } | Line::Topic { .. } | Line::Tools { .. } | Line::Receipt { .. } => {
+            }
+            Line::Budget { tokens, millis } => {
+                self.tokens = tokens;
+                self.millis = millis;
+            }
+            Line::Workflow { name } => self.workflow = name,
+            Line::Skills { set } => self.skills = Some(set),
+            Line::Child { record } => {
+                self.children.insert(record.id, record);
+            }
+            Line::User {
+                text,
+                images,
+                start,
+                ..
+            } => self.apply_user(text, images, start),
+            Line::Assistant {
+                text,
+                reasoning,
+                tool_calls,
+                usage,
+                continuation,
+                ..
+            } => self.apply_assistant(text, reasoning, tool_calls, usage, continuation),
+            Line::Interrupted { text, .. } => self.apply_interrupted(text),
+            Line::Tool {
+                call,
+                text,
+                success,
+                millis,
+                ..
+            } => self.apply_tool(call, text, success, millis),
+            Line::Charge {
+                usage, reported, ..
+            } => self.apply_charge(usage, reported),
+            Line::Summary { text, tail } => self.apply_summary(text, &tail),
+            Line::Rewrite { edits } => self.apply_rewrite(edits),
+            Line::Work { work } => self.work = Some(*work),
+            end @ (Line::Clear | Line::Close { .. }) => self.apply_end(&end),
+        }
+    }
+
+    fn apply_interrupted(&mut self, text: String) {
+        self.history.extend((!text.is_empty()).then(|| Message {
+            role: Role::Assistant,
+            ..Message::system(text)
+        }));
+    }
+
+    fn apply_charge(&mut self, usage: Usage, reported: bool) {
+        if !reported {
+            self.unreported = self.unreported.saturating_add(usage.tokens());
+        }
+        self.charge(usage, reported);
+    }
+
+    fn apply_rewrite(&mut self, mut edits: Vec<(usize, Message)>) {
+        edits.retain(|(index, _)| *index < self.history.len());
+        for (index, message) in edits {
+            self.history[index] = message;
+        }
+    }
+
+    fn apply_user(&mut self, text: String, images: Vec<Image>, start: bool) {
+        if start {
+            self.answer_unanswered();
+            self.turns += 1;
+            self.opener = Some(self.history.len());
+            self.last_close_reason = None;
+        }
+        let mut message = Message::user(text);
+        message.images = images;
+        self.history.push(message);
+    }
+
+    fn apply_assistant(
+        &mut self,
+        text: String,
+        reasoning: String,
+        mut tool_calls: Vec<ToolCall>,
+        usage: Usage,
+        continuation: Option<Continuation>,
+    ) {
+        self.charge(usage, true);
+        for call in &mut tool_calls {
+            call.function.check();
+        }
+        self.answer_unanswered();
+        self.unanswered = tool_calls.iter().map(|call| call.id.clone()).collect();
+        self.history.push(Message {
+            role: Role::Assistant,
+            tool_calls,
+            reasoning: (!reasoning.is_empty()).then_some(reasoning),
+            continuation,
+            ..Message::system(text)
+        });
+    }
+
+    fn answer_unanswered(&mut self) {
+        let unanswered = std::mem::take(&mut self.unanswered);
+        let Some(first) = unanswered.first() else {
+            return;
+        };
+        let Some(asked) = self.history.iter().rposition(|message| {
+            message.role == Role::Assistant
+                && message.tool_calls.iter().any(|call| call.id == *first)
+        }) else {
+            return;
+        };
+        let answered = self.history[asked + 1..]
+            .iter()
+            .take_while(|message| message.role == Role::Tool)
+            .count();
+        let aborted = unanswered.into_iter().map(|call| Message {
+            failed: true,
+            ..Message::tool(call, "aborted".to_string())
+        });
+        let at = asked + 1 + answered;
+        self.history.splice(at..at, aborted);
+    }
+
+    fn apply_tool(&mut self, call: String, text: String, success: bool, millis: u64) {
+        self.elapsed = self.elapsed.saturating_add(millis);
+        self.unanswered.retain(|id| *id != call);
+        self.history.push(Message {
+            failed: !success,
+            ..Message::tool(call, text)
+        });
+    }
+
+    fn apply_summary(&mut self, text: String, tail: &[Message]) {
+        let opener = self
+            .opener
+            .and_then(|index| self.history.get(index).cloned());
+        self.history.clear();
+        self.opener = opener.as_ref().map(|_| 0);
+        self.history.extend(opener.clone());
+        self.history.push(Message::system(text));
+        let repeated = opener
+            .as_ref()
+            .is_some_and(|opener| tail.first() == Some(opener));
+        self.history
+            .extend(tail.iter().skip(usize::from(repeated)).cloned());
+    }
+
+    pub(crate) fn attach_tool_images(&mut self, images: Vec<Image>) {
+        if !images.is_empty()
+            && let Some(last) = self.history.last_mut()
+            && last.role == Role::Tool
+        {
+            last.images = images;
+        }
+    }
+
+    pub(crate) fn clear_tool_images(&mut self) {
+        for message in &mut self.history {
+            if message.role == Role::Tool && !message.images.is_empty() {
+                message.images.clear();
+            }
+        }
+    }
+
+    fn apply_end(&mut self, end: &Line) {
+        if let Line::Close { reason, .. } = end {
+            self.last_close_reason = reason.clone();
+        }
+        if *end == Line::Clear {
+            self.history.clear();
+            self.last_close_reason = None;
+        }
+        self.opener = None;
+        self.unanswered.clear();
+    }
+}

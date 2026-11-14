@@ -1,0 +1,35 @@
+every_secs = 1800
+
+[[plan]]
+name = "Codex"
+command = ["codex", "app-server"]
+stdin = [
+    '{"method":"initialize","id":1,"params":{"clientInfo":{"name":"summonr","title":null,"version":"1"},"capabilities":null}}',
+    '{"method":"initialized"}',
+    '{"method":"account/rateLimits/read","id":2,"params":{}}',
+]
+reply = "/result/rateLimits"
+shape = "codex"
+
+[[plan]]
+name = "Claude Code"
+file = "$QUOTA_CACHE/claude-code.json"
+shape = "windows"
+
+[[plan]]
+name = "Antigravity"
+command = ["agy", "-p", "/usage", "--output-format", "json"]
+env = { AGY_CLI_DISABLE_AUTO_UPDATE = "true" }
+shape = "antigravity"
+
+[[plan]]
+name = "GLM coding plan"
+via = "https://open.bigmodel.cn/api/coding/"
+url = "https://open.bigmodel.cn/api/monitor/usage/quota/limit"
+shape = "zai"
+
+[[plan]]
+name = "GLM coding plan"
+via = "https://api.z.ai/api/coding/"
+url = "https://api.z.ai/api/monitor/usage/quota/limit"
+shape = "zai"

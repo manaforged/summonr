@@ -165,3 +165,18 @@ fn a_frontmatter_list_reads_every_form_yaml_allows() {
         Some(vec!["Read".to_string()])
     );
 }
+
+#[test]
+fn front_matter_counts_only_when_the_fence_is_the_first_line() {
+    for text in [
+        "\n---\nname: late\n---\nBody.\n",
+        " ---\nname: late\n---\nBody.\n",
+    ] {
+        let front = Frontmatter::parse(text);
+        assert_eq!(front.get("name"), None, "{text:?}");
+        assert_eq!(front.body, text);
+    }
+    let front = Frontmatter::parse("---\nname: first\n---\nBody.\n");
+    assert_eq!(front.get("name"), Some("first"));
+    assert_eq!(front.body, "Body.\n");
+}

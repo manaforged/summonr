@@ -86,6 +86,60 @@ pub(crate) fn plugin_reinstall_keeps_plugin_data() {
     assert!(!skill_text.contains("first"), "{skill_text}");
 }
 
+pub(crate) fn a_broken_plugin_file_is_one_note_and_the_session_runs() {
+    let session = Session::new();
+    let src = session.files.path().join("demo-src");
+    skill(&src, "demo", "Hi.\n");
+    let (ok, text) = session.cli(&["install", &src.display().to_string()]);
+    assert!(ok, "{text}");
+    let demo = session.home.path().join("plugins/demo");
+    write(
+        &demo.join(".claude-plugin/plugin.json"),
+        r#"{"name": "demo", "hooks": "./hooks/shape.json"}"#,
+    );
+    write(
+        &demo.join("hooks/shape.json"),
+        &json!({"hooks": {"PreToolUse": {"hooks": []}}}).to_string(),
+    );
+    let broken = [
+        ("hooks/hooks.json", "{"),
+        (".mcp.json", "{"),
+        ("mcp.toml", "[mcp"),
+        ("hooks.toml", "PreToolUse ="),
+    ];
+    for (file, text) in broken {
+        write(&demo.join(file), text);
+    }
+    let other = session.home.path().join("plugins/other");
+    write(&other.join(".claude-plugin/plugin.json"), "{");
+    let model = Model::start(vec![Step::Text("ok")]);
+    let outcome = session.run(&model, "", &[]);
+    let stderr = crate::support::read(&session.file("stderr"));
+    assert_eq!(outcome.code, Some(0), "{stderr}");
+    let mut named: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for line in stderr.lines() {
+        if let Some((file, _)) = line
+            .strip_prefix("summonr: ")
+            .and_then(|note| note.split_once(": "))
+        {
+            *named.entry(file).or_default() += 1;
+        }
+    }
+    let files = broken
+        .iter()
+        .map(|(file, _)| demo.join(file))
+        .chain([other.join(".claude-plugin/plugin.json")]);
+    for path in files {
+        let shown = path.display().to_string();
+        assert_eq!(named.get(shown.as_str()), Some(&1), "{shown}: {stderr}");
+    }
+    let shape = format!(
+        "summonr: {}: `hooks.PreToolUse` is not a list; summonr skipped this plugin file",
+        demo.join("hooks/shape.json").display()
+    );
+    assert!(stderr.lines().any(|line| line == shape), "{stderr}");
+}
+
 pub(crate) fn plugin_unknown_off_warns_without_blocking_list_or_session_start() {
     let session = Session::new();
     std::fs::write(
@@ -150,7 +204,7 @@ pub(crate) fn plugin_user_config_reaches_the_server() {
     ]);
     assert!(ok, "{text}");
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "x"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
         Step::Text("ok"),
     ]);
     session.run(
@@ -170,7 +224,7 @@ pub(crate) fn plugin_user_env_replaces_the_server_env() {
     ]);
     assert!(ok, "{text}");
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "x"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
         Step::Text("ok"),
     ]);
     session.run(&model, "[mcp.demo-fx.env]\nTOKEN = \"from-env\"\n", &[]);
@@ -211,7 +265,7 @@ pub(crate) fn plugin_non_command_hook_is_skipped_and_does_not_run() {
         "{list_text}"
     );
     let model = Model::start(vec![
-        Step::Call("demo-fx__echo", json!({"text": "ran"})),
+        Step::Call("plugin_demo_fx__echo", json!({"text": "ran"})),
         Step::Text("ok"),
     ]);
     session.run(&model, "", &[]);
@@ -240,7 +294,7 @@ pub(crate) fn plugin_install_skips_a_server_turned_off_in_config() {
     );
     let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
     assert!(ok, "{text}");
-    assert!(text.contains("demo-fx: off in config"), "{text}");
+    assert!(text.contains("plugin_demo_fx: off in config"), "{text}");
 }
 
 pub(crate) fn plugin_install_counts_only_language_servers_that_load() {
@@ -256,8 +310,181 @@ pub(crate) fn plugin_install_counts_only_language_servers_that_load() {
     );
     let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
     assert!(!ok, "{text}");
+    let file = dir.join(".lsp.json").canonicalize().expect("lsp file");
     assert!(
-        text.contains("plugin `lsp-only` adds nothing summonr loads"),
+        text.contains(&format!(
+            "{}: broken: missing field `command`",
+            file.display()
+        )),
         "{text}"
     );
+    assert!(
+        !session.home.path().join("plugins/lsp-only").exists(),
+        "{text}"
+    );
+}
+
+pub(crate) fn plugin_install_names_the_file_and_key_of_a_server_of_the_wrong_shape() {
+    let session = Session::new();
+    let dir = session.files.path().join("shape");
+    write(
+        &dir.join(".claude-plugin/plugin.json"),
+        r#"{"name": "shape"}"#,
+    );
+    write(
+        &dir.join(".mcp.json"),
+        &json!({"mcpServers": {"fx": {"command": "fx", "args": "--stdio"}}}).to_string(),
+    );
+    let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
+    assert!(!ok, "{text}");
+    let file = dir.join(".mcp.json").canonicalize().expect("mcp file");
+    assert!(
+        text.contains(&format!("{}: fx: invalid type: string", file.display())),
+        "{text}"
+    );
+    assert!(
+        !session.home.path().join("plugins/shape").exists(),
+        "{text}"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn plugin_configured_user_config_clears_the_warning_and_env_expands_once() {
+    let session = Session::new();
+    let config = "[mcp.plugin_demo_fx.user_config]\napi_token = \"s3cret\"\n";
+    std::fs::write(session.home.path().join("config.toml"), config).expect("config");
+    let token = "${user_config.api_token}|${UNSET_MCP_OPT}|${UNSET_MCP_OPT:-dflt}";
+    let source = wrapped(&session, token).display().to_string();
+    let (ok, text) = session.cli(&["install", &source]);
+    assert!(ok, "{text}");
+    assert!(!text.contains("warning\tmcp fx uses"), "{text}");
+    let (listed, list_text) = session.cli(&["install", "--list"]);
+    assert!(listed && !list_text.contains("warning"), "{list_text}");
+    let model = Model::start(vec![
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, config, &[]);
+    assert_eq!(
+        read(&session.file("token.txt")),
+        "s3cret|${UNSET_MCP_OPT}|dflt"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn plugin_user_env_sees_the_plugin_root() {
+    let session = Session::new();
+    let source = wrapped(&session, "plugin-value");
+    let (ok, text) = session.cli(&["install", &source.display().to_string()]);
+    assert!(ok, "{text}");
+    let model = Model::start(vec![
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
+        Step::Text("ok"),
+    ]);
+    let config = "[mcp.plugin_demo_fx.env]\nTOKEN = \"${CLAUDE_PLUGIN_ROOT}/x\"\n";
+    session.run(&model, config, &[]);
+    let root = session.home.path().join("plugins/demo");
+    assert_eq!(
+        read(&session.file("token.txt")),
+        format!("{}/x", root.display())
+    );
+}
+
+fn marketplace(session: &Session, plugins: serde_json::Value) -> String {
+    let root = session.files.path().join("market");
+    let catalog = json!({"name": "shop", "owner": {"name": "Tests"}, "plugins": plugins});
+    write(
+        &root.join(".claude-plugin/marketplace.json"),
+        &catalog.to_string(),
+    );
+    root.display().to_string()
+}
+
+pub(crate) fn a_marketplace_is_added_listed_installed_from_and_removed() {
+    let session = Session::new();
+    let root = marketplace(
+        &session,
+        json!([
+            {"name": "greet", "source": "./plugins/greet"},
+            {"name": "evil", "source": "./../outside"}
+        ]),
+    );
+    skill(&Path::new(&root).join("plugins/greet"), "greet", "Hi.\n");
+    skill(&session.files.path().join("outside"), "evil", "Out.\n");
+    let (ok, text) = session.cli(&["plugin", "marketplace", "add", &root]);
+    assert!(
+        ok && text.contains("added marketplace shop (2 plugins)"),
+        "{text}"
+    );
+    let (ok, text) = session.cli(&["plugin", "marketplace", "list"]);
+    assert!(ok && text.contains("shop\tdirectory\t"), "{text}");
+    let (ok, text) = session.cli(&["plugin", "install", "greet@shop"]);
+    assert!(ok, "{text}");
+    let plugins = session.home.path().join("plugins");
+    assert!(
+        plugins.join("greet/skills/greet/SKILL.md").is_file(),
+        "{text}"
+    );
+    let (ok, text) = session.cli(&["plugin", "install", "evil@shop"]);
+    assert!(!ok && text.contains("Path contains \"..\""), "{text}");
+    assert!(!plugins.join("evil").exists(), "{text}");
+    let (ok, text) = session.cli(&["plugin", "marketplace", "remove", "shop"]);
+    assert!(ok && text.contains("greet"), "{text}");
+    assert!(!plugins.join("greet").exists(), "{text}");
+    assert!(!session.home.path().join("marketplaces/shop").exists());
+    assert!(Path::new(&root).join("plugins/greet").is_dir(), "{text}");
+}
+
+#[cfg(unix)]
+fn git(dir: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t.invalid"])
+        .args(["-c", "commit.gpgsign=false", "-C"])
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[cfg(unix)]
+pub(crate) fn a_git_source_installs_with_the_entry_merged_into_its_manifest() {
+    let session = Session::new();
+    let repo = session.files.path().join("remote-repo");
+    skill(&repo, "remote", "Hi.\n");
+    write(
+        &repo.join(".claude-plugin/plugin.json"),
+        r#"{"name": "remote", "version": "1"}"#,
+    );
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "--quiet", "-m", "plugin"]);
+    let url = format!("file://{}", repo.display());
+    let source = json!({"source": "url", "url": url});
+    let root = marketplace(
+        &session,
+        json!([
+            {"name": "remote", "source": source, "description": "from git", "version": "2"},
+            {"name": "clash", "source": source, "strict": false, "skills": ["./skills"]},
+            {"name": "linked", "source": "./linked"}
+        ]),
+    );
+    std::os::unix::fs::symlink(session.files.path(), Path::new(&root).join("linked")).unwrap();
+    let (ok, text) = session.cli(&["plugin", "marketplace", "add", &root]);
+    assert!(ok, "{text}");
+    let (ok, text) = session.cli(&["plugin", "install", "remote@shop"]);
+    assert!(ok, "{text}");
+    let installed = session.home.path().join("plugins/remote");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&read(&installed.join(".claude-plugin/plugin.json"))).unwrap();
+    assert_eq!(manifest["description"], "from git", "{manifest}");
+    assert_eq!(manifest["version"], "1", "{manifest}");
+    assert!(installed.join("skills/greet/SKILL.md").is_file());
+    assert!(!installed.join(".git").exists());
+    let (ok, text) = session.cli(&["plugin", "install", "clash@shop"]);
+    assert!(!ok && text.contains("conflicting manifests"), "{text}");
+    let (ok, text) = session.cli(&["plugin", "install", "linked@shop"]);
+    assert!(!ok && text.contains("leaves the marketplace"), "{text}");
+    let (ok, text) = session.cli(&["plugin", "marketplace", "update", "shop"]);
+    assert!(ok && text.contains("updated marketplace shop"), "{text}");
 }

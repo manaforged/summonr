@@ -1,0 +1,2 @@
+#!/bin/sh
+printf '{"view":"text","text":"hi"}'

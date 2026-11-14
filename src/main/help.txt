@@ -3,45 +3,8 @@ summonr: a terminal coding agent
 Usage: summonr [ENDPOINT] [OPTIONS] [PROMPT]
   summonr grok                start on an endpoint (same as -e grok)
   summonr kimi -p PROMPT      run one prompt and exit
-  summonr kimi PROMPT         a bare prompt also runs once and exits
-
-Sessions:
-  resume [ID|NAME]            resume a session; bare resumes the last one here
-  sessions                    list sessions
-  sessions --grep TEXT        search past sessions
-  export [ID|NAME]            write a session as markdown (--digest for classify)
-  profile [ID|NAME]           time and tokens of a session (--all [--last N])
-  diff [PATH]                 changes against the base (--stat, --json, --turn N|last)
-  worktrees [prune]           list summonr worktrees, or drop gone ones (--json)
-
-Providers:
-  endpoints                   list endpoints, their models, and each key state
-  login [NAME] [--key]        list keys and plans, or sign in to NAME
-  login NAME --url URL        add your own OpenAI-compatible server (--model NAME to pick one)
-  login NAME --model NAME     change the model of a server you added
-  login NAME --default        start on NAME when no endpoint is named (--model NAME sets its model)
-  logout NAME [--remove]      forget the stored key or token; --remove deletes your own endpoint
-
-Setup:
-  workflows                   list saved workflows
-  modules                     list the built-in modules
-  mcp list [--json]           list MCP servers, their state, and tool counts
-  mcp get NAME [--json]       show one MCP server and its tools
-  mcp add NAME -- CMD [ARGS]  add a stdio server (--env K=V), or --url URL (--header K=V)
-  mcp remove NAME             remove an MCP server from ~/.summonr/config.toml
-  install PATH                install a directory of extras (--list shows them)
-  uninstall NAME              remove an installed plugin
-  update                      replace this binary with the latest release
-  doctor [--logs|--report]    report crashed runs; --logs lists run logs;
-                              --report prints the last crash to paste into an issue
-
-Integrations:
-  acp                         serve the Agent Client Protocol on stdio
-  mail                        peer mail between agent sessions: agents, send, inbox, board
-  tool NAME [JSON]            run one tool and print the result
-  classify --set NAME [STATE] answer typed questions about text (below)
-  cron add NAME ...           run a prompt or goal on a schedule; cron --help
-  gateway telegram|webhook    start work from a Telegram chat or a web request; gateway --help
+  summonr kimi PROMPT         in a terminal, a bare prompt opens the session with it
+{verbs}
 
 Options:
 {options}

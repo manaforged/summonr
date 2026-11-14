@@ -48,7 +48,7 @@ summonr openai
 
 summonr runs commands as your account with no sandbox. Read [Safety and policy](safety.md) before you run unattended work.
 
-## 4. Work until a check passes
+## 4. Run a goal
 
 Write the command that proves the work is done:
 
@@ -68,7 +68,7 @@ summonr works until the check exits 0 and a second model call agrees the goal is
 See what the last turn changed:
 
 ```sh
-summonr diff --turn last
+summonr session diff --turn last
 ```
 
 ## Next steps

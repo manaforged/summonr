@@ -1,0 +1,46 @@
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Requirement {
+    Config,
+    Model,
+    Key,
+    ModelAndKey,
+}
+
+impl Requirement {
+    pub(super) const fn key(self) -> bool {
+        matches!(self, Self::Key | Self::ModelAndKey)
+    }
+
+    pub(super) const fn model(self) -> bool {
+        matches!(self, Self::Model | Self::ModelAndKey)
+    }
+
+    pub(crate) const fn without_key(self) -> Self {
+        match self {
+            Self::Key => Self::Config,
+            Self::ModelAndKey => Self::Model,
+            other => other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+    Flag,
+    ModelFlag,
+    Env,
+    LastUsed,
+    Default,
+}
+
+impl std::fmt::Display for Origin {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Flag => "flag",
+            Self::ModelFlag => "--model",
+            Self::Env => "env",
+            Self::LastUsed => "last used",
+            Self::Default => "default",
+        })
+    }
+}

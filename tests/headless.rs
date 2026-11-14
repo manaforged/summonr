@@ -297,7 +297,7 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
     std::fs::create_dir(&work).unwrap();
     std::fs::write(
         work.join("PLAN.md"),
-        "## Steps\n\n1. Say done. Run `exit 0`.\n2. Say done again. Run `cd .`.\n",
+        "## Steps\n\n1. Say done. Run `true`.\n2. Say done again. Run `test -d .`.\n",
     )
     .unwrap();
     let mut child = launch(home.path(), port, &["--version"], &[]);
@@ -333,36 +333,65 @@ fn a_json_steps_run_starts_each_step_with_its_check_and_exits_zero() {
     assert_eq!(
         steps,
         [
-            (1, "start", Some("exit 0")),
-            (1, "check passed", Some("exit 0")),
-            (2, "start", Some("cd .")),
-            (2, "check passed", Some("cd .")),
+            (1, "start", Some("true")),
+            (1, "check passed", Some("true")),
+            (2, "start", Some("test -d .")),
+            (2, "check passed", Some("test -d .")),
         ],
-        "workspace files: {:?}\n{stderr}",
-        walk(&work)
+        "{stderr}"
     );
 }
 
-fn walk(root: &std::path::Path) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
+fn journal_of(root: &Path, id: &str) -> String {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let path = entry.path();
             if path.is_dir() {
-                pending.push(path.clone());
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "jsonl") {
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                if text.contains(id) && text.contains(r#""kind":"session""#) {
+                    return text;
+                }
             }
-            found.push(
-                path.strip_prefix(root)
-                    .unwrap_or(&path)
-                    .display()
-                    .to_string(),
-            );
         }
     }
-    found.sort();
-    found
+    String::new()
+}
+
+#[test]
+fn a_new_session_starts_with_the_default_skill_set() {
+    let home = tempfile::tempdir().unwrap();
+    let port = streaming(&[
+        r#"{"choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#,
+    ]);
+    let mut first = launch(home.path(), port, &["--version"], &[]);
+    drop(first.wait());
+    let config = home.path().join("config.toml");
+    let base = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, base + "\n[skills]\ndefault = \"none\"\n").unwrap();
+    let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .args(["-e", "local", "-p", "--json", "hi"])
+        .current_dir(home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path())
+        .env(
+            "SUMMONR_MODELS_URL",
+            format!("http://127.0.0.1:{port}/registry.json"),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (code, events, stderr) = finish(child);
+    assert_eq!(code, Some(0), "{stderr}");
+    let id = events[0]["id"].as_str().expect("a session id");
+    let journal = journal_of(home.path(), id);
+    assert!(
+        journal.contains(r#""kind":"skills","set":"none""#),
+        "{journal}"
+    );
 }

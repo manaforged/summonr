@@ -32,6 +32,5 @@ fn a_guarded_walk_never_enters_a_directory_the_guard_protects() {
         ..Walk::RAW
     };
     assert_eq!(names(guarded, dir.path()), ["notes.txt"]);
-    let key = Path::new("vault").join("key").display().to_string();
-    assert_eq!(names(Walk::RAW, dir.path()), ["notes.txt", key.as_str()]);
+    assert_eq!(names(Walk::RAW, dir.path()), ["notes.txt", "vault/key"]);
 }

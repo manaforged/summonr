@@ -1,0 +1,196 @@
+use super::walk::Step;
+use super::*;
+use summonr_core::error::ErrorKind;
+
+pub(super) enum Block {
+    Outside(String),
+    Protected(String),
+}
+
+pub(super) fn locate(word: &str, workspace: &Path) -> PathBuf {
+    crate::config::expand_tilde(word).unwrap_or_else(|| workspace.join(word))
+}
+
+pub(super) fn path_word(word: &str) -> &str {
+    let Some((name, value)) = word.split_once('=') else {
+        return word;
+    };
+    if value.is_empty() || !summonr_core::text::is_name(name, summonr_core::text::Charset::Word) {
+        return word;
+    }
+    let rooted = value.starts_with(['/', '~', '\\']) || value.as_bytes().get(1) == Some(&b':');
+    if rooted { value } else { word }
+}
+
+pub(super) fn block_target(
+    word: &str,
+    workspace: &Path,
+    step: &Step,
+    roots: &[PathBuf],
+) -> Option<Block> {
+    let word = path_word(word);
+    if protected_write(&locate(word, workspace)) {
+        return Some(Block::Protected(word.to_string()));
+    }
+    if step.outside || is_outside(word, workspace, step.outside, roots) {
+        let shown = step
+            .cwd
+            .as_deref()
+            .filter(|_| step.outside && !rooted(Path::new(word)))
+            .map_or_else(
+                || word.to_string(),
+                |cwd| cwd.join(word).display().to_string(),
+            );
+        return Some(Block::Outside(shown));
+    }
+    None
+}
+
+pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
+    let home = summonr_core::dirs::home_dir();
+    steps.iter().find_map(|step| {
+        let row = verb_row(&step.verb()?)?;
+        let operands = step.operands();
+        let whole = row.search == Search::Contents || matches!(row.write, Write::Last);
+        let read = if matches!(row.read, Read::Always) || row.search == Search::Contents {
+            operands.as_slice()
+        } else if matches!(row.write, Write::Last) {
+            operands
+                .split_last()
+                .map_or(&[][..], |(_, sources)| sources)
+        } else {
+            return None;
+        };
+        let bases: Vec<&Path> = [Some(workspace), step.cwd.as_deref().or(home.as_deref())]
+            .into_iter()
+            .flatten()
+            .collect();
+        read.iter().find_map(|word| {
+            let target = path_word(word);
+            bases
+                .iter()
+                .map(|base| locate(target, base))
+                .flat_map(|path| [super::paths::resolved(&path), path])
+                .any(|path| protected_read(&path) || (whole && holds_protected(&path)))
+                .then(|| target.to_string())
+        })
+    })
+}
+
+pub(crate) fn reads_only(command: &str) -> bool {
+    let root = Path::new("/");
+    walk::walk(command, root, root, &[]).iter().all(|step| {
+        step.redirects().iter().all(|target| *target == "/dev/null")
+            && step.verb().is_none_or(|verb| {
+                verb_row(&verb)
+                    .is_some_and(|row| row.read.allows(step.argv().get(1..).unwrap_or_default()))
+            })
+    })
+}
+
+/// Whether `command` is one search or comparison, whose exit code 1 reports a result rather than a failure.
+pub(crate) fn benign_exit(command: &str) -> bool {
+    let root = Path::new("/");
+    let steps = walk::walk(command, root, root, &[]);
+    let [step] = steps.as_slice() else {
+        return false;
+    };
+    let benign = &rules().benign_exit;
+    step.verb().is_some_and(|verb| {
+        benign.contains(&verb)
+            || step
+                .argv()
+                .get(1)
+                .is_some_and(|sub| benign.contains(&format!("{verb} {sub}")))
+    })
+}
+
+pub(super) fn write_block(steps: &[Step], workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
+    steps
+        .iter()
+        .find_map(|step| step_block(step, workspace, roots))
+}
+
+fn step_block(step: &Step, workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
+    let check = |target: &str| block_target(target, workspace, step, roots);
+    if let Some(block) = step.redirects().into_iter().find_map(check) {
+        return Some(block);
+    }
+    let row = verb_row(&step.verb()?)?;
+    if row.cwd == Cwd::Tracked {
+        return None;
+    }
+    let operands = step.operands();
+    if matches!(row.write, Write::Creates) {
+        return operands.into_iter().find_map(check);
+    }
+    if !row.write.destroys(&step.words) {
+        return None;
+    }
+    if let Some(temp) = operands.iter().find(|word| in_temp(word)) {
+        return Some(Block::Outside((*temp).to_string()));
+    }
+    let checked = if matches!(row.write, Write::Last) {
+        &operands[operands.len().saturating_sub(1)..]
+    } else {
+        &operands[..]
+    };
+    checked.iter().copied().find_map(check)
+}
+
+fn write_directory(path: &str) -> PathBuf {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let directory =
+        trimmed.rsplit_once(['/', '\\']).map_or(
+            trimmed,
+            |(head, _)| {
+                if head.is_empty() { "/" } else { head }
+            },
+        );
+    expand_path(directory)
+}
+
+#[must_use]
+pub(crate) fn write_denied(path: &str) -> String {
+    let dir = write_directory(path);
+    if !rooted(&dir) {
+        return format!(
+            "write to `{path}` is outside the writable roots, in a directory summonr cannot resolve"
+        );
+    }
+    format!(
+        "write to `{path}` is outside the writable roots; add {} to write_roots in ~/.summonr/config.toml, or /permissions write {}",
+        dir.display(),
+        dir.display()
+    )
+}
+
+pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
+    matches!(error.kind(), ErrorKind::Denied | ErrorKind::Tool)
+        .then(|| grant_from_message(&error.detail()))
+        .flatten()
+}
+
+fn grant_from_message(message: &str) -> Option<Grant> {
+    let rest = message.split_once("/permissions write ")?.1;
+    let dir = rest.split([',', '\n']).next()?.trim();
+    if dir.is_empty() || dir == "PATH" {
+        return None;
+    }
+    write_grant(expand_path(dir))
+}
+
+fn rooted(path: &Path) -> bool {
+    path.is_absolute() || path.has_root()
+}
+
+fn write_grant(path: PathBuf) -> Option<Grant> {
+    if !rooted(&path) {
+        return None;
+    }
+    Some(if protected_write(&path) {
+        Grant::Guarded(path)
+    } else {
+        Grant::Write(path)
+    })
+}

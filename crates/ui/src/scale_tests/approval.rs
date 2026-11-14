@@ -1,0 +1,125 @@
+use sigil::Host;
+use sigil::events::{Event, KeyPhase, LogicalKey};
+use sigil::terminal::Screen;
+use tokio::sync::mpsc::unbounded_channel;
+
+use super::super::app::App;
+use super::super::view::root;
+use super::busy_info;
+use summonr_agent::hub::{Activity, Fact, Msg};
+
+fn press(key: &str) -> Event {
+    Event::key(LogicalKey::character(key), KeyPhase::Down).text(Some(key.into()))
+}
+
+fn pending_after_n(draft: &str, setup: impl FnOnce(&App)) -> bool {
+    sigil::reactive::Owner::scope("approval-keys", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 30);
+        app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
+            detail: Some("rm -rf build".to_owned()),
+            id: None,
+            persist: true,
+            dialog: 1,
+        })));
+        app.replace(draft.to_owned());
+        setup(&app);
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(100, 30);
+        for _ in 0..2 {
+            screen.frame(&mut host, [], (100, 30)).unwrap();
+        }
+        screen.frame(&mut host, [press("n")], (100, 30)).unwrap();
+        app.approval.peek().is_some()
+    })
+}
+
+#[test]
+fn a_plain_key_answers_an_approval_only_from_an_empty_composer() {
+    assert!(!pending_after_n("", |_| {}));
+    assert!(pending_after_n("dont", |_| {}));
+}
+
+#[test]
+fn a_focused_pane_keeps_its_letter_keys_from_the_approval() {
+    assert!(pending_after_n("", |app| {
+        app.toggle_pane(crate::pane::Pane::Diff);
+        app.focus_pane(true);
+    }));
+}
+
+fn after_key(draft: &str, key: &str, check: impl FnOnce(&App) -> bool) -> bool {
+    sigil::reactive::Owner::scope("composer-keys", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(100, 30);
+        app.replace(draft.to_owned());
+        let mut host = Host::new(sigil::prelude::HostMode::Cell);
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(100, 30);
+        for _ in 0..2 {
+            screen.frame(&mut host, [], (100, 30)).unwrap();
+        }
+        screen.frame(&mut host, [press(key)], (100, 30)).unwrap();
+        check(&app)
+    })
+}
+
+#[test]
+fn a_question_mark_opens_help_only_from_an_empty_composer() {
+    assert!(after_key("", "?", |app| app.help.open.peek()));
+    assert!(!after_key("why", "?", |app| app.help.open.peek()));
+}
+
+fn approval_screen(persist: bool) -> String {
+    super::frame_with(busy_info(), 100, 30, super::State::Busy, |app| {
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Approval {
+            detail: Some("rm -rf build".to_owned()),
+            id: None,
+            persist,
+            dialog: 1,
+        })));
+    })
+    .join("\n")
+}
+
+#[test]
+fn the_approval_band_lists_its_answer_keys() {
+    let screen = approval_screen(true);
+    assert!(
+        screen.contains("Needs approval") && screen.contains("rm -rf build"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("Allow (y)")
+            && screen.contains("Always (Y)")
+            && screen.contains("Deny (n)"),
+        "{screen}"
+    );
+    assert!(!screen.contains("y allow"), "{screen}");
+    let screen = approval_screen(false);
+    assert!(
+        screen.contains("Allow (y)") && screen.contains("Deny (n)"),
+        "{screen}"
+    );
+    assert!(!screen.contains("Always"), "{screen}");
+}
+
+#[test]
+fn a_long_single_line_paste_folds_as_one_line() {
+    let folded = sigil::reactive::Owner::scope("paste-fold", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        assert!(app.paste_text(&"x".repeat(1200)));
+        app.draft.peek()
+    });
+    assert!(folded.contains("[pasted 1 line #1]"), "{folded}");
+}

@@ -1,6 +1,6 @@
 # summonr API map
 
-For agents and tools that run summonr as a child process. The commands, flags, exit codes, and JSON shapes on this page are the supported surface. The Rust items in the `summonr` library crate are public to the binary only. Do not link against them. The subcommand `askpass` and the flag `--profile-tui` are internal entry points. Do not call them.
+For agents and tools that run summonr as a child process. The commands, flags, exit codes, and JSON shapes on this page are the supported surface. The Rust items in the `summonr` library crate are public to the binary only. Do not link against them. The subcommands `askpass`, `cron tick`, and `cron exec` and the flag `--profile-tui` are internal entry points. Do not call them.
 
 Binary: `summonr`. Source of truth: `src/main/cli.rs`.
 
@@ -14,29 +14,47 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr [ENDPOINT] -p PROMPT`, `summonr [ENDPOINT] PROMPT` | Run one prompt and exit |
 | `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees; with a `[metric]` table, keep a turn only when its number beats the best, revert it otherwise, and stop at the target or a budget |
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
-| `summonr -c`, `summonr --session ID`, `summonr resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
-| `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |
-| `summonr sessions --grep TEXT` | Search past sessions, newest first: id, start time, directory, matching line; at most 50 lines; exit 1 and `no matches` on stderr when none |
-| `summonr export [ID\|NAME]` | Print a session as Markdown |
-| `summonr profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
-| `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
-| `summonr worktrees [--json]`, `summonr worktrees prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
-| `summonr endpoints [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
+| `summonr -c`, `summonr --session ID`, `summonr session resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
+| `summonr session list [--json]` | List sessions, tab-separated: id, name, directory, preview. With `--json`, an array of session records, newest first: `id`, `name`, `directory`, `model`, `preview`, and `format`, the session journal format. A session written before formats were recorded reports `format` 1. Commands that open a session refuse one whose `format` is newer than the build reads, and name the file, its format, and the supported format |
+| `summonr session search TEXT` | Search past sessions, newest first: id, start time, directory, matching line; at most 50 lines; exit 1 and `no matches` on stderr when none |
+| `summonr session export [ID\|NAME]` | Print a session as Markdown |
+| `summonr session profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
+| `summonr session diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
+| `summonr session children [ID\|NAME] [--json]` | List the children a lead session started, from its journal: one line per child with its short id, state, name, and assignment, or with `--json` an array of child records (`id`, `parent`, `name`, `assignment`, `workspace`, `state.status`) |
+| `summonr worktree list [--json]`, `summonr worktree prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
+| `summonr panel list`, `summonr panel check NAME` | List custom panels, or run one and report what the app cannot draw; exit 1 on a mistake |
+| `summonr endpoint list [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
+| `summonr endpoint usage [--json]` | Show each plan's usage windows, the share used, and when each resets |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
-| `summonr login NAME --url URL [--model M]`, `summonr logout NAME --remove` | Add or update your own OpenAI-compatible server, or remove it |
-| `summonr modules` | List compiled modules and their state |
-| `summonr workflows` | List configured workflows |
+| `summonr endpoint add NAME --url URL [--model M]`, `summonr endpoint remove NAME` | Add or update your own OpenAI-compatible server, or remove it |
+| `summonr module list` | List compiled modules and their state |
+| `summonr workflow list` | List configured workflows |
 | `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
-| `summonr install PATH`, `summonr install --list`, `summonr uninstall NAME` | Install a plugin directory, list plugins, or remove one |
+| `summonr plugin install PATH`, `summonr plugin list`, `summonr plugin remove NAME` | Install a plugin directory, list plugins, or remove one |
+| `summonr plugin install NAME@MARKETPLACE`, `summonr plugin marketplace add SOURCE`, `summonr plugin marketplace list [--json]`, `summonr plugin marketplace update [NAME]`, `summonr plugin marketplace remove NAME` | Install a plugin from a Claude Code marketplace; add, list, fetch again, or remove a marketplace |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr update` | Replace the installed binary with the latest release after a SHA-256 check; exit 0 when updated or already current |
-| `summonr tool NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
+| `summonr tool run NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
-| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Run a prompt or goal on a schedule; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
+| `summonr cron add\|edit\|list\|show\|pause\|resume\|run\|remove\|log\|token\|install\|uninstall\|status` | Schedule a prompt, goal, or direct session wake-up; `install` adds the once-a-minute OS tick; `token NAME` prints a webhook token |
 | `summonr gateway setup telegram\|telegram\|pair CODE\|unpair ID\|status\|webhook [--port N]` | Drive sessions from a paired Telegram chat, or fire cron jobs from a loopback webhook |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
 | `summonr doctor [--logs\|--report]` | List per-run JSONL logs, report incomplete and crashed runs, or print the last crashed or failed run with the home folder shown as `~` |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
+
+The earlier forms (`sessions`, `resume`, `export`, `profile`, `diff`, `endpoints`, `worktrees`, `modules`, `workflows`, `install`, `uninstall`, `tool NAME`, `login NAME --url`, `logout NAME --remove`) still run for one release with the same output and exit codes.
+
+For recurring check-ins in an existing session, use `summonr cron add NAME --every 5m --wake SESSION -p PROMPT`, then `summonr cron install` if the OS tick is not installed. `--wake` takes a live session name or exact id and delivers the prompt through its wake-up mailbox, without a model subprocess or new session. A missing target records a failed run. It cannot be combined with `--goal` or `--worktree`. `--mail SESSION` remains a completion notification for ordinary scheduled runs.
+
+`summonr session export ID --json` streams complete raw journal records and that session's native mail audit. Each JSONL envelope has `schema: 1`, `session`, `source`, `sequence`, and `record`; provider captures also have an exchange `stream`. The export manifest has source `export` and kind `complete_prefix`, with the number of exported records. This is a snapshot of a complete prefix, not proof that a live session finished. It retains provider-returned reasoning, usage, tool evidence, continuations, timestamps, and unknown journal fields. `--json` and `--digest` cannot be combined.
+
+For raw provider fields before adapter normalization, set `SUMMONR_CAPTURE_DIR` before starting the head. Captures are private files under the session id with base64 payloads, correlated exchange ids, and timestamps. HTTP and agent transports use the same capture owner. No reasoning is reconstructed when the provider did not return it. Captures can contain sensitive prompts and output; they are not publication artifacts.
+
+Native messages carry stable `id`, `from`, `to`, `ts`, and optional `reply_to`. The existing `send` tool accepts `reply_to` and returns the new message id. `summonr mail send [--json] [--reply-to ID] <name|id|all> <text>` uses the same routing owner; JSON output contains `id` and `delivered`. The mail owner audits send attempt, delivery, dequeue, and administrative clear attempt/completion separately. Delivery, dequeue, and clearing do not establish that the recipient acted on the message. A clear refuses corrupt input and audit failures before rewriting the inbox. A session that reads its inbox removes the bytes it read and keeps only what arrived after them, so an inbox holds pending mail rather than all the mail a session ever received; the audit keeps every message. These identities apply to new messages; older envelopes can lack ids or recipient metadata.
+
+The `task` tool accepts an optional `endpoint` name from the configured endpoints and an optional `model` on that endpoint. `model` requires an explicit `endpoint`; an empty model is an error. Both apply only to the child; the orchestrator and saved defaults keep their selections. Omit both to inherit the parent selection. The start response reports the selected model and runtime effort. Child progress and completion use the same activity strip and modal as other native tasks.
+
+The `task` tool accepts `workspace: "shared"` for path-owned editing lanes in the parent's checkout. Edits are visible immediately; the harness does not reconcile or roll them back. Assign disjoint paths. The default, `workspace: "isolated"`, keeps existing per-child checkouts and completion reconciliation. Research tasks remain read-only in either mode. Implementation children inherit the parent's background-job capability. Polling an idle named child returns its full latest result or failure diagnostic; running progress stays abbreviated. Cancelling a child stops only that child's jobs. Naming a child starts it in the background and keeps it available for mail after its first assignment; no crash-recovery guarantee is added by shared mode.
 
 ## Quick paths
 
@@ -46,7 +64,7 @@ Run one prompt with machine-readable events:
 summonr anthropic -p --json "why does cargo test fail?"
 ```
 
-Work until the check passes, inside a budget, then branch on the exit code:
+Run a goal inside a budget, then branch on the exit code:
 
 ```sh
 mkdir -p .summonr
@@ -61,7 +79,7 @@ summonr ignores its own output files when it checks whether the workspace change
 
 | Job | Command or flag |
 | --- | --- |
-| Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|minimal\|low\|medium\|high\|xhigh\|max` |
+| Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|off\|minimal\|low\|medium\|high\|xhigh\|max` |
 | Set a budget | `--max-tokens N`, `--max-secs N` |
 | Add a writable root under `--strict` | `--add-dir DIR` |
 | Allow only listed commands | `--strict` with `policy.toml` |
@@ -70,12 +88,12 @@ summonr ignores its own output files when it checks whether the workspace change
 | Isolate a session in a git worktree | `--worktree` (branch `summonr/<id>`); `--here` is the default |
 | Name or fork a session | `--name TEXT`; `--fork` forks the last session here, or `--session ID --fork` forks that session |
 | Run workflow roles on their own models | `-w NAME`, from `[workflows.NAME]` |
-| Review what a turn changed | `summonr diff --turn last --json` |
+| Review what a turn changed | `summonr session diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
 | Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--patch`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
 | Start a job from a web request | `summonr cron add NAME --manual -p PROMPT`, `TOKEN=$(summonr cron token NAME)`, `summonr gateway webhook`, then `POST /run/NAME` with `Authorization: Bearer TOKEN` (202 fired with `log`, 401 bad token or job, 405 method, 408 slow, 409 paused, 411 chunked, 413 too large, 429 too soon with `Retry-After`; errors are `{"error": ...}`) |
 | Run on a schedule | `summonr cron add NAME --cron "0 3 * * *" --goal TEXT`, then `summonr cron install` once |
-| Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
+| Save a transcript | `summonr session export [ID\|NAME]`; add `--digest` for the condensed form |
 
 ## Exit codes
 
@@ -85,9 +103,9 @@ summonr ignores its own output files when it checks whether the workspace change
 | 1 | Harness error: bad arguments, config error, or internal failure. The message goes to stderr as `summonr: <error>`. | `src/main.rs` |
 | 2 | A check failed, including a goal or step run that stopped short and then failed the check at exit. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
 | 3 | Stopped short (budget, stall, or aborted turn) with no check configured, or the check passed but the goal was not met. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
-| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `until_signal` in `src/main.rs` |
-| 143 | Terminated by `SIGTERM` (Unix). | `until_signal` in `src/main.rs` |
-| 129 | Hung up by `SIGHUP` (Unix). | `until_signal` in `src/main.rs` |
+| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `interrupted` in `crates/agent/src/lib.rs` |
+| 143 | Terminated by `SIGTERM` (Unix). | `interrupted` in `crates/agent/src/lib.rs` |
+| 129 | Hung up by `SIGHUP` (Unix). | `interrupted` in `crates/agent/src/lib.rs` |
 
 When a `--goal` or `--steps` run stops short, summonr runs the configured check once at exit, and its result decides the exit code. `-p` runs no check at exit.
 
@@ -101,7 +119,7 @@ An unknown option is exit code 1 with `unknown option`. `summonr mcp add` exits 
 
 ### `--json` on a session (`-p`, `--goal`, `--steps`)
 
-summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `src/tools.rs`.
+summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `crates/types/src/event.rs`.
 
 | `type` | Fields |
 | --- | --- |
@@ -110,6 +128,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `tool_result` | `id`, `success`, `mutated`, `output`, optional `millis`, and for a file edit an optional `patch` (the unified diff of that call) |
 | `assistant` | `text`; a turn that takes a steered message after a reply prints one per reply |
 | `delta` | `text` |
+| `steered` | `text`, a queued user message delivered between model rounds |
 | `reasoning` | `text` |
 | `note` | `text` |
 | `usage` | `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cached_tokens`, `cache_write_tokens` (prompt tokens written to the provider cache), optional `millis`, `prefix_hash`, `cost` |
@@ -118,12 +137,13 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `aborted` | `code` (`time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`), `reason` (free text) |
 | `merged` | `branch`, `base`, `files` |
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
-| `approval` | `detail`, optional `persist`, and `dialog`, the number an answer must carry |
+| `approval` | `detail`, optional `id` (the tool call that asks), optional `persist`, and `dialog`, the number an answer must carry |
 | `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends; `dialog`, the number an answer must carry |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after the check ran; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
-| `work` | `progress`. `checks_failed` agrees with the `verify` events. `rounds` counts checked rounds of the current goal or step, and `attempts` the failed checks in a row, so a first-check pass reports `rounds` 1 and `attempts` 0. `todos` is the model's display-only list, each with `text` and `status` (`pending`, `active`, or `done`). The other fields: `kind` (`single`, `steps`, or `goal`), `objective` (the goal or step text, left out when empty), `phase` (`plan`, `execute`, `verify`, `review`, `completed`, or `failed`), `current` and `total` (the step number and step count; `current` is null outside steps), `reason` (why the work stopped, or null), `ledger` (the lines of the Ledger pane), and `touched` (workspace files changed so far); empty lists are left out |
+| `work` | `progress`. `checks_failed` agrees with the `verify` events. `rounds` counts checked rounds of the current goal or step, and `attempts` the failed checks in a row, so a first-check pass reports `rounds` 1 and `attempts` 0. `todos` is the model's display-only list, each with `text` and `status` (`pending`, `active`, or `done`). The other fields: `kind` (`single`, `steps`, or `goal`), `objective` (the goal or step text, left out when empty), `phase` (`plan`, `execute`, `verify`, `completed`, or `failed`), `current` and `total` (the step number and step count; `current` is null outside steps), `reason` (why the work stopped, or null), `ledger` (the lines of the Ledger pane), and `touched` (workspace files changed so far); empty lists are left out |
 | `child` | `id`, `event` (a nested event) |
+| `spawned` | `assignment`, `access`; optional `call`, `background`, `workspace`, `agent` (profile), `name` (worker name), and `model`; nested in a `child` event |
 
 A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check.
 
@@ -144,11 +164,11 @@ When a goal or steps run stops short, the exit check's `verify` events and a fin
 
 One JSON object per job and line: `name`, `schedule`, `next` (RFC 3339 time, or null when paused or manual), `last` (the last run's outcome or null), `paused`, `dir`, `endpoint`, and `task` (`{"prompt": ...}` or `{"goal": ...}`). An outcome is `running`, `done` (exit 0), `check_failed` (exit 2), `unfinished` (exit 3), `error` (any other exit), `overlap` (the previous run was still going), or `expired` (missed by more than the catch-up window).
 
-### `summonr diff --json`
+### `summonr session diff --json`
 
 One object: `{"base": string, "files": [{"path", "added", "removed", "new"}]}`. With `--turn`, `base` is `"turn N"` and `session` holds the session id.
 
-### `summonr worktrees --json`
+### `summonr worktree list --json`
 
 One array. Each row has `branch`, `base`, `path`, `ahead`, `dirty`, and `session`.
 
@@ -156,13 +176,50 @@ One array. Each row has `branch`, `base`, `path`, `ahead`, `dirty`, and `session
 
 One pretty-printed object: `model`, `answers`, and `usage` with `input_tokens`, `output_tokens`, and `cost`. With `--patch`, the output is an array of `{"path", "answers"}` rows.
 
-### `summonr export`
+### `summonr session export`
 
 Markdown on stdout. It is not JSON.
 
 ### `summonr acp`
 
-JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. Source: `src/acp.rs`.
+JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1` with no auth methods, and `authenticate` answers an empty object. The methods are `session/new` (needs `cwd`), `session/load` (needs `sessionId` and `cwd`), and `session/prompt`. `initialize` advertises `loadSession: true` and `mcpCapabilities` with `http` and `sse` false. Both `session/new` and `session/load` take `mcpServers`: each stdio entry (`name`, `command`, `args`, `env` as `name`/`value` pairs) runs as an MCP server for that session only, on top of the configured servers, and wins on a name clash. summonr passes its env values as given, does not write the entry to any config or session file, and does not log the env values. An `http` or `sse` entry answers -32602. `session/load` replays the stored conversation as `session/update` notifications (`user_message_chunk`, `agent_message_chunk`, `tool_call`, `tool_call_update`) and then answers; an unknown `sessionId` answers -32002. summonr sends `session/update` notifications and accepts a `session/cancel` notification. While a prompt runs, other requests answer -31000, except two for that session: `session/set_config_option` answers the full `configOptions` list and the new value applies from the next prompt, and `_summonr.dev/steer` with `sessionId` and `prompt` (content blocks, as in `session/prompt`) answers `{}` and adds the text to the running turn before its next model request. `_summonr.dev/steer` with no turn running answers -32602 `no turn is running`. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
+
+`summonr acp --schema` prints a JSON Schema (draft-07) of this surface and exits, so a client can check its messages. It covers what summonr serves and the fields it reads and writes: `initialize`, `authenticate`, `session/new`, `session/load`, `session/prompt`, `session/set_config_option`, the `session/cancel` and `session/update` notifications, the `session/request_permission` request summonr sends, every `_summonr.dev/*` request and notification, the stop reasons, and the error codes. Top-level `protocolVersion` is the ACP version `initialize` answers, and `version` is the extension version the opt-in takes. `methods` and `notifications` map each name to its `direction` and `$ref`s into `definitions`. The full standard ACP types are in the [ACP schema](https://agentclientprotocol.com/protocol/schema). Source: `crates/agent/src/acp/schema.rs`.
+
+#### summonr extensions
+
+The `_summonr.dev/*` methods are off until the client opts in. Send `_meta` in the `initialize` params (or in `clientCapabilities._meta`):
+
+```json
+{"protocolVersion": 1, "_meta": {"summonr.dev/ext": {"version": 1}}}
+```
+
+summonr then answers with the version and the names it serves, without the `_summonr.dev/` prefix:
+
+```json
+{"agentCapabilities": {"_meta": {"summonr.dev/ext": {"version": 1, "features": ["session/list", "session/diff", "session/model", "steer", "session/status", "session/child", "usage"]}}}}
+```
+
+Without the opt-in, or for a name not in `features`, every `_summonr.dev/*` request answers -32601. Source: `crates/agent/src/acp/ext.rs`.
+
+Requests:
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `_summonr.dev/session/list` | `{"cwd"?: "/repo"}` | `{"sessions": [{"id", "name", "directory", "model", "preview", "format"}]}`, the rows of `summonr session list --json`, newest first; `cwd` keeps the sessions whose directory matches |
+| `_summonr.dev/session/diff` | `{"sessionId": "...", "turn"?: "last" \| "session" \| 2}` | `{"base", "session", "files": [{"path", "added", "removed", "new"}]}`, the same shape as `summonr session diff --turn last --json`; `turn` defaults to `last` |
+| `_summonr.dev/session/model` | `{"sessionId": "...", "endpoint"?: "NAME", "model"?: "M"}` | `{}`; the next prompt uses that endpoint and model, with the endpoint's fallbacks, context window, and price. An unknown endpoint answers -32602 |
+| `_summonr.dev/steer` | `{"sessionId": "...", "prompt": [content blocks]}` | `{}` during a prompt for that session; -32602 `no turn is running` between prompts |
+
+While a prompt runs, only `_summonr.dev/steer` for that session answers; other requests answer -31000.
+
+Notifications from summonr, sent only after the opt-in:
+
+| Method | Params |
+| --- | --- |
+| `_summonr.dev/session/status` | `{"sessionId", "status": "working" \| "asking" \| "done" \| "failed" \| "idle"}`: `working` when a prompt starts and after an approval is answered, `asking` while an approval or form waits, then `done` when the prompt ends, `failed` on an error, or `idle` on `session/cancel` |
+| `_summonr.dev/session/child` | `{"sessionId", "childId", "kind": "implement" \| "research", "title"}` when the `task` tool starts a child |
+| `_summonr.dev/usage` | `{"sessionId", "endpoint", "used", "limit", "cost"}` after each model response: `used` is prompt plus completion tokens, `limit` is the context window or `null`, `cost` is dollars or `null` |
 
 ## Conventions
 
@@ -176,10 +233,10 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. If the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start.
 - A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.
-- A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search` (web search and fetch), and `browser` are off by default.
+- A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail`, `search` (web search and fetch), `browser`, and `memory` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
-- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<name>-<hash>/MEMORY.md` (project; the folder is named for the repository and a hash of its first commit, or of its path outside git) load into every trusted session unless `memory = false` under `[modules]`.
+- Memory files: `~/.summonr/memory/MEMORY.md` (user) and `~/.summonr/memory/<name>-<hash>/MEMORY.md` (project; the folder is named for the repository and a hash of its first commit, or of its path outside git) load into every trusted session with the `memory` module on. It is off by default; `memory = true` under `[modules]` turns it on.
 - A cron run sets `SUMMONR_CRON` to the job name. Inside it, `summonr cron add`, `edit`, and `remove` exit 1.
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - summonr has no sandbox, so an unattended `--goal` run can read and run anything your account can. Run CI and other unattended goals in a container. In a noninteractive run, irreversible commands are refused, and under `--strict` so are writes outside the writable roots. Auto mode asks before it grants an extra write root.

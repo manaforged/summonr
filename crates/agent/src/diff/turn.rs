@@ -1,0 +1,278 @@
+use std::collections::HashSet;
+use std::path::Path;
+use std::str::FromStr;
+
+use super::{Diff, Stat, ignored, numstat_row};
+use crate::checkpoint::Checkpoints;
+use crate::durable::log::{self, Line};
+use summonr_core::error::{Error, Result};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnId {
+    Last,
+    Number(usize),
+    Session,
+}
+
+const SESSION_TOKEN: &str = "session";
+pub const SESSION_BASE: &str = "all turns";
+
+impl FromStr for TurnId {
+    type Err = Error;
+
+    fn from_str(text: &str) -> Result<Self> {
+        if text == "last" {
+            return Ok(Self::Last);
+        }
+        if text == SESSION_TOKEN {
+            return Ok(Self::Session);
+        }
+        match text.parse::<usize>() {
+            Ok(number) if number > 0 => Ok(Self::Number(number)),
+            Ok(_) | Err(_) => Err(Error::Config(format!(
+                "--turn takes a turn number, `last`, or `session`, not `{text}`"
+            ))),
+        }
+    }
+}
+
+impl FromStr for Stat {
+    type Err = ();
+
+    fn from_str(line: &str) -> std::result::Result<Self, ()> {
+        let (added, rest) = leading_number(line.strip_prefix('+').ok_or(())?)?;
+        let (removed, rest) = leading_number(rest.strip_prefix(['−', '-']).ok_or(())?)?;
+        let rest = rest.trim();
+        let path = rest.strip_suffix("  new").unwrap_or(rest).trim();
+        if path.is_empty() || path.contains(' ') {
+            return Err(());
+        }
+        Ok(Self {
+            path: path.to_string(),
+            added,
+            removed,
+            new: path.len() < rest.len(),
+        })
+    }
+}
+
+fn leading_number(text: &str) -> std::result::Result<(u32, &str), ()> {
+    let end = text
+        .find(|ch: char| !ch.is_ascii_digit())
+        .unwrap_or(text.len());
+    let value = text[..end].parse().map_err(drop)?;
+    Ok((value, text[end..].trim_start()))
+}
+
+pub(super) struct Span {
+    pub(super) base: String,
+    pub(super) from: String,
+    pub(super) to: String,
+}
+
+impl Span {
+    pub(super) fn stats(&self, points: &Checkpoints, session: &str) -> Result<Diff> {
+        let numstat = points.git(&[
+            "diff",
+            "--numstat",
+            "--no-renames",
+            &self.from,
+            &self.to,
+            "--",
+        ])?;
+        let added: HashSet<String> = points
+            .paths(&[
+                "diff",
+                "--name-only",
+                "-z",
+                "--no-renames",
+                "--diff-filter=A",
+                &self.from,
+                &self.to,
+                "--",
+            ])?
+            .into_iter()
+            .collect();
+        let mut files: Vec<Stat> = numstat
+            .lines()
+            .filter_map(numstat_row)
+            .filter(|stat| !ignored::hidden(&stat.path))
+            .map(|stat| Stat {
+                new: added.contains(&stat.path),
+                ..stat
+            })
+            .collect();
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(Diff {
+            base: self.base.clone(),
+            session: Some(session.to_string()),
+            files,
+            strays: Vec::new(),
+        })
+    }
+}
+
+fn spans(root: &Path, session: &str) -> Result<(Checkpoints, Vec<Span>)> {
+    let points = Checkpoints::open(root, session)
+        .ok_or_else(|| Error::Config("this workspace has no checkpoints".to_string()))?;
+    let trees = points.trees()?;
+    if trees.is_empty() {
+        return Err(Error::Config(
+            "the session has no recorded turns in this workspace".to_string(),
+        ));
+    }
+    let current = points.tree()?;
+    let spans = trees
+        .iter()
+        .enumerate()
+        .map(|(slot, from)| Span {
+            base: format!("turn {}", slot + 1),
+            from: from.clone(),
+            to: trees.get(slot + 1).unwrap_or(&current).clone(),
+        })
+        .collect();
+    Ok((points, spans))
+}
+
+fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Checkpoints, Span, Diff)> {
+    let (points, mut spans) = spans(root, session)?;
+    let count = spans.len();
+    match id {
+        TurnId::Number(number) if number <= count => {
+            let span = spans.swap_remove(number - 1);
+            let diff = span.stats(&points, session)?;
+            Ok((points, span, diff))
+        }
+        TurnId::Number(number) => Err(Error::Config(format!(
+            "no turn {number}; the session has {}",
+            summonr_core::text::plural(count, "turn")
+        ))),
+        TurnId::Session => {
+            let to = spans.last().map(|span| span.to.clone()).unwrap_or_default();
+            let mut span = spans.swap_remove(0);
+            span.to = to;
+            span.base = SESSION_BASE.to_string();
+            let diff = span.stats(&points, session)?;
+            Ok((points, span, diff))
+        }
+        TurnId::Last => {
+            let mut empty = None;
+            while let Some(span) = spans.pop() {
+                let diff = span.stats(&points, session)?;
+                if !diff.files.is_empty() {
+                    return Ok((points, span, diff));
+                }
+                empty.get_or_insert((span, diff));
+            }
+            let (span, diff) =
+                empty.ok_or_else(|| Error::Config("the session has no turns".to_string()))?;
+            Ok((points, span, diff))
+        }
+    }
+}
+
+pub fn turn_stats(root: &Path, session: &str, id: TurnId) -> Result<Diff> {
+    pick(root, session, id).map(|(_, _, diff)| diff)
+}
+
+pub fn turn_patch(root: &Path, session: &str, id: TurnId, path: Option<&str>) -> Result<String> {
+    let (points, span, diff) = pick(root, session, id)?;
+    span.patch(&points, &diff.files, path)
+}
+
+impl Span {
+    pub(super) fn patch(
+        &self,
+        points: &Checkpoints,
+        files: &[Stat],
+        path: Option<&str>,
+    ) -> Result<String> {
+        let shown: Vec<String> = files
+            .iter()
+            .filter(|stat| path.is_none_or(|path| path == stat.path))
+            .map(|stat| format!(":(literal){}", stat.path))
+            .collect();
+        if shown.is_empty() {
+            return Ok(String::new());
+        }
+        let mut args = vec![
+            "diff",
+            "--no-color",
+            "--no-renames",
+            self.from.as_str(),
+            self.to.as_str(),
+            "--",
+        ];
+        args.extend(shown.iter().map(String::as_str));
+        let mut text = points.git(&args)?;
+        text.push('\n');
+        Ok(text)
+    }
+}
+
+pub(crate) fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut paths: Vec<String> = Vec::new();
+    for (name, arguments) in calls {
+        if !crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
+            continue;
+        }
+        let Ok(args) = serde_json::from_str::<serde_json::Value>(arguments) else {
+            continue;
+        };
+        for path in call_paths(&args) {
+            if seen.insert(path.to_string()) {
+                paths.push(path.to_string());
+            }
+        }
+    }
+    paths
+}
+
+fn call_paths(args: &serde_json::Value) -> Vec<&str> {
+    fn text<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
+        args.get(key).and_then(serde_json::Value::as_str)
+    }
+    let files = args
+        .get("files")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let mut paths: Vec<&str> = std::iter::once(args)
+        .chain(files)
+        .flat_map(|file| [text(file, "path"), text(file, "to")])
+        .flatten()
+        .collect();
+    paths.extend(text(args, "patch").map_or_else(Vec::new, crate::tools::patch_files));
+    paths
+}
+
+pub fn turns(journal: &Path) -> Result<Vec<Vec<String>>> {
+    let mut turns: Vec<Vec<String>> = Vec::new();
+    let mut seen = HashSet::new();
+    for line in log::records(journal, 0).collect::<std::io::Result<Vec<Line>>>()? {
+        match line {
+            Line::User { start: true, .. } => {
+                turns.push(Vec::new());
+                seen.clear();
+            }
+            Line::Assistant { tool_calls, .. } => {
+                let Some(turn) = turns.last_mut() else {
+                    continue;
+                };
+                let calls = tool_calls.iter().map(|call| {
+                    (
+                        call.function.name.as_str(),
+                        call.function.arguments.as_str(),
+                    )
+                });
+                for path in edited(calls) {
+                    if seen.insert(path.clone()) {
+                        turn.push(path);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(turns)
+}

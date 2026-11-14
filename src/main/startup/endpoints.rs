@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use summonr::secret::Source;
-use summonr::{AuthInfo, Client, EndpointState as State, Result, splash};
+use summonr_agent::secret::Source;
+use summonr_agent::{AuthInfo, Client, EndpointState as State, Result, splash};
 
 struct Row {
     name: String,
@@ -11,15 +11,15 @@ struct Row {
 }
 
 pub(super) async fn list(all: bool, live: bool) -> Result<()> {
-    let ready: BTreeSet<String> = summonr::endpoint_set_up().into_iter().collect();
-    let names = summonr::endpoint_names_ordered()?;
+    let ready: BTreeSet<String> = summonr_agent::endpoint_set_up().into_iter().collect();
+    let names = summonr_agent::endpoint_names_ordered()?;
     let shown: Vec<&String> = names
         .iter()
         .filter(|name| all || ready.is_empty() || ready.contains(*name))
         .collect();
     let refresh = async {
         if live {
-            summonr::catalog::refresh_registry().await
+            summonr_agent::catalog::refresh_registry().await
         } else {
             Ok(())
         }
@@ -58,13 +58,13 @@ pub(super) async fn list(all: bool, live: bool) -> Result<()> {
     }
     let hidden = names.len() - shown.len();
     if hidden > 0 {
-        eprintln!("{hidden} more not set up · summonr endpoints --all");
+        eprintln!("{hidden} more not set up · summonr endpoint list --all");
     }
     Ok(())
 }
 
 async fn row(name: &str, set_up: bool, live: bool) -> Row {
-    let info = summonr::auth_info(name).ok();
+    let info = summonr_agent::auth_info(name).ok();
     let model = info
         .as_ref()
         .map_or_else(String::new, |info| info.model.clone());
@@ -84,7 +84,7 @@ async fn row(name: &str, set_up: bool, live: bool) -> Row {
             format!("{} · {}", info.state(), info.setup)
         }
         Some(info) => {
-            let listing = summonr::catalog::listing(&info.name);
+            let listing = summonr_agent::catalog::listing(&info.name);
             if live || (info.own && listing.is_none()) {
                 check(name, info).await
             } else {
@@ -108,7 +108,8 @@ async fn row(name: &str, set_up: bool, live: bool) -> Row {
 }
 
 async fn check(name: &str, info: &AuthInfo) -> String {
-    match summonr::resolve_endpoint(Some(name), None, summonr::Need::ModelAndKey) {
+    match summonr_agent::resolve_endpoint(Some(name), None, summonr_agent::Requirement::ModelAndKey)
+    {
         Err(error) => format!("{} · {error}", State::Error),
         Ok(endpoint) if endpoint.base_url.is_none() => "adapter".to_string(),
         Ok(endpoint) => match Client::discover(&endpoint).await {
@@ -130,4 +131,59 @@ fn key(info: &AuthInfo) -> String {
 
 fn count(models: usize) -> String {
     format!("{models} model{}", if models == 1 { "" } else { "s" })
+}
+
+pub(super) async fn usage(json: bool) -> Result<()> {
+    let readings = summonr_agent::quota::refresh().await;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&readings)
+                .map_err(|error| summonr_agent::Error::Config(error.to_string()))?
+        );
+        return Ok(());
+    }
+    if readings.is_empty() {
+        println!("no plan with a usage source is set up · summonr endpoint list --all");
+    }
+    for reading in &readings {
+        let via = reading
+            .endpoint
+            .as_deref()
+            .map_or_else(String::new, |name| format!(" ({name})"));
+        let updated = reading
+            .updated()
+            .map_or_else(String::new, |updated| format!("  {updated}"));
+        println!("{}{via}{updated}", reading.plan);
+        if let Some(error) = &reading.error {
+            println!("  {error}");
+        }
+        for window in &reading.windows {
+            let group = window
+                .group
+                .as_deref()
+                .map_or_else(String::new, |group| format!("{group} · "));
+            let resets = window
+                .resets
+                .as_deref()
+                .map_or_else(String::new, |at| format!("  resets {}", local(at)));
+            println!(
+                "  {group}{:<7} {:>3.0}% used{resets}",
+                window.label(),
+                window.used
+            );
+        }
+    }
+    Ok(())
+}
+
+fn local(at: &str) -> String {
+    at.parse::<jiff::Timestamp>().map_or_else(
+        |_| at.to_string(),
+        |time| {
+            time.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%a %-I:%M %p")
+                .to_string()
+        },
+    )
 }

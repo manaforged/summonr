@@ -63,7 +63,7 @@ fn every_option_a_tool_help_names_is_in_its_schema() {
             tool.help.as_deref().unwrap_or_default()
         );
         let missing: Vec<_> = named(&text)
-            .difference(&declared(&definition.function.parameters))
+            .difference(&declared(&definition.function.schema()))
             .cloned()
             .collect();
         assert!(missing.is_empty(), "{}: {missing:?}", tool.name);

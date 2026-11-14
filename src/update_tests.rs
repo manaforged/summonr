@@ -60,7 +60,10 @@ fn serve(version: &str, files: Vec<(String, Vec<u8>)>) -> Release {
 }
 
 fn version(exe: &Path) -> String {
-    let output = Command::new(exe).arg("--version").output().unwrap();
+    let output = Command::new(exe)
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {}: {error}", exe.display()));
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
@@ -76,7 +79,7 @@ fn beside(exe: &Path) -> Vec<String> {
 #[tokio::test]
 #[ignore = "live: reaches github.com"]
 async fn github_serves_a_release_the_updater_can_download() {
-    let http = crate::credentials::http(crate::limits::limits().update()).unwrap();
+    let http = summonr_agent::credentials::http(summonr_agent::limits::limits().update()).unwrap();
     let latest = super::latest(&http, "https://github.com/cli/cli/releases")
         .await
         .unwrap();
@@ -115,7 +118,7 @@ async fn a_release_archive_replaces_a_running_install() {
     let bin = root.path().join("home/bin");
     std::fs::create_dir_all(&bin).unwrap();
     let exe = bin.join(BINARY);
-    std::fs::copy(
+    std::fs::hard_link(
         root.path().join(format!("summonr-{target}")).join(BINARY),
         &exe,
     )
@@ -186,8 +189,14 @@ mod unix {
     const ASSET: &str = "summonr-test-target.tar.gz";
 
     fn script(path: &Path, prints: &str) {
-        std::fs::write(path, format!("#!/bin/sh\necho '{prints}'\n")).unwrap();
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(r##"printf "#!/bin/sh\necho '%s'\n" "$1" > "$0" && chmod 755 "$0""##)
+            .arg(path)
+            .arg(prints)
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 
     fn release(root: &Path, sum_of: Option<&[u8]>) -> super::Release {
@@ -298,7 +307,7 @@ mod unix {
         std::fs::create_dir(&stale).unwrap();
         std::fs::create_dir(&live).unwrap();
         let long_ago = std::time::SystemTime::now()
-            - crate::limits::limits().update()
+            - summonr_agent::limits::limits().update()
             - std::time::Duration::from_secs(60);
         std::fs::File::open(&stale)
             .unwrap()

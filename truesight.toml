@@ -1,8 +1,0 @@
-toolchain = "nightly-2026-09-16"
-book = "docs"
-
-[[crate]]
-package = "summonr-auth"
-
-[[crate]]
-package = "summonr"

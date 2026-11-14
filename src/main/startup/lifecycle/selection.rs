@@ -1,20 +1,21 @@
-use summonr::{Client, Endpoint, Error, Need, Result};
+use summonr_agent::{Client, Endpoint, Error, Requirement, Result};
+use summonr_core::error::ErrorKind;
 
 use super::{Ui, use_tui};
-use crate::cli::Args;
+use crate::entry::cli::Args;
 
 pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoint> {
     let need = if use_tui(args) {
-        Need::Model
+        Requirement::Model
     } else {
-        Need::ModelAndKey
+        Requirement::ModelAndKey
     };
     let (name, model) = (args.endpoint.as_deref(), args.model.as_deref());
-    let endpoint = match summonr::resolve_endpoint(name, model, need) {
+    let endpoint = match summonr_agent::resolve_endpoint(name, model, need) {
         Ok(endpoint) => endpoint,
         Err(error) => return Err(served(name, model, error).await),
     };
-    if endpoint.source == Some(summonr::secret::Source::Config)
+    if endpoint.source == Some(summonr_agent::secret::Source::Config)
         && !args.json
         && !adopted.contains(&endpoint.name)
     {
@@ -27,19 +28,24 @@ pub(super) async fn selection(args: &Args, adopted: &[String]) -> Result<Endpoin
 }
 
 async fn served(name: Option<&str>, model: Option<&str>, error: Error) -> Error {
-    let Error::Config(text) = error else {
+    if error.kind() != ErrorKind::Config {
+        return error;
+    }
+    let Ok(bare) = summonr_agent::resolve_endpoint(name, model, Requirement::Config) else {
         return error;
     };
-    let Ok(bare) = summonr::resolve_endpoint(name, model, Need::Config) else {
-        return Error::Config(text);
-    };
     if !bare.model.is_empty() {
-        return Error::Config(text);
+        return error;
     }
     match Client::discover(&bare).await {
         Ok(models) => {
             let ids: Vec<String> = models.into_iter().map(|row| row.id).collect();
-            Error::Config(format!("{text}; {} serves {}", bare.name, ids.join(", ")))
+            Error::Config(format!(
+                "{}; {} serves {}",
+                error.detail(),
+                bare.name,
+                ids.join(", ")
+            ))
         }
         Err(unreachable) => unreachable,
     }
@@ -57,13 +63,15 @@ pub(super) fn ask_login(ui: &Ui, endpoint: &Endpoint, named: bool) {
                     "{} has no key yet. Paste its key, or pick another provider.",
                     selection.name
                 )
-            } else if !selection.keyless() && summonr::endpoint_set_up().is_empty() {
-                "No provider is set up yet. Pick one and paste its key.".to_string()
+            } else if !selection.keyless() && summonr_agent::endpoint_set_up().is_empty() {
+                "No provider is set up yet. Pick one to start.".to_string()
             } else if !selection.keyless() {
                 "Pick a model to start.".to_string()
             } else {
                 match Client::discover(&selection).await {
-                    Err(error) if Client::state(&error) == summonr::EndpointState::KeyRejected => {
+                    Err(error)
+                        if Client::state(&error) == summonr_agent::EndpointState::KeyRejected =>
+                    {
                         format!(
                             "{} rejected the request. Paste its key, or pick another provider.",
                             selection.name

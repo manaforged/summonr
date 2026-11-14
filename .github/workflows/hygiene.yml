@@ -2,8 +2,11 @@ name: hygiene
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -16,14 +19,38 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: main
           fetch-depth: 0
           persist-credentials: false
+      - name: Fetch pull request objects without checking them out
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags "$SERVER/$REPO" "+refs/pull/$NUMBER/head:refs/remotes/pr/head"
+      - name: Fetch merge group objects without checking them out
+        if: github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.merge_group.head_ref }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags "$SERVER/$REPO" "+$REF:refs/remotes/mq/head"
       - name: Check repository content and change metadata
         env:
           HYGIENE_PATTERNS: ${{ secrets.HYGIENE_PATTERNS }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail

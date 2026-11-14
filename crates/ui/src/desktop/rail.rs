@@ -69,8 +69,9 @@ pub(super) fn view(app: &App) -> NodeBuilder {
 
 fn entry(app: &App, name: Option<String>, glyph: Icon, label: &str, current: bool) -> NodeBuilder {
     let pick = app.clone();
-    let button =
-        button(glyph).activate(move || pick.panels.side.set(name.clone())).accessible(label.to_owned());
+    let button = button(glyph)
+        .activate(move || pick.panels.side.set(name.clone()))
+        .accessible(label.to_owned());
     super::tip(
         label,
         None,

@@ -255,24 +255,25 @@ pub(super) fn strip(app: &App) -> NodeBuilder {
 
 fn new_thread(app: &App) -> NodeBuilder {
     let open = app.clone();
-    let button = sigil::prelude::button(sigil::icons::Icon::Plus).activate(move || {
-        let session = open.model.with(|model| model.session.clone());
-        let chats = open.sessions.all_chats();
-        let Some(info) = chats.iter().find(|info| info.id == session) else {
-            return super::split::show(&open, Open::Folder(open.workspace()));
-        };
-        let folder = info
-            .cwd
-            .clone()
-            .map_or_else(|| open.workspace(), Into::into);
-        super::split::show(
-            &open,
-            Open::Thread {
-                topic: key(info).to_owned(),
-                folder,
-            },
-        );
-    })
-    .accessible(NEW_THREAD);
+    let button = sigil::prelude::button(sigil::icons::Icon::Plus)
+        .activate(move || {
+            let session = open.model.with(|model| model.session.clone());
+            let chats = open.sessions.all_chats();
+            let Some(info) = chats.iter().find(|info| info.id == session) else {
+                return super::split::show(&open, Open::Folder(open.workspace()));
+            };
+            let folder = info
+                .cwd
+                .clone()
+                .map_or_else(|| open.workspace(), Into::into);
+            super::split::show(
+                &open,
+                Open::Thread {
+                    topic: key(info).to_owned(),
+                    folder,
+                },
+            );
+        })
+        .accessible(NEW_THREAD);
     super::tip(NEW_THREAD, None, button.into())
 }

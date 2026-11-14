@@ -45,7 +45,11 @@ struct RunInfo {
 
 impl Log {
     pub(super) fn start() -> Option<Self> {
-        let run = format!("{}-{}", summonr_core::clock::now_millis(), std::process::id());
+        let run = format!(
+            "{}-{}",
+            summonr_core::clock::now_millis(),
+            std::process::id()
+        );
         let home = match summonr_agent::summonr_home() {
             Ok(home) => home,
             Err(error) => {
@@ -320,7 +324,6 @@ fn append(path: &Path, value: &serde_json::Value, durable: bool) -> io::Result<(
     file.write_all(&line)?;
     if durable { file.sync_data() } else { Ok(()) }
 }
-
 
 fn binary() -> String {
     std::env::current_exe()

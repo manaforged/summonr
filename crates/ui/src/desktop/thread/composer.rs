@@ -162,21 +162,22 @@ fn approval(app: App) -> NodeBuilder {
 }
 
 fn attach(app: App) -> NodeBuilder {
-    button(sigil::icons::Icon::Plus).activate(move || {
-        if app.view_edit.peek() {
-            return;
-        }
-        let draft = app.draft.peek();
-        let gap = if draft.is_empty() || draft.ends_with(char::is_whitespace) {
-            ""
-        } else {
-            " "
-        };
-        app.edit(&format!("{draft}{gap}@"));
-        app.focus_composer();
-    })
-    .accessible(ATTACH)
-    .into()
+    button(sigil::icons::Icon::Plus)
+        .activate(move || {
+            if app.view_edit.peek() {
+                return;
+            }
+            let draft = app.draft.peek();
+            let gap = if draft.is_empty() || draft.ends_with(char::is_whitespace) {
+                ""
+            } else {
+                " "
+            };
+            app.edit(&format!("{draft}{gap}@"));
+            app.focus_composer();
+        })
+        .accessible(ATTACH)
+        .into()
 }
 
 fn send(app: App, editing: bool) -> NodeBuilder {
@@ -185,7 +186,8 @@ fn send(app: App, editing: bool) -> NodeBuilder {
         let app = shown.clone();
         if running(&app) {
             return vec![
-                button(sigil::icons::Icon::Square).activate(move || app.interrupt())
+                button(sigil::icons::Icon::Square)
+                    .activate(move || app.interrupt())
                     .primary()
                     .solid()
                     .accessible("Stop")
@@ -195,7 +197,8 @@ fn send(app: App, editing: bool) -> NodeBuilder {
         }
         let (draft, attached, submit) = (app.draft, app.attached, app.clone());
         vec![
-            button(sigil::icons::Icon::ArrowUp).activate(move || submit.submit())
+            button(sigil::icons::Icon::ArrowUp)
+                .activate(move || submit.submit())
                 .primary()
                 .solid()
                 .accessible("Send")

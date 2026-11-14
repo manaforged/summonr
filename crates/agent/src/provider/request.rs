@@ -150,10 +150,11 @@ impl<'a> CompletionRequest<'a> {
         if let Some(prefix_hash) = &self.prefix_hash {
             return prefix_hash.clone();
         }
-        let system = self
-            .system_prompt
-            .as_deref()
-            .or_else(|| self.messages.first().map(|message| message.content.as_str()));
+        let system = self.system_prompt.as_deref().or_else(|| {
+            self.messages
+                .first()
+                .map(|message| message.content.as_str())
+        });
         let tools = self.tools_bytes();
         let mut bytes = Vec::with_capacity(tools.len() + self.model.len() + 64);
         bytes.push(b'[');

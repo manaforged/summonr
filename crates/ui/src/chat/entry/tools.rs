@@ -203,7 +203,13 @@ fn task_tool_card(
         .then(|| super::children::starting_card(app.ticks))
 }
 
-fn resolve_card_output(call: &Call, hidden: bool, full: bool, roots: &[String], app: &App) -> String {
+fn resolve_card_output(
+    call: &Call,
+    hidden: bool,
+    full: bool,
+    roots: &[String],
+    app: &App,
+) -> String {
     let resolved =
         (!hidden && full && call.compacted).then(|| call.resolved_output(&app.workspace()));
     let raw_output = resolved.as_deref().unwrap_or(&call.output);

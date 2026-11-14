@@ -7,9 +7,9 @@ use sigil::prelude::NodeBuilder;
 use sigil::prelude::Overflow;
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
+use sigil::prelude::button;
 use sigil::prelude::container;
 use sigil::prelude::context_menu;
-use sigil::prelude::button;
 use sigil::prelude::list_row;
 use sigil::prelude::virtual_list;
 
@@ -286,7 +286,11 @@ pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
 }
 
 pub(super) fn close(app: App) -> impl IntoNode {
-    button("✕").ghost().square().activate(move || app.toggle_side()).accessible("Close pane")
+    button("✕")
+        .ghost()
+        .square()
+        .activate(move || app.toggle_side())
+        .accessible("Close pane")
 }
 
 #[expect(

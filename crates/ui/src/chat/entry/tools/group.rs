@@ -46,13 +46,7 @@ fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
     ("Explored", summonr_core::text::plural(calls.len(), "file"))
 }
 
-fn show_group_row(
-    at: usize,
-    call: &Call,
-    len: usize,
-    tools: ToolOutput,
-    unfolded: bool,
-) -> bool {
+fn show_group_row(at: usize, call: &Call, len: usize, tools: ToolOutput, unfolded: bool) -> bool {
     let important = call.expanded || !matches!(call.state, ToolState::Ok);
     match tools {
         ToolOutput::Hidden => important,
@@ -81,8 +75,7 @@ fn fold_row(ctx: &RowCtx<'_>, count: usize, first: bool) -> NodeBuilder {
         "call"
     };
     let text = format!("… +{}", summonr_core::text::plural(count, noun));
-    branch(first, label(text, TextStyle::xs(Token::Gray10)))
-        .pointer_up(unfold(ctx.app, ctx.index))
+    branch(first, label(text, TextStyle::xs(Token::Gray10))).pointer_up(unfold(ctx.app, ctx.index))
 }
 
 fn group_row(ctx: &RowCtx<'_>, call: &Call, at: usize, first: bool) -> NodeBuilder {
@@ -99,8 +92,8 @@ fn group_row(ctx: &RowCtx<'_>, call: &Call, at: usize, first: bool) -> NodeBuild
         )),
         ToolState::Running | ToolState::Ok => detail(ctx.name, call, &output),
     };
-    let line = branch(first, call_line(verb, arg, detail, false))
-        .pointer_up(flip(ctx.app, ctx.index, at));
+    let line =
+        branch(first, call_line(verb, arg, detail, false)).pointer_up(flip(ctx.app, ctx.index, at));
     match expanded
         .then(|| call_output(ctx.name, call, &output, true, ctx.layout, ctx.app))
         .flatten()

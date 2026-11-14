@@ -35,8 +35,16 @@ fn only_the_last_entry_of_a_live_group_is_marked_live() {
 fn terminal_revision_marks_only_the_last_entry_live_and_stacks_subagents() {
     let mut model = receipts(1);
     model.set_busy(Some(Activity::Turn));
-    model.start_tool("a".to_owned(), "task".to_owned(), r#"{"background":true}"#.to_owned());
-    model.start_tool("b".to_owned(), "task".to_owned(), r#"{"background":true}"#.to_owned());
+    model.start_tool(
+        "a".to_owned(),
+        "task".to_owned(),
+        r#"{"background":true}"#.to_owned(),
+    );
+    model.start_tool(
+        "b".to_owned(),
+        "task".to_owned(),
+        r#"{"background":true}"#.to_owned(),
+    );
     let len = model.entries.len();
     let first = terminal_revision(&model, len - 2);
     let second = terminal_revision(&model, len - 1);

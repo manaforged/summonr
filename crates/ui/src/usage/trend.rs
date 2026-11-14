@@ -31,15 +31,13 @@ pub(super) fn trend(report: &Report, metric: Metric) -> NodeBuilder {
                     format!("· {unit} · since {}", report.first),
                     palette().dim,
                 )),
-            container()
-                .fill_width()
-                .child(
-                    card(column(
-                        vec![plot(report, peak, divisor, &colors), label_row(&labels)],
-                        Space::Sm,
-                    ))
-                    .padding(Space::Lg),
-                ),
+            container().fill_width().child(
+                card(column(
+                    vec![plot(report, peak, divisor, &colors), label_row(&labels)],
+                    Space::Sm,
+                ))
+                .padding(Space::Lg),
+            ),
         ],
         Space::Sm,
     )

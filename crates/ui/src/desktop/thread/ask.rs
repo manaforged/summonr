@@ -141,7 +141,9 @@ fn wider_menu(app: &App, wider: &[&(String, Pick)]) -> NodeBuilder {
             .collect::<Vec<_>>(),
         app.clone(),
     );
-    let arrow = button(Icon::ChevronDown).activate(move || open.set(!open.peek())).accessible(MORE);
+    let arrow = button(Icon::ChevronDown)
+        .activate(move || open.set(!open.peek()))
+        .accessible(MORE);
     container()
         .position(Position::Relative)
         .shrink(0.0)

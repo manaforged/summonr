@@ -1,8 +1,7 @@
 use sigil::prelude::Paint;
 use sigil::prelude::Space;
 use sigil::prelude::{
-    AlignItems, Color, FlexWrap, NodeBuilder, Tone, container, heatmap, progress, signal,
-    sparkline,
+    AlignItems, Color, FlexWrap, NodeBuilder, Tone, container, heatmap, progress, signal, sparkline,
 };
 use sigil::widgets::SparkMark;
 

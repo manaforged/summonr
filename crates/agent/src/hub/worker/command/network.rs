@@ -145,7 +145,7 @@ async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, 
             Some(failure) => (
                 format!("✗ {failure}"),
                 matches!(
-                    failure.kind,
+                    failure.kind(),
                     summonr_core::error::ProviderFailureKind::Authentication
                         | summonr_core::error::ProviderFailureKind::MissingKey
                 ),

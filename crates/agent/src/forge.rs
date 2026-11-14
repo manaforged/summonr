@@ -80,7 +80,7 @@ pub enum Bucket {
 
 /// Why a forge request did not finish.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Error {
+pub enum Failure {
     /// `gh` is missing or has no signed-in GitHub account.
     SignedOut,
     /// The workspace has no GitHub remote.
@@ -91,7 +91,7 @@ pub enum Error {
     TimedOut { command: String, secs: u64 },
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SignedOut => f.write_str("GitHub not signed in"),
@@ -101,8 +101,6 @@ impl std::fmt::Display for Error {
         }
     }
 }
-
-impl std::error::Error for Error {}
 
 #[derive(Deserialize)]
 struct Auth {
@@ -147,7 +145,7 @@ struct Branch {
 }
 
 /// Answers `ask` in the workspace `dir`: the current branch's pull request, or none yet.
-pub fn answer(dir: &Path, ask: &Ask) -> Result<Option<Pull>, Error> {
+pub fn answer(dir: &Path, ask: &Ask) -> Result<Option<Pull>, Failure> {
     let remote = remote(dir)?;
     signed_in(dir)?;
     match ask {
@@ -157,7 +155,7 @@ pub fn answer(dir: &Path, ask: &Ask) -> Result<Option<Pull>, Error> {
     }
 }
 
-fn open(dir: &Path, remote: &str, title: &str) -> Result<Pull, Error> {
+fn open(dir: &Path, remote: &str, title: &str) -> Result<Pull, Failure> {
     let branch = own_branch(dir, remote, title)?;
     if !git(dir, &["status", "--porcelain"])?.is_empty() {
         git(dir, &["add", "-A"])?;
@@ -169,13 +167,13 @@ fn open(dir: &Path, remote: &str, title: &str) -> Result<Pull, Error> {
     }
     gh(dir, &["pr", "create", "--fill", "--head", &branch])?;
     find(dir, &branch)?
-        .ok_or_else(|| Error::Failed(format!("gh opened no pull request for {branch}")))
+        .ok_or_else(|| Failure::Failed(format!("gh opened no pull request for {branch}")))
 }
 
-fn merge(dir: &Path) -> Result<Pull, Error> {
+fn merge(dir: &Path) -> Result<Pull, Failure> {
     let branch = current(dir)?;
     let pull = find(dir, &branch)?
-        .ok_or_else(|| Error::Failed(format!("{branch} has no open pull request")))?;
+        .ok_or_else(|| Failure::Failed(format!("{branch} has no open pull request")))?;
     gh(dir, &["pr", "merge", &pull.number.to_string(), "--merge"])?;
     let listed: Listed = json(&gh(
         dir,
@@ -193,7 +191,7 @@ fn merge(dir: &Path) -> Result<Pull, Error> {
     })
 }
 
-fn own_branch(dir: &Path, remote: &str, title: &str) -> Result<String, Error> {
+fn own_branch(dir: &Path, remote: &str, title: &str) -> Result<String, Failure> {
     let branch = current(dir)?;
     if branch != "HEAD" && branch != default_branch(dir)? {
         return Ok(branch);
@@ -206,7 +204,7 @@ fn own_branch(dir: &Path, remote: &str, title: &str) -> Result<String, Error> {
     Ok(name)
 }
 
-fn taken(dir: &Path, remote: &str) -> Result<BTreeSet<String>, Error> {
+fn taken(dir: &Path, remote: &str) -> Result<BTreeSet<String>, Failure> {
     let tracked = format!("refs/remotes/{remote}/");
     let refs = git(
         dir,
@@ -234,16 +232,16 @@ fn free(base: &str, taken: &BTreeSet<String>) -> String {
         .unwrap_or_else(|| base.to_owned())
 }
 
-fn default_branch(dir: &Path) -> Result<String, Error> {
+fn default_branch(dir: &Path) -> Result<String, Failure> {
     let repo: Repo = json(&gh(dir, &["repo", "view", "--json", "defaultBranchRef"])?)?;
     Ok(repo.default_branch_ref.name)
 }
 
-fn current(dir: &Path) -> Result<String, Error> {
+fn current(dir: &Path) -> Result<String, Failure> {
     git(dir, &["rev-parse", "--abbrev-ref", "HEAD"])
 }
 
-fn find(dir: &Path, branch: &str) -> Result<Option<Pull>, Error> {
+fn find(dir: &Path, branch: &str) -> Result<Option<Pull>, Failure> {
     let listed: Vec<Listed> = json(&gh(
         dir,
         &["pr", "list", "--head", branch, "--json", PULL_FIELDS],
@@ -274,11 +272,11 @@ fn find(dir: &Path, branch: &str) -> Result<Option<Pull>, Error> {
     }))
 }
 
-fn signed_in(dir: &Path) -> Result<(), Error> {
+fn signed_in(dir: &Path) -> Result<(), Failure> {
     let auth: Auth =
         match gh(dir, &["auth", "status", "--json", "hosts"]).and_then(|text| json(&text)) {
-            Err(error @ Error::TimedOut { .. }) => return Err(error),
-            read => read.map_err(|_error| Error::SignedOut)?,
+            Err(error @ Failure::TimedOut { .. }) => return Err(error),
+            read => read.map_err(|_error| Failure::SignedOut)?,
         };
     let active = auth.hosts.get(HOST).is_some_and(|accounts| {
         accounts
@@ -288,20 +286,20 @@ fn signed_in(dir: &Path) -> Result<(), Error> {
     if active {
         Ok(())
     } else {
-        Err(Error::SignedOut)
+        Err(Failure::SignedOut)
     }
 }
 
-fn remote(dir: &Path) -> Result<String, Error> {
+fn remote(dir: &Path) -> Result<String, Failure> {
     let urls = git(dir, &["config", "--get-regexp", r"^remote\..*\.url$"])
-        .map_err(|_error| Error::NoRemote)?;
+        .map_err(|_error| Failure::NoRemote)?;
     urls.lines()
         .filter_map(|line| line.split_once(' '))
         .filter(|(_, url)| host(url) == HOST)
         .filter_map(|(key, _)| key.strip_prefix("remote.")?.strip_suffix(".url"))
         .min_by_key(|name| *name != "origin")
         .map(str::to_owned)
-        .ok_or(Error::NoRemote)
+        .ok_or(Failure::NoRemote)
 }
 
 fn host(url: &str) -> &str {
@@ -333,11 +331,11 @@ fn slug(title: &str) -> String {
     }
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, Error> {
-    crate::diff::git_env(dir, &[], args).map_err(|error| Error::Failed(error.to_string()))
+fn git(dir: &Path, args: &[&str]) -> Result<String, Failure> {
+    crate::diff::git_env(dir, &[], args).map_err(|error| Failure::Failed(error.to_string()))
 }
 
-fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
+fn gh(dir: &Path, args: &[&str]) -> Result<String, Failure> {
     let mut spec = Spec::new(GH, args.iter().map(OsStr::new)).envs(QUIET);
     spec.cwd = Some(dir.to_path_buf());
     let limits = crate::limits::limits();
@@ -346,9 +344,9 @@ fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
         poll: limits.gh_poll(),
     };
     let finished =
-        process::output_within(spec, None, deadline).map_err(|_error| Error::SignedOut)?;
+        process::output_within(spec, None, deadline).map_err(|_error| Failure::SignedOut)?;
     let Some(output) = finished else {
-        return Err(Error::TimedOut {
+        return Err(Failure::TimedOut {
             command: named(args),
             secs: limits.gh().as_secs(),
         });
@@ -357,7 +355,7 @@ fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(Error::Failed(format!(
+    Err(Failure::Failed(format!(
         "gh {} failed: {}",
         named(args),
         stderr.trim()
@@ -368,7 +366,7 @@ fn named(args: &[&str]) -> String {
     args.iter().take(2).copied().collect::<Vec<_>>().join(" ")
 }
 
-fn json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Error> {
+fn json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Failure> {
     serde_json::from_str(text)
-        .map_err(|error| Error::Failed(format!("gh sent unreadable JSON: {error}")))
+        .map_err(|error| Failure::Failed(format!("gh sent unreadable JSON: {error}")))
 }

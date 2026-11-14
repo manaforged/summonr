@@ -167,18 +167,7 @@ impl Client {
     }
 
     pub(super) async fn token(&self) -> Result<String> {
-        self.auth
-            .token(&self.auth_http)
-            .await
-            .map_err(|error| match error {
-                summonr_auth::Error::NeedsLogin { .. } | summonr_auth::Error::Denied(_) => {
-                    Error::provider(ProviderFailureKind::Authentication, error.to_string())
-                }
-                summonr_auth::Error::Transport(detail) => {
-                    Error::provider(ProviderFailureKind::Transport, detail)
-                }
-                summonr_auth::Error::Config(detail) => Error::Config(detail),
-            })
+        self.auth.token(&self.auth_http).await
     }
 
     pub(crate) async fn get(&self, url: String) -> Result<Value> {

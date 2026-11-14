@@ -5,7 +5,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use super::log::{self, Line};
 use super::store;
@@ -21,16 +20,6 @@ pub use summonr_types::{WorkKind, WorkProgress};
 
 const TREES: &str = "tree.json";
 const DECISION: &str = "Goal Work requires a completion decision";
-
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
-#[error("{0}")]
-pub(crate) struct WorkError(pub(crate) String);
-
-impl From<crate::Error> for WorkError {
-    fn from(error: crate::Error) -> Self {
-        Self(error.to_string())
-    }
-}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

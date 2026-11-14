@@ -65,7 +65,7 @@ fn sglang_invalid_tool_json_is_malformed() {
         None,
     );
     assert_eq!(
-        error.provider_failure().unwrap().kind,
+        error.provider_failure().unwrap().kind(),
         ProviderFailureKind::MalformedToolCall
     );
 }
@@ -75,7 +75,7 @@ fn sglang_input_length_400_is_overflow() {
     let text = "Input length (114895 tokens) exceeds the maximum allowed length (106234 tokens).";
     let error = response_failure(400, text, None);
     assert_eq!(
-        error.provider_failure().unwrap().kind,
+        error.provider_failure().unwrap().kind(),
         ProviderFailureKind::ContextOverflow
     );
     assert_eq!(input_cap(text), Some(106_234));
@@ -90,7 +90,7 @@ fn a_prompt_that_does_not_fit_is_overflow_with_the_server_cap() {
     ] {
         let error = response_failure(400, &body, None);
         assert_eq!(
-            error.provider_failure().expect("an HTTP rejection is a provider failure").kind,
+            error.provider_failure().expect("an HTTP rejection is a provider failure").kind(),
             ProviderFailureKind::ContextOverflow
         );
         assert_eq!(input_cap(&error.to_string()), Some(16_384));
@@ -104,7 +104,7 @@ fn an_unsupported_request_field_is_not_a_context_overflow() {
         error
             .provider_failure()
             .expect("an HTTP rejection is a provider failure")
-            .kind,
+            .kind(),
         ProviderFailureKind::Http
     );
     assert_eq!(input_cap(&error.to_string()), None);
@@ -139,14 +139,14 @@ fn an_overflow_names_the_context_cap() {
     let openai = "This model's maximum context length is 128000 tokens. However, your messages resulted in 150000 tokens.";
     let error = response_failure(400, openai, None);
     assert_eq!(
-        error.provider_failure().unwrap().kind,
+        error.provider_failure().unwrap().kind(),
         ProviderFailureKind::ContextOverflow
     );
     assert_eq!(input_cap(openai), Some(128_000));
     let anthropic = "prompt is too long: 213462 tokens > 200000 maximum";
     let error = response_failure(400, anthropic, None);
     assert_eq!(
-        error.provider_failure().unwrap().kind,
+        error.provider_failure().unwrap().kind(),
         ProviderFailureKind::ContextOverflow
     );
     assert_eq!(input_cap(anthropic), Some(200_000));
@@ -172,13 +172,13 @@ fn a_plan_cap_names_its_code_without_a_transient_rate_limit() {
     let text = r#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"cap"}}"#;
     let error = response_failure(429, text, None);
     let failure = error.provider_failure().unwrap();
-    assert_ne!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_ne!(failure.kind(), ProviderFailureKind::RateLimited);
     assert!(
         failure
-            .message
+            .message()
             .contains("subscription_sharing_usage_limit_exceeded"),
         "the user sees which plan rule stopped the turn, got {}",
-        failure.message
+        failure.message()
     );
 }
 
@@ -187,7 +187,7 @@ fn an_ineligible_plan_user_is_not_asked_to_sign_in_again() {
     let text = r#"{"error":{"code":"subscription_sharing_user_not_eligible","message":"no"}}"#;
     let error = response_failure(403, text, None);
     assert_eq!(
-        error.provider_failure().unwrap().kind,
+        error.provider_failure().unwrap().kind(),
         ProviderFailureKind::Http,
         "a 403 for eligibility must not read as a rejected key"
     );
@@ -201,11 +201,11 @@ fn a_plan_cap_in_the_stream_keeps_its_message() {
         "weekly cap reached",
     );
     let failure = error.provider_failure().unwrap();
-    assert_ne!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_ne!(failure.kind(), ProviderFailureKind::RateLimited);
     assert!(
-        failure.message.contains("weekly cap reached"),
+        failure.message().contains("weekly cap reached"),
         "the provider's words survive the stream path, got {}",
-        failure.message
+        failure.message()
     );
 }
 
@@ -218,7 +218,7 @@ fn a_plan_permission_failure_does_not_read_as_a_rejected_key() {
         let text = format!(r#"{{"error":{{"code":"{code}","message":"no"}}}}"#);
         let error = response_failure(403, &text, None);
         assert_eq!(
-            error.provider_failure().unwrap().kind,
+            error.provider_failure().unwrap().kind(),
             ProviderFailureKind::Http,
             "{code} must not start a login loop"
         );
@@ -230,11 +230,11 @@ fn a_rejected_key_error_does_not_echo_the_key() {
     let body = r#"{"error":{"message":"Incorrect API key provided: sk-ab12*****xy9z. You can find your API key at https://example.com.","type":"invalid_request_error"}}"#;
     let error = response_failure(401, body, None);
     let failure = error.provider_failure().unwrap();
-    assert!(!failure.message.contains("xy9z"), "{}", failure.message);
+    assert!(!failure.message().contains("xy9z"), "{}", failure.message());
     assert!(
-        failure.message.contains("API key provided: [key]"),
+        failure.message().contains("API key provided: [key]"),
         "{}",
-        failure.message
+        failure.message()
     );
 }
 

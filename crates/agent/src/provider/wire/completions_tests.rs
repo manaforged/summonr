@@ -116,7 +116,7 @@ fn said(content: serde_json::Value, finish: Option<&str>) -> serde_json::Value {
 }
 
 fn kind(error: summonr_core::error::Error) -> summonr_core::error::ProviderFailureKind {
-    error.provider_failure().unwrap().kind
+    error.provider_failure().unwrap().kind()
 }
 
 #[test]

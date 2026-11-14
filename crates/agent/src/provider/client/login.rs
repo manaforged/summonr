@@ -1,4 +1,5 @@
 use super::*;
+use summonr_core::error::ErrorKind;
 
 impl Client {
     pub async fn login(
@@ -10,9 +11,13 @@ impl Client {
         }
         let auth = crate::credentials::auth(endpoint)?;
         let http = crate::credentials::http(crate::limits::limits().auth())?;
-        auth.login(&http, prompt)
-            .await
-            .map_err(|error| Error::Config(error.to_string()))
+        auth.login(&http, prompt).await.map_err(|error| {
+            if error.kind() == ErrorKind::Provider {
+                error.relabel(ErrorKind::Config)
+            } else {
+                error
+            }
+        })
     }
 
     pub(super) fn build(
@@ -50,7 +55,7 @@ impl Client {
         }
         let http = builder
             .build()
-            .map_err(|error| Error::Config(error.to_string()))?;
+            .map_err(|error| Error::caused(ErrorKind::Config, error))?;
         Ok(Self {
             http,
             auth_http: crate::credentials::http(crate::limits::limits().auth())?,

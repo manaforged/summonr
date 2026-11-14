@@ -1,10 +1,10 @@
-use std::io::{ErrorKind, Read, Write};
+use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::cron::{runner, store};
-use summonr_core::error::Error;
+use summonr_core::error::ErrorKind;
 
 const ROUTE: &str = "/run/";
 const BEARER: &str = "bearer";
@@ -84,13 +84,18 @@ impl Conn<'_> {
         self.stream
             .set_read_timeout(Some(left))
             .map_err(|error| match error.kind() {
-                ErrorKind::InvalidInput => Status::Timeout,
+                io::ErrorKind::InvalidInput => Status::Timeout,
                 _other => Status::Failed,
             })?;
         match self.stream.read(chunk) {
             Ok(0) => Err(Status::BadRequest),
             Ok(count) => Ok(count),
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
                 Err(Status::Timeout)
             }
             Err(_) => Err(Status::BadRequest),
@@ -267,7 +272,7 @@ fn fire(name: &str, body: &[u8]) -> Answer {
     let job = match store::get(name) {
         Ok(job) if job.paused => return Status::Paused.into(),
         Ok(job) => job,
-        Err(Error::Setup(_)) => return Status::NotFound.into(),
+        Err(error) if error.kind() == ErrorKind::Setup => return Status::NotFound.into(),
         Err(_) => return Status::Failed.into(),
     };
     match runner::fire(name, (!body.is_empty()).then_some(body)) {
@@ -281,11 +286,13 @@ fn fire(name: &str, body: &[u8]) -> Answer {
             .to_string(),
             retry: None,
         },
-        Err(Error::Denied(_)) => Answer {
+        Err(error) if error.kind() == ErrorKind::Denied => Answer {
             retry: Some(runner::cooldown(&job, crate::cron::now()).unwrap_or(1)),
             ..Status::TooMany.into()
         },
-        Err(Error::Config(_) | Error::Setup(_)) => Status::NotFound.into(),
+        Err(error) if matches!(error.kind(), ErrorKind::Config | ErrorKind::Setup) => {
+            Status::NotFound.into()
+        }
         Err(_) => Status::Failed.into(),
     }
 }

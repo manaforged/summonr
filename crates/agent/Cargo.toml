@@ -18,7 +18,6 @@ futures = { version = "0.3", default-features = false, features = ["std", "execu
 regex = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 sha2 = { workspace = true }
 tempfile = "3"
 zeroize = "1"

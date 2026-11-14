@@ -8,7 +8,7 @@ use sigil::terminal::Grid;
 use summonr_agent::durable::store::{Durability, write};
 use summonr_agent::hub::{Cmd, Msg};
 use summonr_agent::session::SessionInfo;
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::terminal::{NEW_TERMINAL, Terminals};
@@ -29,11 +29,11 @@ pub(crate) fn window_cells() {
 pub(crate) fn save_image(grid: &Grid, host: &Host, output: &Path) -> Result<()> {
     let image = grid
         .image(host.theme(), sigil::geometry::PhysicalSize::new(10, 20))
-        .map_err(|error| Error::Tool(error.to_string()))?;
+        .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     let mut png = std::io::Cursor::new(Vec::new());
     image
         .write_to(&mut png, image::ImageFormat::Png)
-        .map_err(|error| Error::Tool(error.to_string()))?;
+        .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     write(
         &output.with_extension("png"),
         png.get_ref(),

@@ -18,7 +18,7 @@ pub(super) fn drain_steer(
         let steered = with_note(&input);
         if let Err(error) = session.steer(&steered) {
             queue.push_front(input);
-            return Err(Error::from(error));
+            return Err(error);
         }
         delivered.extend(input.source.map(|source| source.text));
     }

@@ -3,7 +3,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 use super::AgentClient;
 use crate::process::{self, Cap, Spec, Tail};
-use summonr_core::error::{Error, ProviderFailureKind, Result};
+use summonr_core::error::{Error, ErrorKind, ProviderFailureKind, Result};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +41,7 @@ impl AgentClient {
             stdout
                 .settle()
                 .await
-                .map_err(|error| Error::Tool(error.to_string()))?;
+                .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
             Ok::<_, Error>((exit, stdout.text()))
         })
         .await??;
@@ -96,7 +96,7 @@ impl AgentClient {
             tokio::select! {
                 status = process.child.wait() => status?,
                 code = prompt.request("Paste the code if the browser shows one") => {
-                    let code = code.map_err(|error| Error::Config(error.to_string()))?;
+                    let code = code?;
                     process.stdin.write_all(code.as_bytes()).await?;
                     process.stdin.write_all(b"\n").await?;
                     process.stdin.flush().await?;

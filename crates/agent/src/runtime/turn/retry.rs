@@ -81,7 +81,7 @@ impl<P: Provider> Loop<P> {
         }
         let Some(error) = self
             .recover_provider_kind(
-                failure.map(|item| item.kind),
+                failure.map(|item| item.kind()),
                 error,
                 state,
                 tools.json.len(),
@@ -107,12 +107,12 @@ impl<P: Provider> Loop<P> {
         use crate::limits::Asked;
         let limits = crate::limits::limits();
         let mut wait =
-            failure.map(|item| limits.retry_wait(item.retry_after, retries, Asked::Capped));
+            failure.map(|item| limits.retry_wait(item.retry_after(), retries, Asked::Capped));
         let retryable = if let Some(item) = failure
-            && item.kind == ProviderFailureKind::RateLimited
+            && item.kind() == ProviderFailureKind::RateLimited
         {
             if self.remaining_time().is_some() {
-                wait = Some(limits.retry_wait(item.retry_after, retries, Asked::Whole));
+                wait = Some(limits.retry_wait(item.retry_after(), retries, Asked::Whole));
             }
             self.can_wait(wait, retries)
         } else {
@@ -177,7 +177,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if error.provider_failure().map(|failure| failure.kind)
+        if error.provider_failure().map(|failure| failure.kind())
             == Some(ProviderFailureKind::UsageLimit)
         {
             return Err(error);
@@ -307,10 +307,10 @@ impl<P: Provider> Loop<P> {
 mod tests;
 
 fn retryable_failure(failure: &summonr_core::error::ProviderFailure) -> bool {
-    failure.partial_output
-        && failure.status.is_none()
+    failure.partial_output()
+        && failure.status().is_none()
         && matches!(
-            failure.kind,
+            failure.kind(),
             ProviderFailureKind::Transport | ProviderFailureKind::Server
         )
 }

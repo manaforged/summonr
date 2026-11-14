@@ -264,7 +264,7 @@ pub(crate) fn trim_trailing_assistant(messages: &[Message]) -> &[Message] {
 pub(crate) fn billable(error: &Error) -> bool {
     error
         .provider_failure()
-        .is_some_and(|failure| failure.partial_output)
+        .is_some_and(|failure| failure.partial_output())
 }
 
 pub(super) fn exposure(request: &CompletionRequest<'_>, request_chars: usize) -> Exposure {

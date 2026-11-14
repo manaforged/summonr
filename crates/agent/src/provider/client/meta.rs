@@ -22,16 +22,16 @@ pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) 
     let table = markers();
     let known = table.named(&lower);
     let detail = reason(text);
-    Error::Provider(ProviderFailure {
-        kind: known.map_or_else(|| table.kind(code, &lower), |(_, kind)| kind),
-        status: Some(code),
-        message: known.map_or_else(
+    let mut failure = ProviderFailure::new(
+        known.map_or_else(|| table.kind(code, &lower), |(_, kind)| kind),
+        known.map_or_else(
             || format!("HTTP {code}: {detail}"),
             |(marker, _)| format!("HTTP {code}: {marker}: {detail}"),
         ),
-        partial_output: false,
-        retry_after: retry_after.or_else(|| retry_delay(text)),
-    })
+    );
+    failure.set_status(Some(code));
+    failure.set_retry_after(retry_after.or_else(|| retry_delay(text)));
+    Error::Provider(failure)
 }
 
 fn retry_delay(text: &str) -> Option<u64> {
@@ -120,8 +120,8 @@ impl Client {
         } else {
             &self.name
         };
-        let lower = failure.message.to_lowercase();
-        let advice = match (failure.kind, model) {
+        let lower = failure.message().to_lowercase();
+        let advice = match (failure.kind(), model) {
             (ProviderFailureKind::UsageLimit, _) => {
                 if lower.contains(markers().plan_cap.as_str()) {
                     format!(
@@ -135,7 +135,7 @@ impl Client {
                 }
             }
             (ProviderFailureKind::Authentication, _) if !keyed => {
-                failure.kind = ProviderFailureKind::MissingKey;
+                failure.set_kind(ProviderFailureKind::MissingKey);
                 format!("{name} needs a key and none is set; run `summonr login {name}` to add one")
             }
             (ProviderFailureKind::Authentication, _) => {
@@ -143,12 +143,12 @@ impl Client {
             }
             (ProviderFailureKind::RateLimited, _) => format!(
                 "{name} is rate limiting this key; wait{} and retry, or pick another model with /model",
-                failure.retry_after.map_or_else(String::new, |seconds| {
+                failure.retry_after().map_or_else(String::new, |seconds| {
                     format!(" {}", summonr_core::text::duration(seconds))
                 })
             ),
             (ProviderFailureKind::Http, Some(model))
-                if failure.status == Some(404) || markers().missing_model(&lower) =>
+                if failure.status() == Some(404) || markers().missing_model(&lower) =>
             {
                 let known: Vec<String> = crate::catalog::cached()
                     .get(&self.name)
@@ -172,7 +172,8 @@ impl Client {
                 _,
             ) => return Error::Provider(failure),
         };
-        failure.message = format!("{advice} ({})", failure.message);
+        let message = format!("{advice} ({})", failure.message());
+        failure.set_message(message);
         Error::Provider(failure)
     }
 
@@ -217,7 +218,7 @@ impl Client {
         if let Error::Timeout { .. } = error {
             return State::Offline;
         }
-        match error.provider_failure().map(|failure| failure.kind) {
+        match error.provider_failure().map(ProviderFailure::kind) {
             Some(Kind::Authentication) => State::KeyRejected,
             Some(Kind::MissingKey) => State::NeedsKey,
             Some(Kind::RateLimited | Kind::UsageLimit) => State::RateLimited,

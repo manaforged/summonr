@@ -1,12 +1,9 @@
 use super::*;
 
 impl SessionDriver {
-    pub(crate) fn start_child(
-        &mut self,
-        record: crate::child::ChildRecord,
-    ) -> Result<(), DriverError> {
+    pub(crate) fn start_child(&mut self, record: crate::child::ChildRecord) -> Result<()> {
         if !matches!(record.state, crate::child::ChildState::Running) {
-            return Err(DriverError::State(
+            return Err(Error::Config(
                 "a child must start in the running state".to_string(),
             ));
         }
@@ -20,35 +17,30 @@ impl SessionDriver {
             || record.assignment.trim().is_empty()
             || record.model.trim().is_empty()
         {
-            return Err(DriverError::State(
+            return Err(Error::Config(
                 "child identity does not match the parent session".to_string(),
             ));
         }
         self.append(Line::Child { record })
     }
 
-    pub(crate) fn finish_child(
-        &mut self,
-        record: crate::child::ChildRecord,
-    ) -> Result<(), DriverError> {
+    pub(crate) fn finish_child(&mut self, record: crate::child::ChildRecord) -> Result<()> {
         if !record.state.terminal() {
-            return Err(DriverError::State(
-                "a child result must be terminal".to_string(),
-            ));
+            return Err(Error::Config("a child result must be terminal".to_string()));
         }
         match self.state.children.get(&record.id) {
             Some(child) if !child.state.terminal() && child.same_child(&record) => {
                 self.append(Line::Child { record })
             }
-            Some(child) if !child.same_child(&record) => Err(DriverError::State(format!(
+            Some(child) if !child.same_child(&record) => Err(Error::Config(format!(
                 "child {} changed identity before settlement",
                 record.id
             ))),
-            Some(_) => Err(DriverError::State(format!(
+            Some(_) => Err(Error::Config(format!(
                 "child {} is already terminal",
                 record.id
             ))),
-            None => Err(DriverError::State(format!(
+            None => Err(Error::Config(format!(
                 "child {} was not started by this session",
                 record.id
             ))),
@@ -63,7 +55,7 @@ impl SessionDriver {
         &mut self,
         reason: &str,
         scope: crate::child::ChildScope,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         let records = self
             .state
             .children

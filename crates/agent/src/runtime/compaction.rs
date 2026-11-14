@@ -298,7 +298,12 @@ fn tail_chars(
     })
 }
 
-fn tail_start(messages: &[Message], lead: usize, target_chars: usize, reasoning_on_wire: bool) -> usize {
+fn tail_start(
+    messages: &[Message],
+    lead: usize,
+    target_chars: usize,
+    reasoning_on_wire: bool,
+) -> usize {
     let mut chars = 0;
     let mut start = messages.len();
     while start > lead && chars < target_chars {

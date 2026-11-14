@@ -52,12 +52,12 @@ fn revoked(parts: &Parts<'_>, store: &dyn Store, spent: &str, detail: String) ->
         return error;
     }
     if parts.spec.grant.interactive() {
-        Error::NeedsLogin {
-            name: parts.name.to_string(),
-            detail: format!("{detail}; run `summonr login {}`", parts.name),
-        }
+        crate::needs_login(
+            parts.name,
+            &format!("{detail}; run `summonr login {}`", parts.name),
+        )
     } else {
-        Error::Denied(detail)
+        crate::refused(detail)
     }
 }
 
@@ -73,7 +73,7 @@ pub(super) async fn settle(
     saved?;
     match exchange(parts.spec, http, grant).await? {
         Reply::Issued(chat) => keep(parts, chat),
-        Reply::Refused(detail) => Err(Error::Denied(detail)),
+        Reply::Refused(detail) => Err(crate::refused(detail)),
     }
 }
 
@@ -97,10 +97,10 @@ async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Result<Reply> {
         return if REFUSED.contains(&status) {
             Ok(Reply::Refused(detail))
         } else {
-            Err(Error::Denied(detail))
+            Err(crate::refused(detail))
         };
     }
-    let body = body.map_err(|error| Error::Denied(error.to_string()))?;
+    let body = body.map_err(|error| crate::refused(error.to_string()))?;
     let mut chat = minted(&body)?;
     chat.refresh = grant.refresh;
     chat.identity = chat.identity.or(grant.identity);
@@ -137,12 +137,12 @@ async fn sent(request: RequestBuilder) -> Result<(u16, String)> {
     let response = request
         .send()
         .await
-        .map_err(|error| Error::Transport(error.to_string()))?;
+        .map_err(|error| crate::unreachable(error.to_string()))?;
     let status = response.status().as_u16();
     let text = response
         .text()
         .await
-        .map_err(|error| Error::Transport(error.to_string()))?;
+        .map_err(|error| crate::unreachable(error.to_string()))?;
     Ok((status, text))
 }
 
@@ -152,7 +152,7 @@ pub(crate) fn minted(body: &Value) -> Result<Issued> {
         .or_else(|| body.get("token"))
         .and_then(Value::as_str)
         .ok_or_else(|| {
-            Error::Denied(format!("the reply carried no access token: {}", told(body)))
+            crate::refused(format!("the reply carried no access token: {}", told(body)))
         })?;
     let expires = body
         .get("expires_in")
@@ -227,7 +227,7 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
     let token = issued
         .refresh
         .as_deref()
-        .ok_or_else(|| Error::Denied("no refresh token to spend".to_string()))?;
+        .ok_or_else(|| crate::refused("no refresh token to spend".to_string()))?;
     let client = issued.client.as_deref().unwrap_or(&spec.client_id);
     let mut form = vec![
         ("grant_type".to_string(), "refresh_token".to_string()),
@@ -237,7 +237,7 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
     spec.extend_token_form(&mut form, true);
     let (status, body) = post(http, &spec.token_url, &form, spec.token_style).await?;
     if status >= 400 {
-        return Err(Error::Denied(format!(
+        return Err(crate::refused(format!(
             "refresh failed: HTTP {status} {}",
             told(&body)
         )));

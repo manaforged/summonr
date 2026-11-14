@@ -83,13 +83,12 @@ impl Sink {
         match kind {
             Stage::Request => result,
             Stage::Response | Stage::Chunk => result.map_err(|error| {
-                Error::Provider(ProviderFailure {
-                    kind: ProviderFailureKind::Malformed,
-                    status: None,
-                    message: format!("audit capture failed after provider output: {error}"),
-                    partial_output: true,
-                    retry_after: None,
-                })
+                let mut failure = ProviderFailure::new(
+                    ProviderFailureKind::Malformed,
+                    format!("audit capture failed after provider output: {error}"),
+                );
+                failure.set_partial_output(true);
+                Error::Provider(failure)
             }),
         }
     }

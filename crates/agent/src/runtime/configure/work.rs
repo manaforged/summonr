@@ -35,7 +35,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn abandon_work(&mut self, reason: &str) -> Result<()> {
-        self.session.abandon_work(reason).map_err(Error::from)
+        self.session.abandon_work(reason)
     }
 
     pub(crate) fn fork_live(&mut self) -> Result<String> {

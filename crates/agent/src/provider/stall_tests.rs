@@ -80,9 +80,9 @@ async fn cut(filler: &'static str) -> (summonr_core::error::ProviderFailure, Par
 #[tokio::test]
 async fn a_stream_of_only_keep_alives_fails_as_a_retryable_cut() {
     let (failure, partial) = cut(": keep-alive\n\n").await;
-    assert_eq!(failure.kind, ProviderFailureKind::Transport);
+    assert_eq!(failure.kind(), ProviderFailureKind::Transport);
     assert!(
-        failure.partial_output && failure.status.is_none(),
+        failure.partial_output() && failure.status().is_none(),
         "{failure:?}"
     );
     assert_eq!(partial.text, "hi");
@@ -91,9 +91,9 @@ async fn a_stream_of_only_keep_alives_fails_as_a_retryable_cut() {
 #[tokio::test]
 async fn a_stream_of_empty_deltas_fails_as_a_retryable_cut() {
     let (failure, partial) = cut("data: {\"choices\":[{\"delta\":{}}]}\n\n").await;
-    assert_eq!(failure.kind, ProviderFailureKind::Transport);
+    assert_eq!(failure.kind(), ProviderFailureKind::Transport);
     assert!(
-        failure.partial_output && failure.status.is_none(),
+        failure.partial_output() && failure.status().is_none(),
         "{failure:?}"
     );
     assert_eq!(partial.text, "hi");
@@ -145,7 +145,7 @@ async fn a_done_sentinel_without_a_finish_reason_is_not_a_finished_reply() {
     let Err(Error::Provider(failure)) = outcome else {
         panic!("expected a provider failure, got {outcome:?}");
     };
-    assert_eq!(failure.kind, ProviderFailureKind::Transport);
+    assert_eq!(failure.kind(), ProviderFailureKind::Transport);
     assert_eq!(partial.text, "hihi");
 }
 
@@ -257,7 +257,7 @@ async fn a_finished_stream_with_no_text_and_no_call_fails_as_empty() {
     let Err(Error::Provider(failure)) = outcome else {
         panic!("expected a provider failure, got {outcome:?}");
     };
-    assert_eq!(failure.kind, ProviderFailureKind::Empty);
+    assert_eq!(failure.kind(), ProviderFailureKind::Empty);
 }
 
 #[tokio::test]
@@ -272,7 +272,7 @@ async fn a_frame_that_is_not_json_fails_the_stream() {
     let Err(Error::Provider(failure)) = outcome else {
         panic!("expected a provider failure, got {outcome:?}");
     };
-    assert_eq!(failure.kind, ProviderFailureKind::Malformed);
+    assert_eq!(failure.kind(), ProviderFailureKind::Malformed);
 }
 
 #[tokio::test]

@@ -31,7 +31,7 @@ pub(crate) fn checks(
     markdown: &str,
     policy: WorkKind,
     commands: &[String],
-) -> Result<Vec<Check>, WorkError> {
+) -> crate::Result<Vec<Check>> {
     let mut checks: Vec<Check> = commands
         .iter()
         .map(|command| Check {

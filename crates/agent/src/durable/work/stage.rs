@@ -45,7 +45,7 @@ impl Work {
         true
     }
 
-    pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> Result<(), WorkError> {
+    pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> crate::Result<()> {
         let checks = checks(markdown, self.policy, commands)?;
         if self.policy == WorkKind::Steps {
             let parsed = crate::steps::parse(markdown)?;
@@ -76,9 +76,11 @@ impl Work {
         Ok(())
     }
 
-    pub(crate) fn execute(&mut self, base: Option<Snapshot>) -> Result<(), WorkError> {
+    pub(crate) fn execute(&mut self, base: Option<Snapshot>) -> crate::Result<()> {
         if self.plan.is_none() {
-            return Err(WorkError("Execute requires a selected plan".to_string()));
+            return Err(crate::Error::Config(
+                "Execute requires a selected plan".to_string(),
+            ));
         }
         if let Some(first) = self.steps.first_mut() {
             first.state = StepStatus::Active;
@@ -89,14 +91,14 @@ impl Work {
         Ok(())
     }
 
-    pub(crate) fn verify(&mut self, capture: Snapshot) -> Result<Vec<String>, WorkError> {
+    pub(crate) fn verify(&mut self, capture: Snapshot) -> crate::Result<Vec<String>> {
         if self.stage() != Some(Stage::Execute) {
-            return Err(WorkError("Verify requires Execute".to_string()));
+            return Err(crate::Error::Config("Verify requires Execute".to_string()));
         }
         let base = self
             .base
             .as_ref()
-            .ok_or_else(|| WorkError("Execute has no workspace base".to_string()))?;
+            .ok_or_else(|| crate::Error::Config("Execute has no workspace base".to_string()))?;
         let paths = changed(base, &capture);
         self.touched.extend(paths.iter().cloned());
         self.jobs.clear();
@@ -108,9 +110,11 @@ impl Work {
         Ok(paths)
     }
 
-    pub(crate) fn verdict(&mut self, passed: bool, decision: Decision) -> Result<(), WorkError> {
+    pub(crate) fn verdict(&mut self, passed: bool, decision: Decision) -> crate::Result<()> {
         if !matches!(self.stage(), Some(Stage::Verify)) {
-            return Err(WorkError("a verdict requires Verify".to_string()));
+            return Err(crate::Error::Config(
+                "a verdict requires Verify".to_string(),
+            ));
         }
         if passed
             && matches!(
@@ -118,7 +122,7 @@ impl Work {
                 (WorkKind::Goal, Decision::Automatic)
             )
         {
-            return Err(WorkError(DECISION.to_string()));
+            return Err(crate::Error::Config(DECISION.to_string()));
         }
         self.record_check(passed);
         if !passed {
@@ -133,7 +137,7 @@ impl Work {
         let step = self
             .steps
             .get_mut(active)
-            .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
+            .ok_or_else(|| crate::Error::Config("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = 0;
         match (policy, decision) {
@@ -160,7 +164,7 @@ impl Work {
                 ));
             }
             (WorkKind::Goal, Decision::Automatic) => {
-                return Err(WorkError(DECISION.to_string()));
+                return Err(crate::Error::Config(DECISION.to_string()));
             }
         }
         Ok(())
@@ -200,16 +204,18 @@ impl Work {
         }
     }
 
-    pub(crate) fn defer(&mut self, note: String, jobs: Vec<String>) -> Result<bool, WorkError> {
+    pub(crate) fn defer(&mut self, note: String, jobs: Vec<String>) -> crate::Result<bool> {
         if self.stage() != Some(Stage::Execute) {
-            return Err(WorkError("a deferral requires Execute".to_string()));
+            return Err(crate::Error::Config(
+                "a deferral requires Execute".to_string(),
+            ));
         }
         self.pending.push(note);
         self.jobs = jobs;
         Ok(true)
     }
 
-    fn fail(&mut self, continuation: String) -> Result<(), WorkError> {
+    fn fail(&mut self, continuation: String) -> crate::Result<()> {
         let active = match self.active.or_else(|| {
             self.steps
                 .iter()
@@ -225,7 +231,7 @@ impl Work {
         let step = self
             .steps
             .get_mut(active)
-            .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
+            .ok_or_else(|| crate::Error::Config("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = step.attempts.saturating_add(1);
         if !matches!(self.policy, WorkKind::Goal)

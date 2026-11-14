@@ -2,9 +2,9 @@ use super::*;
 
 impl SessionDriver {
     /// Captures the workspace for Verify; `wrote` names the paths this turn's tools changed.
-    pub(crate) fn enter_verify(&mut self, wrote: &[String]) -> Result<Vec<String>, DriverError> {
+    pub(crate) fn enter_verify(&mut self, wrote: &[String]) -> Result<Vec<String>> {
         if self.turn.is_none() {
-            return Err(DriverError::NoTurn);
+            return Err(no_turn());
         }
         let unchanged = self.unchanged_turn();
         self.settle_base()?;
@@ -12,7 +12,7 @@ impl SessionDriver {
             Some(base) => base,
             None => {
                 let now = self.snapshot(None, &[])?;
-                self.work.as_mut().ok_or(DriverError::NoWork)?.base = Some(now.clone());
+                self.work.as_mut().ok_or_else(no_work)?.base = Some(now.clone());
                 now
             }
         };
@@ -21,17 +21,13 @@ impl SessionDriver {
         } else {
             self.snapshot(Some(&base), wrote)?
         };
-        let paths = self
-            .work
-            .as_mut()
-            .ok_or(DriverError::NoWork)?
-            .verify(capture)?;
+        let paths = self.work.as_mut().ok_or_else(no_work)?.verify(capture)?;
         self.checkpoint()?;
         Ok(paths)
     }
 
-    pub(crate) fn limit_changes(&mut self, wrote: &[String]) -> Result<Vec<String>, DriverError> {
-        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+    pub(crate) fn limit_changes(&mut self, wrote: &[String]) -> Result<Vec<String>> {
+        let work = self.work.as_mut().ok_or_else(no_work)?;
         let kept: std::collections::HashSet<&str> = wrote.iter().map(String::as_str).collect();
         if let Some(candidate) = work.candidate.as_mut() {
             candidate.paths.retain(|path| kept.contains(path.as_str()));
@@ -40,11 +36,7 @@ impl SessionDriver {
         Ok(wrote.to_vec())
     }
 
-    pub(crate) fn prepare_verdict(
-        &mut self,
-        passed: bool,
-        wrote: &[String],
-    ) -> Result<Verdict, DriverError> {
+    pub(crate) fn prepare_verdict(&mut self, passed: bool, wrote: &[String]) -> Result<Verdict> {
         let candidate = self
             .work
             .as_ref()
@@ -70,11 +62,11 @@ impl SessionDriver {
         verdict: Verdict,
         decision: Decision,
         receipt: Option<&crate::verify::Receipt>,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         if self.turn.is_none() {
-            return Err(DriverError::NoTurn);
+            return Err(no_turn());
         }
-        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        let work = self.work.as_mut().ok_or_else(no_work)?;
         let failure = receipt
             .filter(|receipt| !verdict.passed && !receipt.checks.is_empty())
             .map(|receipt| receipt.checks.clone());
@@ -100,7 +92,7 @@ impl SessionDriver {
         self.close_with(receipt)
     }
 
-    fn close_with(&mut self, receipt: Option<&crate::verify::Receipt>) -> Result<(), DriverError> {
+    fn close_with(&mut self, receipt: Option<&crate::verify::Receipt>) -> Result<()> {
         self.checkpoint()?;
         if let Some(receipt) = receipt {
             self.append(Line::Receipt {

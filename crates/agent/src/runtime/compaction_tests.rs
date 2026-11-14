@@ -495,6 +495,10 @@ async fn request_history_and_compaction_preserve_system_prefix_without_cloning_v
         assert!(request[0].content.starts_with("system"));
     }
     assert!(sent[3].iter().any(|m| m.content.contains("summary")));
-    assert!(sent[3].iter().any(|m| m.role == Role::User && m.content.contains("three")));
+    assert!(
+        sent[3]
+            .iter()
+            .any(|m| m.role == Role::User && m.content.contains("three"))
+    );
     Ok(())
 }

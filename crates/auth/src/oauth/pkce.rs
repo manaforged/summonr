@@ -53,7 +53,7 @@ pub(super) async fn login(
 
 fn same_client(kept: Option<&str>, sent: Option<&str>) -> Result<()> {
     match (kept, sent) {
-        (Some(kept), Some(sent)) if kept != sent => Err(Error::Denied(
+        (Some(kept), Some(sent)) if kept != sent => Err(crate::refused(
             "the redirect named a different client than the one on file; run `summonr logout` first"
                 .to_string(),
         )),
@@ -64,7 +64,7 @@ fn same_client(kept: Option<&str>, sent: Option<&str>) -> Result<()> {
 fn nonce_matches(identity: Option<&str>, nonce: &str) -> Result<()> {
     let got = identity.and_then(|token| super::token::claim(token, "nonce"));
     match got {
-        Some(got) if got != nonce => Err(Error::Denied(
+        Some(got) if got != nonce => Err(crate::refused(
             "the sign-in reply carried the wrong nonce; start the login again".to_string(),
         )),
         Some(_) | None => Ok(()),
@@ -91,7 +91,7 @@ async fn returned(
     prompt.notice("waiting for the browser to come back");
     tokio::time::timeout(WAITS.login, caught(listener, state))
         .await
-        .map_err(|_elapsed| Error::Denied(TIMED_OUT.to_string()))?
+        .map_err(|_elapsed| crate::refused(TIMED_OUT.to_string()))?
 }
 
 struct Callback {
@@ -156,7 +156,7 @@ async fn redeemed(
             .or_else(|| body.get("error"))
             .and_then(serde_json::Value::as_str)
             .unwrap_or("no reason given");
-        return Err(Error::Denied(format!(
+        return Err(crate::refused(format!(
             "the token exchange failed: HTTP {status} {said}"
         )));
     }
@@ -166,7 +166,7 @@ async fn redeemed(
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default();
         if !granted.split_whitespace().any(|scope| scope == needed) {
-            return Err(Error::Denied(format!(
+            return Err(crate::refused(format!(
                 "the sign-in did not grant `{needed}`; approve plan usage in the browser and try again"
             )));
         }
@@ -184,7 +184,7 @@ async fn pasted(prompt: &mut Prompt, state: &str) -> Result<Callback> {
     if let Some(sent) = sent
         && sent != state
     {
-        return Err(Error::Denied(
+        return Err(crate::refused(
             "the pasted code carried the wrong state; start the login again".to_string(),
         ));
     }
@@ -214,13 +214,13 @@ async fn bind(wanted: Option<&str>) -> Result<TcpListener> {
     };
     TcpListener::bind(("127.0.0.1", port))
         .await
-        .map_err(|error| Error::Transport(format!("cannot listen on 127.0.0.1:{port}: {error}")))
+        .map_err(|error| crate::unreachable(format!("cannot listen on 127.0.0.1:{port}: {error}")))
 }
 
 fn redirect(wanted: Option<&str>, listener: &TcpListener) -> Result<String> {
     let port = listener
         .local_addr()
-        .map_err(|error| Error::Transport(error.to_string()))?
+        .map_err(|error| crate::unreachable(error.to_string()))?
         .port();
     let Some(raw) = wanted else {
         return Ok(format!("http://127.0.0.1:{port}/callback"));
@@ -241,7 +241,7 @@ async fn caught(listener: &TcpListener, state: &str) -> Result<Callback> {
         let (mut stream, _) = listener
             .accept()
             .await
-            .map_err(|error| Error::Transport(error.to_string()))?;
+            .map_err(|error| crate::unreachable(error.to_string()))?;
         let Some(asked) = head(&mut stream).await? else {
             answer(&mut stream, "Waiting for the sign-in redirect.").await;
             continue;
@@ -261,7 +261,7 @@ async fn caught(listener: &TcpListener, state: &str) -> Result<Callback> {
         }
         if let Some(error) = refused {
             answer(&mut stream, "Sign-in refused. Return to the terminal.").await;
-            return Err(Error::Denied(format!("the login was refused: {error}")));
+            return Err(crate::refused(format!("the login was refused: {error}")));
         }
         let (Some(code), Some(sent)) = (code, sent) else {
             answer(&mut stream, "Waiting for the sign-in redirect.").await;
@@ -269,7 +269,7 @@ async fn caught(listener: &TcpListener, state: &str) -> Result<Callback> {
         };
         if sent != state {
             answer(&mut stream, "Sign-in rejected. Return to the terminal.").await;
-            return Err(Error::Denied(
+            return Err(crate::refused(
                 "the redirect carried the wrong state; start the login again".to_string(),
             ));
         }
@@ -283,7 +283,7 @@ async fn head(stream: &mut TcpStream) -> Result<Option<Url>> {
     let read = stream
         .read(&mut raw)
         .await
-        .map_err(|error| Error::Transport(error.to_string()))?;
+        .map_err(|error| crate::unreachable(error.to_string()))?;
     let text = String::from_utf8_lossy(&raw[..read]);
     let Some(path) = text.split_whitespace().nth(1) else {
         return Ok(None);

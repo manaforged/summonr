@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Issued, Parts, Result, Store};
+use crate::{Error, ErrorKind, Issued, Parts, Result, Store};
 
 const LIFETIME_CEILING: u64 = 10 * 365 * 24 * 3600;
 
@@ -91,6 +91,6 @@ pub(super) fn keep(parts: &Parts<'_>, issued: Issued) -> Result<()> {
 
 pub(super) fn save(parts: &Parts<'_>, store: &dyn Store, issued: &Issued) -> Result<()> {
     let raw = serde_json::to_string(&to_stored(issued))
-        .map_err(|error| Error::Config(error.to_string()))?;
+        .map_err(|error| Error::caused(ErrorKind::Config, error))?;
     store.set(parts.name, &raw)
 }

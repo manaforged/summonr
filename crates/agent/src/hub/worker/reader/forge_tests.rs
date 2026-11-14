@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::Reader;
-use crate::forge::{Ask, Error, State};
+use crate::forge::{Ask, Failure, State};
 use crate::hub::{Cmd, Fact, Msg};
 use crate::worktree::tests::{git, repo};
 
@@ -67,7 +67,7 @@ fn github_repo(fake: &Path, auth: &str) -> (tempfile::TempDir, PathBuf, PathBuf)
     (root, primary, bare)
 }
 
-async fn press(dir: &Path, ask: Ask) -> Result<Option<crate::forge::Pull>, Error> {
+async fn press(dir: &Path, ask: Ask) -> Result<Option<crate::forge::Pull>, Failure> {
     let (ui, mut inbox) = tokio::sync::mpsc::unbounded_channel();
     let reader = Reader::new(dir.to_path_buf(), Default::default(), ui, true);
     reader.run(Cmd::Forge(ask)).await;
@@ -145,7 +145,7 @@ async fn open_pr_while_gh_is_signed_out_changes_nothing() {
 
     let reply = press(&primary, Ask::Open("Fix the parser".to_owned())).await;
 
-    assert_eq!(reply, Err(Error::SignedOut));
+    assert_eq!(reply, Err(Failure::SignedOut));
     assert_eq!(reply.unwrap_err().to_string(), "GitHub not signed in");
     assert_eq!(
         read(&primary, &["rev-parse", "--abbrev-ref", "HEAD"]),
@@ -178,7 +178,7 @@ async fn a_gh_call_past_its_limit_is_a_timeout_not_a_hang() {
     let error = reply.unwrap_err();
     assert_eq!(
         error,
-        Error::TimedOut {
+        Failure::TimedOut {
             command: "pr list".to_owned(),
             secs
         }

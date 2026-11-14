@@ -163,7 +163,7 @@ impl<S: super::wire::Accumulate> Drop for Spill<'_, S> {
 fn cut(error: Error) -> Error {
     match error {
         Error::Provider(mut failure) => {
-            failure.partial_output = true;
+            failure.set_partial_output(true);
             Error::Provider(failure)
         }
         error => error,

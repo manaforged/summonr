@@ -332,13 +332,10 @@ impl<P: Provider> Loop<P> {
         let Ok(todos) = crate::tools::todos_from_args(arguments) else {
             return Ok(());
         };
-        match self.session.apply_todos(todos) {
-            Ok(()) => {
-                let progress = self.work_progress()?;
-                self.push_event(events, emit, Event::Work { progress })
-            }
-            Err(crate::durable::driver::DriverError::NoWork) => Ok(()),
-            Err(error) => Err(Error::from(error)),
+        if !self.session.apply_todos(todos)? {
+            return Ok(());
         }
+        let progress = self.work_progress()?;
+        self.push_event(events, emit, Event::Work { progress })
     }
 }

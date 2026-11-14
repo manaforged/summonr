@@ -1,35 +1,48 @@
 use std::path::{Path, PathBuf};
 
-use thiserror::Error;
-
 use super::id::{Attempt, Call, SessionId};
 use super::log::{self, Line, Log, State, Usage, UsageMeta};
 use super::store;
 use super::tree::{self, Snapshot};
-use super::work::{Check, Decision, Stage, Work, WorkError, WorkKind};
-use crate::WorkProgress;
+use super::work::{Check, Decision, Stage, Work, WorkKind};
+use crate::{Error, Result, WorkProgress};
+use summonr_core::error::ErrorKind;
 use summonr_types::{Message, Partial, ToolCall, UserInput};
 
-#[derive(Debug, Error)]
-pub(crate) enum DriverError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Work(#[from] WorkError),
-    #[error("input is empty")]
-    Empty,
-    #[error("a turn is already open")]
-    Busy,
-    #[error("no open turn")]
-    NoTurn,
-    #[error("no open provider round")]
-    NoProvider,
-    #[error("no planned tool for this call")]
-    NoTool,
-    #[error("session has no Work")]
-    NoWork,
-    #[error("{0}")]
-    State(String),
+fn refused(text: &str) -> Error {
+    Error::Config(text.to_string())
+}
+
+fn empty() -> Error {
+    refused("input is empty")
+}
+
+pub(crate) fn busy() -> Error {
+    refused("a turn is already open")
+}
+
+fn no_turn() -> Error {
+    refused("no open turn")
+}
+
+fn no_provider() -> Error {
+    refused("no open provider round")
+}
+
+fn no_tool() -> Error {
+    refused("no planned tool for this call")
+}
+
+fn no_work() -> Error {
+    refused("session has no Work")
+}
+
+pub(super) fn disk(error: std::io::Error) -> Error {
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        Error::Held
+    } else {
+        Error::caused(ErrorKind::Config, error)
+    }
 }
 
 pub(crate) struct Exposure {
@@ -101,7 +114,7 @@ impl SessionDriver {
         model: &str,
         reported: bool,
         meta: UsageMeta,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         self.append(Line::Charge {
             reported,
             usage,
@@ -120,20 +133,20 @@ impl SessionDriver {
         (self.state.spent, self.state.unreported)
     }
 
-    pub(crate) fn compact(&mut self, summary: &str, tail: &[Message]) -> Result<(), DriverError> {
+    pub(crate) fn compact(&mut self, summary: &str, tail: &[Message]) -> Result<()> {
         self.append(Line::Summary {
             text: summary.to_string(),
             tail: tail.to_vec(),
         })
     }
 
-    pub(crate) fn rewrite(&mut self, edits: Vec<(usize, Message)>) -> Result<(), DriverError> {
+    pub(crate) fn rewrite(&mut self, edits: Vec<(usize, Message)>) -> Result<()> {
         self.append(Line::Rewrite { edits })
     }
 
-    pub(crate) fn clear(&mut self) -> Result<(), DriverError> {
+    pub(crate) fn clear(&mut self) -> Result<()> {
         if self.turn.is_some() {
-            return Err(DriverError::Busy);
+            return Err(busy());
         }
         if let Some(work) = self.work.as_mut().filter(|work| !work.todos.is_empty()) {
             work.todos.clear();
@@ -142,15 +155,11 @@ impl SessionDriver {
         self.append(Line::Clear)
     }
 
-    pub(crate) fn note_schema(&mut self, bytes: u64) -> Result<(), DriverError> {
+    pub(crate) fn note_schema(&mut self, bytes: u64) -> Result<()> {
         self.append(Line::Tools { bytes })
     }
 
-    pub(crate) fn set_budget(
-        &mut self,
-        tokens: Option<u64>,
-        millis: Option<u64>,
-    ) -> Result<(), DriverError> {
+    pub(crate) fn set_budget(&mut self, tokens: Option<u64>, millis: Option<u64>) -> Result<()> {
         if (self.state.tokens, self.state.millis) == (tokens, millis) {
             return Ok(());
         }
@@ -161,7 +170,7 @@ impl SessionDriver {
         (self.state.tokens, self.state.millis)
     }
 
-    pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<(), DriverError> {
+    pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
         if self.state.workflow.as_deref() == name {
             return Ok(());
         }
@@ -201,11 +210,11 @@ impl SessionDriver {
         self.agent = route;
     }
 
-    pub(crate) fn set_topic(&mut self, id: String) -> Result<(), DriverError> {
+    pub(crate) fn set_topic(&mut self, id: String) -> Result<()> {
         self.append(Line::Topic { id })
     }
 
-    pub(crate) fn set_skills(&mut self, set: String) -> Result<(), DriverError> {
+    pub(crate) fn set_skills(&mut self, set: String) -> Result<()> {
         if self.state.skills.as_deref() == Some(set.as_str()) {
             return Ok(());
         }
@@ -248,11 +257,8 @@ impl SessionDriver {
         self.state.parent
     }
 
-    fn execute(&mut self) -> Result<(), DriverError> {
-        self.work
-            .as_mut()
-            .ok_or(DriverError::NoWork)?
-            .execute(None)?;
+    fn execute(&mut self) -> Result<()> {
+        self.work.as_mut().ok_or_else(no_work)?.execute(None)?;
         self.begin_base();
         self.checkpoint()
     }
@@ -265,28 +271,25 @@ impl SessionDriver {
         }
     }
 
-    fn snapshot(
-        &mut self,
-        previous: Option<&Snapshot>,
-        scope: &[String],
-    ) -> Result<Snapshot, DriverError> {
+    fn snapshot(&mut self, previous: Option<&Snapshot>, scope: &[String]) -> Result<Snapshot> {
         let snapshot = tree::snapshot(
             &self.workspace,
             &tree::base::excludes(self.log.path()),
             previous.or(self.last.as_ref()),
             scope,
-        )?;
+        )
+        .map_err(disk)?;
         self.last = Some(snapshot.clone());
         Ok(snapshot)
     }
 
-    fn checkpoint(&mut self) -> Result<(), DriverError> {
+    fn checkpoint(&mut self) -> Result<()> {
         let Some(work) = &self.work else {
             return Ok(());
         };
         let mark = work.trees_mark();
         if self.saved != mark {
-            work.save_trees(self.log.path())?;
+            work.save_trees(self.log.path()).map_err(disk)?;
         }
         let line = Line::Work {
             work: Box::new(work.clone()),
@@ -295,12 +298,12 @@ impl SessionDriver {
         self.append(line)
     }
 
-    fn append(&mut self, line: Line) -> Result<(), DriverError> {
+    fn append(&mut self, line: Line) -> Result<()> {
         let durability = match &line {
             Line::Work { work } => work.durability(),
             _ => store::Durability::Renamed,
         };
-        self.log.append(&line, durability)?;
+        self.log.append(&line, durability).map_err(disk)?;
         self.pending.push(line.clone());
         self.state.apply(line);
         Ok(())
@@ -365,22 +368,6 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
     dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-impl From<DriverError> for summonr_core::error::Error {
-    fn from(error: DriverError) -> Self {
-        match &error {
-            DriverError::Io(cause) if cause.kind() == std::io::ErrorKind::WouldBlock => Self::Held,
-            DriverError::Io(_)
-            | DriverError::Work(_)
-            | DriverError::Empty
-            | DriverError::Busy
-            | DriverError::NoTurn
-            | DriverError::NoProvider
-            | DriverError::NoTool
-            | DriverError::NoWork
-            | DriverError::State(_) => Self::Config(error.to_string()),
-        }
-    }
-}
 #[cfg(test)]
 #[path = "driver_tests.rs"]
 mod tests;

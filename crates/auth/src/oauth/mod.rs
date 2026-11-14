@@ -194,19 +194,19 @@ async fn renew(parts: &Parts<'_>, http: &Session, shared: &Arc<dyn Store>) -> Re
                     save(parts, store, &next)?;
                     exchanged(parts, http, shared, next, true).await
                 }
-                Err(error) if parts.spec.grant.interactive() => Err(Error::NeedsLogin {
-                    name: parts.name.to_string(),
-                    detail: format!("refresh failed ({error})"),
-                }),
+                Err(error) if parts.spec.grant.interactive() => Err(crate::needs_login(
+                    parts.name,
+                    &format!("refresh failed ({})", error.detail()),
+                )),
                 Err(error) => Err(error),
             };
         }
     }
     if parts.spec.grant.interactive() {
-        return Err(Error::NeedsLogin {
-            name: parts.name.to_string(),
-            detail: format!("run `summonr login {}`", parts.name),
-        });
+        return Err(crate::needs_login(
+            parts.name,
+            &format!("run `summonr login {}`", parts.name),
+        ));
     }
     let minted = refresh(parts.spec, http, &parts.spec.refresh_seed()).await?;
     save(parts, store, &minted)?;

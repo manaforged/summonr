@@ -3,7 +3,7 @@ use sigil::prelude::{
     AlignItems, ControlSize, NodeBuilder, Signal, Tone, Widget, button, derived, effect,
 };
 use sigil::reactive::untrack;
-use summonr_agent::forge::{Ask, Bucket, Check, Error, Pull, Review, State};
+use summonr_agent::forge::{Ask, Bucket, Check, Failure, Pull, Review, State};
 
 use super::App;
 use super::style::{Text, XS, text};
@@ -62,7 +62,7 @@ pub(super) fn merge(app: &App) {
 
 fn items(app: &App, changed: bool, held: Signal<bool>) -> Vec<NodeBuilder> {
     match app.forge.state.get() {
-        Some(Err(error @ (Error::SignedOut | Error::TimedOut { .. }))) => {
+        Some(Err(error @ (Failure::SignedOut | Failure::TimedOut { .. }))) => {
             vec![text(Text::Meta, error.to_string()).nowrap().into()]
         }
         Some(Ok(None)) if changed => vec![open_button(app, held)],

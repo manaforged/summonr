@@ -15,7 +15,7 @@ use summonr_agent::durable::store::{Durability, write};
 use summonr_agent::hub::{Fact, Info, Msg};
 use summonr_agent::prefs::{FPS_DEFAULT, FPS_MAX, FPS_MIN, Prefs};
 use summonr_agent::tools::Event;
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 struct Options {
     scenario: Scenario,
@@ -174,16 +174,16 @@ async fn capture(options: &Options) -> Result<()> {
         profile::tick_frame();
         sleep(frame_budget(options.fps)).await;
     }
-    profile::dump(&options.output).map_err(|error| Error::Tool(error.to_string()))?;
+    profile::dump(&options.output).map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     profile::disable();
     let grid = screen
         .frame(&mut host, [], size)
-        .map_err(|error| Error::Tool(error.to_string()))?;
+        .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     scenes::verify(options.scenario, &grid.text())?;
     crate::window::save_image(grid, &host, &options.output)?;
     let mut ansi = Vec::new();
     Host::ansi(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)
-        .map_err(|error| Error::Tool(error.to_string()))?;
+        .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     write(
         &options.output.with_extension("ansi"),
         ansi,
@@ -216,12 +216,12 @@ fn paint(
         let _phase = profile::span(profile::Phase::TuiPaint);
         screen
             .frame(host, [], size)
-            .map_err(|error| Error::Tool(error.to_string()))?;
+            .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     }
     let _phase = profile::span(profile::Phase::TuiWrite);
     screen
         .flush(output)
-        .map_err(|error| Error::Tool(error.to_string()))?;
+        .map_err(|error| Error::caused(ErrorKind::Tool, error))?;
     Ok(())
 }
 

@@ -5,6 +5,7 @@ use sigil::reactive::defer;
 use sigil::tasks::on_message;
 use sigil::terminal::Activity;
 use summonr_agent::hub::Fact;
+use summonr_core::error::ErrorKind;
 
 use tokio::task::JoinHandle;
 
@@ -144,8 +145,8 @@ impl App {
     fn open_out(&self) {
         if let Some(path) = self.open_file.peek() {
             self.open_file.set(None);
-            if let Ok(Err(error)) | Err(error) =
-                suspend(|| edit(&path, &editor())).map_err(|error| Error::Tool(error.to_string()))
+            if let Ok(Err(error)) | Err(error) = suspend(|| edit(&path, &editor()))
+                .map_err(|error| Error::caused(ErrorKind::Tool, error))
             {
                 self.push_entry(Entry::Error(error.to_string()));
             }
@@ -155,7 +156,7 @@ impl App {
             self.editor_requested.set(false);
             let draft = self.draft.peek();
             match suspend(|| edit_external(&draft, &editor()))
-                .map_err(|error| Error::Tool(error.to_string()))
+                .map_err(|error| Error::caused(ErrorKind::Tool, error))
             {
                 Ok(Ok(draft)) => self.edit(&draft),
                 Ok(Err(error)) | Err(error) => {

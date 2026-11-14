@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 
 use super::{Durability, forget, lock, memo, write};
 use crate::config::tilde;
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 pub(crate) trait Codec {
     type Value;
@@ -92,7 +92,7 @@ impl<T: Serialize + DeserializeOwned> Codec for Toml<T> {
 
 impl<T: Serialize + DeserializeOwned> Encode for Toml<T> {
     fn encode(value: &T) -> Result<String> {
-        toml::to_string(value).map_err(|error| Error::Config(error.to_string()))
+        toml::to_string(value).map_err(|error| Error::caused(ErrorKind::Config, error))
     }
 }
 

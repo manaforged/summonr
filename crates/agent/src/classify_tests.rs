@@ -198,16 +198,16 @@ fn an_api_error_carries_the_wait_the_server_asked_for() {
     let Error::Provider(failure) = failure else {
         panic!("a rate limit must classify as a provider failure");
     };
-    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_eq!(failure.kind(), ProviderFailureKind::RateLimited);
     assert_eq!(
-        failure.retry_after,
+        failure.retry_after(),
         Some(30),
         "the Retry-After header is the wait, and the caller cannot honour it if we drop it"
     );
     assert!(
-        failure.message.contains("slow down"),
+        failure.message().contains("slow down"),
         "got {}",
-        failure.message
+        failure.message()
     );
 }
 
@@ -221,7 +221,7 @@ fn a_decisions_failure_classifies_like_every_other_provider_failure() {
         let Error::Provider(failure) = crate::provider::response_failure(status, "{}", None) else {
             panic!("status {status} did not classify");
         };
-        assert_eq!(failure.kind, expected, "status {status}");
+        assert_eq!(failure.kind(), expected, "status {status}");
     }
 }
 

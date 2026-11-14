@@ -176,7 +176,7 @@ fn a_session_journal_opens_in_one_host_at_a_time() {
     let held = Log::create(&path).unwrap();
     let second = Log::open(&path).err().expect("the journal is held");
     assert_eq!(second.kind(), io::ErrorKind::WouldBlock);
-    let shown = summonr_core::error::Error::from(super::super::driver::DriverError::Io(second));
+    let shown = super::super::driver::disk(second);
     assert_eq!(
         shown.to_string(),
         "This chat is open in another Summonr window."

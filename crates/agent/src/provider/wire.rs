@@ -56,7 +56,7 @@ pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
     let code = status.unwrap_or_else(|| super::client::status_code(kind));
     let mut error = super::client::response_failure(code, &format!("{kind}: {message}"), None);
     if let Error::Provider(failure) = &mut error {
-        failure.status = status;
+        failure.set_status(status);
     }
     error
 }

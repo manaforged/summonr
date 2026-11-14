@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use leyline::{RequestBuilder, Session};
+use summonr_core::error::{Error, ErrorKind, ProviderFailureKind, Result};
 use summonr_core::secret::Secret;
 
 mod oauth;
@@ -33,21 +34,17 @@ const WAITS: Waits = Waits {
 
 const TIMED_OUT: &str = "the login timed out";
 
-/// The one error type of sign-in and key handling.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("{0}")]
-    Config(String),
-    #[error("{0}")]
-    Denied(String),
-    #[error("{0}")]
-    Transport(String),
-    #[error("{name} needs a login: {detail}")]
-    NeedsLogin { name: String, detail: String },
+fn refused(text: impl Into<String>) -> Error {
+    Error::provider(ProviderFailureKind::Authentication, text)
 }
 
-/// A result with the auth error type.
-pub type Result<T> = std::result::Result<T, Error>;
+fn unreachable(text: impl Into<String>) -> Error {
+    Error::provider(ProviderFailureKind::Transport, text)
+}
+
+fn needs_login(name: &str, detail: &str) -> Error {
+    refused(format!("{name} needs a login: {detail}"))
+}
 
 /// The future that resolves to the text a person pasted back, if any.
 pub type Answer = std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>;
@@ -105,7 +102,7 @@ impl Prompt {
             .map(|text| text.trim().to_string())
             .filter(|text| !text.is_empty())
             .ok_or_else(|| {
-                Error::Denied("this sign-in needs the code pasted back, and none came".to_string())
+                Error::Config("this sign-in needs the code pasted back, and none came".to_string())
             })
     }
 }
@@ -309,7 +306,7 @@ fn parts(login: &LoginState) -> Parts<'_> {
 pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
     builder(timeout, connect)
         .build()
-        .map_err(|error| Error::Transport(error.to_string()))
+        .map_err(|error| Error::caused(ErrorKind::Setup, error))
 }
 
 /// A session builder with these total and connect timeouts.

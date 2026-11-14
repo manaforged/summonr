@@ -22,7 +22,7 @@ impl SessionDriver {
         self.fresh = true;
     }
 
-    pub(crate) fn settle_base(&mut self) -> Result<(), DriverError> {
+    pub(crate) fn settle_base(&mut self) -> Result<()> {
         if self.settle_pending()? {
             self.checkpoint()?;
         }
@@ -33,11 +33,11 @@ impl SessionDriver {
         self.fresh && self.turn.is_some()
     }
 
-    fn settle_pending(&mut self) -> Result<bool, DriverError> {
+    fn settle_pending(&mut self) -> Result<bool> {
         let Some(task) = self.base.take() else {
             return Ok(false);
         };
-        let base = tree::base::settle(task)?;
+        let base = tree::base::settle(task).map_err(disk)?;
         self.last = Some(base.clone());
         if let Some(work) = self.work.as_mut() {
             work.base = Some(base);

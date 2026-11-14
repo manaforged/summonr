@@ -222,11 +222,10 @@ impl<P: Provider> Loop<P> {
         if self.session.stage() == Some(Stage::Plan) || !pace.planned {
             return Ok(None);
         }
-        let todos = match self.session.work_progress() {
-            Ok(progress) => progress.todos,
-            Err(crate::durable::driver::DriverError::NoWork) => return Ok(None),
-            Err(error) => return Err(Error::from(error)),
+        let Some(progress) = self.session.progress() else {
+            return Ok(None);
         };
+        let todos = progress.todos;
         let open = todos
             .iter()
             .filter(|todo| todo.open())

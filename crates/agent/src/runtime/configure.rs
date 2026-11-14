@@ -367,7 +367,7 @@ fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
             path.display()
         )));
     };
-    SessionDriver::resume(home, session, workspace).map_err(Error::from)
+    SessionDriver::resume(home, session, workspace)
 }
 
 pub(super) fn open_driver(
@@ -391,5 +391,4 @@ pub(super) fn open_driver(
         system,
         parent.map(Parent::Task),
     )
-    .map_err(Error::from)
 }

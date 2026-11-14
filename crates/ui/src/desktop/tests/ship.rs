@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use sigil::prelude::Role;
-use summonr_agent::forge::{Ask, Bucket, Check, Error, Pull, Review, State};
+use summonr_agent::forge::{Ask, Bucket, Check, Failure, Pull, Review, State};
 use summonr_agent::hub::{Cmd, Fact, Msg};
 use summonr_agent::session::SessionInfo;
 
@@ -57,7 +57,7 @@ fn asks(sent: &[Cmd]) -> Vec<Ask> {
         .collect()
 }
 
-fn reply(result: Result<Option<Pull>, Error>) -> Step {
+fn reply(result: Result<Option<Pull>, Failure>) -> Step {
     Step::Wait(Box::new(move |app| {
         app.update(Msg::Fact(Fact::Forge(result)))
     }))
@@ -99,7 +99,7 @@ fn signed_out_gh_shows_github_not_signed_in_and_nothing_else() {
     let seen = steps(
         |app| {
             topic(app);
-            app.update(Msg::Fact(Fact::Forge(Err(Error::SignedOut))));
+            app.update(Msg::Fact(Fact::Forge(Err(Failure::SignedOut))));
         },
         Vec::new(),
         |_| (),
@@ -127,7 +127,7 @@ fn a_gh_timeout_shows_in_the_header_and_offers_nothing_else() {
     if !in_window("ship::a_gh_timeout_shows_in_the_header_and_offers_nothing_else") {
         return;
     }
-    let timed_out = Error::TimedOut {
+    let timed_out = Failure::TimedOut {
         command: "pr list".to_owned(),
         secs: 30,
     };

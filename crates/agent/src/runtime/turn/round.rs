@@ -244,7 +244,7 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
         if self.session.turn_open() {
-            return Err(Error::from(crate::durable::driver::DriverError::Busy));
+            return Err(crate::durable::driver::busy());
         }
         self.tools.forget_approval();
         let read_only = self.session.depth() > 0 && self.tools.is_read_only();
@@ -313,9 +313,7 @@ impl<P: Provider> Loop<P> {
         if trigger == Trigger::User && self.is_goal() && !self.session.goal_active() {
             self.select_goal(&objective, commands)?;
         }
-        self.session
-            .prepare_turn_work(&objective, commands)
-            .map_err(Error::from)
+        self.session.prepare_turn_work(&objective, commands)
     }
 
     pub(in crate::runtime) fn round_abort(&self) -> Option<String> {

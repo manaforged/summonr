@@ -29,16 +29,12 @@ impl<P: Provider> Loop<P> {
 
     /// Puts this session in the topic that `topic` started.
     pub fn join_topic(&mut self, topic: &str) -> Result<()> {
-        self.session
-            .set_topic(topic.to_string())
-            .map_err(Error::from)
+        self.session.set_topic(topic.to_string())
     }
 
     /// Limits this session to skill set `set` and records the choice in its journal.
     pub fn choose_skills(&mut self, set: crate::skills::Set) -> Result<()> {
-        self.session
-            .set_skills(set.name().to_owned())
-            .map_err(Error::from)?;
+        self.session.set_skills(set.name().to_owned())?;
         self.tools.set_skill_set(Some(set));
         Ok(())
     }
@@ -99,7 +95,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
-        self.session.set_workflow(name).map_err(Error::from)
+        self.session.set_workflow(name)
     }
 
     pub(crate) fn apply_workflow(
@@ -194,7 +190,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn work_progress(&self) -> Result<crate::WorkProgress> {
-        self.session.work_progress().map_err(Error::from)
+        self.session.work_progress()
     }
 
     pub fn next_action(&self, job: &crate::Job) -> Result<crate::NextAction> {

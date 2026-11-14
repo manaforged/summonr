@@ -1,16 +1,16 @@
 use super::*;
 
 impl SessionDriver {
-    pub(crate) fn start_input(&mut self, input: &UserInput) -> Result<Vec<String>, DriverError> {
+    pub(crate) fn start_input(&mut self, input: &UserInput) -> Result<Vec<String>> {
         if input.text.trim().is_empty() && input.images.is_empty() {
-            return Err(DriverError::Empty);
+            return Err(empty());
         }
         if self.turn.is_some() {
-            return Err(DriverError::Busy);
+            return Err(busy());
         }
         self.pending.clear();
-        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
-        let stage = work.stage().ok_or(DriverError::NoWork)?;
+        let work = self.work.as_mut().ok_or_else(no_work)?;
+        let stage = work.stage().ok_or_else(no_work)?;
         let queued = if stage == Stage::Execute {
             std::mem::take(&mut work.pending)
         } else {
@@ -44,12 +44,12 @@ impl SessionDriver {
         Ok(queued)
     }
 
-    pub(crate) fn steer(&mut self, input: &UserInput) -> Result<(), DriverError> {
+    pub(crate) fn steer(&mut self, input: &UserInput) -> Result<()> {
         if input.text.trim().is_empty() && input.images.is_empty() {
-            return Err(DriverError::Empty);
+            return Err(empty());
         }
         if self.turn.is_none() {
-            return Err(DriverError::NoTurn);
+            return Err(no_turn());
         }
         self.append(Line::User {
             text: input.text.clone(),
@@ -64,11 +64,11 @@ impl SessionDriver {
         purpose: Purpose,
         model: &str,
         exposure: Exposure,
-    ) -> Result<Attempt, DriverError> {
+    ) -> Result<Attempt> {
         let attempt = Attempt(self.take());
-        let turn = self.turn.as_mut().ok_or(DriverError::NoTurn)?;
+        let turn = self.turn.as_mut().ok_or_else(no_turn)?;
         if turn.round.is_some() {
-            return Err(DriverError::State(
+            return Err(Error::Config(
                 "a provider round is already open".to_string(),
             ));
         }
@@ -81,13 +81,13 @@ impl SessionDriver {
         Ok(attempt)
     }
 
-    pub(super) fn end_round(&mut self, attempt: Attempt) -> Result<Round, DriverError> {
-        let turn = self.turn.as_mut().ok_or(DriverError::NoTurn)?;
+    pub(super) fn end_round(&mut self, attempt: Attempt) -> Result<Round> {
+        let turn = self.turn.as_mut().ok_or_else(no_turn)?;
         match turn.round.take() {
             Some(round) if round.attempt == attempt => Ok(round),
             other => {
                 turn.round = other;
-                Err(DriverError::NoProvider)
+                Err(no_provider())
             }
         }
     }
@@ -99,7 +99,7 @@ impl SessionDriver {
         reasoning: &str,
         usage: Usage,
         meta: UsageMeta,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         let round = self.end_round(attempt)?;
         let charge = |note: &str| Line::Charge {
             reported: true,
@@ -127,10 +127,10 @@ impl SessionDriver {
         usage: Usage,
         tools: &[ToolCall],
         meta: UsageMeta,
-    ) -> Result<Vec<Call>, DriverError> {
+    ) -> Result<Vec<Call>> {
         let round = self.end_round(attempt)?;
         if round.purpose != Purpose::Agent {
-            return Err(DriverError::NoProvider);
+            return Err(no_provider());
         }
         let planned: Vec<(Call, String)> = tools
             .iter()
@@ -153,7 +153,7 @@ impl SessionDriver {
         usage: Usage,
         tools: &[ToolCall],
         meta: UsageMeta,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         self.append(Line::Assistant {
             text: text.to_string(),
             reasoning: reasoning.to_string(),
@@ -172,7 +172,7 @@ impl SessionDriver {
         diagnostic: &str,
         millis: u64,
         billable: bool,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         let reported = self.partial.usage.take();
         if !self.partial.text.is_empty() || !self.partial.reasoning.is_empty() {
             self.append(Line::Interrupted {
@@ -218,7 +218,7 @@ impl SessionDriver {
         mutated: bool,
         millis: u64,
         patch: Option<String>,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         let id = self
             .turn
             .as_ref()
@@ -228,7 +228,7 @@ impl SessionDriver {
                     .find(|(call, _)| *call == planned)
                     .map(|(_, id)| id.clone())
             })
-            .ok_or(DriverError::NoTool)?;
+            .ok_or_else(no_tool)?;
         self.append(Line::Tool {
             call: id,
             text: text.to_string(),
@@ -247,9 +247,9 @@ impl SessionDriver {
         self.state.attach_tool_images(images);
     }
 
-    pub(crate) fn close(&mut self) -> Result<(), DriverError> {
+    pub(crate) fn close(&mut self) -> Result<()> {
         if self.turn.is_none() {
-            return Err(DriverError::NoTurn);
+            return Err(no_turn());
         }
         self.append(Line::Close {
             reason: None,
@@ -267,7 +267,7 @@ impl SessionDriver {
         &mut self,
         abort: &summonr_types::Abort,
         receipt: Option<&crate::verify::Receipt>,
-    ) -> Result<(), DriverError> {
+    ) -> Result<()> {
         let reason = abort.reason.as_str();
         if self.turn.is_none() && receipt.is_none() {
             return self.interrupt_children(reason, abort.code.child_scope());
@@ -306,7 +306,7 @@ impl SessionDriver {
         self.interrupt_children(reason, abort.code.child_scope())
     }
 
-    fn abort_call(&mut self, call: String) -> Result<(), DriverError> {
+    fn abort_call(&mut self, call: String) -> Result<()> {
         let finished = self.state.children.values().find(|child| {
             child.call.as_deref() == Some(call.as_str())
                 && matches!(child.state, crate::child::ChildState::Completed(_))
@@ -327,7 +327,7 @@ impl SessionDriver {
 }
 
 impl SessionDriver {
-    fn open_lines(&mut self) -> Result<(), DriverError> {
+    fn open_lines(&mut self) -> Result<()> {
         if let Some(route) = self.agent.clone() {
             self.append(Line::Agent { route })?;
         }

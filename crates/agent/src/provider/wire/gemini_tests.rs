@@ -288,7 +288,7 @@ fn a_malformed_call_finish_asks_for_a_repair() {
         panic!("not a provider failure");
     };
     assert_eq!(
-        failure.kind,
+        failure.kind(),
         summonr_core::error::ProviderFailureKind::MalformedToolCall
     );
 }

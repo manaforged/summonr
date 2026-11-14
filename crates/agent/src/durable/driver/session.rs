@@ -7,14 +7,14 @@ impl SessionDriver {
         model: &str,
         system: &str,
         parent: Option<Parent>,
-    ) -> Result<Self, DriverError> {
+    ) -> Result<Self> {
         let (parent, depth) = parent_depth(parent);
         let id = SessionId::new();
         let path = log::session_path(home, id);
         let mut driver = Self {
             partial: Partial::default(),
             agent: None,
-            log: Log::create(&path)?,
+            log: Log::create(&path).map_err(disk)?,
             state: State::default(),
             work: None,
             workspace: canonical(workspace),
@@ -40,17 +40,15 @@ impl SessionDriver {
         Ok(driver)
     }
 
-    pub(crate) fn resume(
-        home: &Path,
-        id: SessionId,
-        workspace: &Path,
-    ) -> Result<Self, DriverError> {
+    pub(crate) fn resume(home: &Path, id: SessionId, workspace: &Path) -> Result<Self> {
         let caller = workspace;
         let path = log::session_path(home, id);
         let mut state = State::default();
-        log::records(&path, 0).try_for_each(|line| line.map(|line| state.apply(line)))?;
+        log::records(&path, 0)
+            .try_for_each(|line| line.map(|line| state.apply(line)))
+            .map_err(disk)?;
         if state.id != Some(id) {
-            return Err(DriverError::State(format!(
+            return Err(Error::Config(format!(
                 "{} is not the log of session {id}",
                 path.display()
             )));
@@ -60,7 +58,7 @@ impl SessionDriver {
         } else {
             state.workspace.clone()
         };
-        let (work, notice) = match Work::restore(&path, state.work.take())? {
+        let (work, notice) = match Work::restore(&path, state.work.take()).map_err(disk)? {
             Ok(work) => (Some(work), None),
             Err(notice) => (None, notice),
         };
@@ -69,7 +67,7 @@ impl SessionDriver {
         } else if work.as_ref().is_none_or(Work::terminal) {
             canonical(caller)
         } else {
-            return Err(DriverError::State(format!(
+            return Err(Error::Config(format!(
                 "session {id} was recorded in {}, which no longer exists",
                 workspace.display()
             )));
@@ -77,7 +75,7 @@ impl SessionDriver {
         let mut driver = Self {
             agent: None,
             partial: Partial::default(),
-            log: Log::open(&path)?,
+            log: Log::open(&path).map_err(disk)?,
             work,
             state,
             workspace,
@@ -94,7 +92,7 @@ impl SessionDriver {
         Ok(driver)
     }
 
-    fn recover(&mut self) -> Result<(), DriverError> {
+    fn recover(&mut self) -> Result<()> {
         if self.state.opener.is_some() {
             self.turn = Some(Turn {
                 stage: self.work.as_ref().and_then(Work::stage),
@@ -131,23 +129,25 @@ impl SessionDriver {
         Ok(())
     }
 
-    pub(crate) fn fork(&self, turn: Option<usize>) -> Result<PathBuf, DriverError> {
+    pub(crate) fn fork(&self, turn: Option<usize>) -> Result<PathBuf> {
         if self.turn.is_some() {
-            return Err(DriverError::Busy);
+            return Err(busy());
         }
-        let mut lines = log::records(self.log.path(), 0).collect::<std::io::Result<Vec<Line>>>()?;
+        let mut lines = log::records(self.log.path(), 0)
+            .collect::<std::io::Result<Vec<Line>>>()
+            .map_err(disk)?;
         if let Some(turn) = turn {
             truncate_to_turn(&mut lines, turn)?;
         }
         let home = log::home_of(self.log.path())
-            .ok_or_else(|| DriverError::State("session log has no home".to_string()))?;
+            .ok_or_else(|| Error::Config("session log has no home".to_string()))?;
         let child = SessionId::new();
         let (parent, depth) = match self.state.id {
             Some(id) => parent_depth(Some(Parent::Session(id))),
             None => (None, 0),
         };
         let path = log::session_path(home, child);
-        let mut log = Log::create(&path)?;
+        let mut log = Log::create(&path).map_err(disk)?;
         log.append(
             &Line::Session {
                 id: child,
@@ -160,10 +160,12 @@ impl SessionDriver {
                 interactive: false,
             },
             store::Durability::Renamed,
-        )?;
+        )
+        .map_err(disk)?;
         for line in lines {
             if !matches!(line, Line::Session { .. } | Line::Work { .. }) {
-                log.append(&line, store::Durability::Renamed)?;
+                log.append(&line, store::Durability::Renamed)
+                    .map_err(disk)?;
             }
         }
         Ok(path)
@@ -178,19 +180,19 @@ fn parent_depth(parent: Option<Parent>) -> (Option<SessionId>, u8) {
     }
 }
 
-fn truncate_to_turn(lines: &mut Vec<Line>, turn: usize) -> Result<(), DriverError> {
+fn truncate_to_turn(lines: &mut Vec<Line>, turn: usize) -> Result<()> {
     let start = lines
         .iter()
         .enumerate()
         .filter(|(_, line)| matches!(line, Line::User { start: true, .. }))
         .nth(turn)
         .map(|(index, _)| index)
-        .ok_or_else(|| DriverError::State("Selected turn no longer exists".to_string()))?;
+        .ok_or_else(|| Error::Config("Selected turn no longer exists".to_string()))?;
     let close = lines[start + 1..]
         .iter()
         .take_while(|line| !matches!(line, Line::User { start: true, .. }))
         .position(|line| matches!(line, Line::Close { .. }))
-        .ok_or_else(|| DriverError::State("Selected turn has not ended".to_string()))?;
+        .ok_or_else(|| Error::Config("Selected turn has not ended".to_string()))?;
     lines.truncate(start + close + 2);
     Ok(())
 }

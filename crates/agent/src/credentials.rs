@@ -6,36 +6,30 @@ use summonr_types::oauth::Grant;
 
 use crate::endpoint::{Endpoint, LoginFlow, Wire};
 use crate::secret;
-use summonr_core::error::{Error, Result};
+use summonr_core::error::{Error, ErrorKind, Result};
 
 pub(crate) fn login_slot(name: &str) -> String {
     format!("oauth:{name}")
 }
 
 impl Store for secret::Store {
-    fn get(&self, name: &str) -> summonr_auth::Result<Option<String>> {
-        secret::Store::get(self, &login_slot(name))
-            .map(|found| found.map(|(secret, _)| secret))
-            .map_err(|error| summonr_auth::Error::Config(error.to_string()))
+    fn get(&self, name: &str) -> Result<Option<String>> {
+        secret::Store::get(self, &login_slot(name)).map(|found| found.map(|(secret, _)| secret))
     }
 
-    fn set(&self, name: &str, secret: &str) -> summonr_auth::Result<()> {
-        secret::Store::set(self, &login_slot(name), secret)
-            .map(|_source| ())
-            .map_err(|error| summonr_auth::Error::Config(error.to_string()))
+    fn set(&self, name: &str, secret: &str) -> Result<()> {
+        secret::Store::set(self, &login_slot(name), secret).map(|_source| ())
     }
 
-    fn forget(&self, name: &str) -> summonr_auth::Result<bool> {
+    fn forget(&self, name: &str) -> Result<bool> {
         secret::Store::forget(self, &login_slot(name))
-            .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
-    fn claim(&self, name: &str) -> summonr_auth::Result<Box<dyn Send>> {
+    fn claim(&self, name: &str) -> Result<Box<dyn Send>> {
         let safe = summonr_core::text::clean_name(&login_slot(name), "-", '_', usize::MAX);
         summonr_core::dirs::summonr_home()
             .and_then(|home| crate::config::hold(&home.join("locks").join(safe)))
             .map(|file| Box::new(file) as Box<dyn Send>)
-            .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 }
 
@@ -48,7 +42,7 @@ pub(crate) fn scheme(wire: Wire) -> Scheme {
 }
 
 pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
-    Spec::try_from(row).map_err(|error| Error::Config(error.to_string()))
+    Spec::try_from(row)
 }
 
 pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
@@ -107,7 +101,7 @@ pub(crate) fn session(
     builder
         .retry(retry)
         .build()
-        .map_err(|error| Error::Config(error.to_string()))
+        .map_err(|error| Error::caused(ErrorKind::Config, error))
 }
 
 pub(crate) fn logged_in(row: &crate::config::OAuth, name: &str) -> Result<bool> {
@@ -118,7 +112,6 @@ pub(crate) fn logged_in(row: &crate::config::OAuth, name: &str) -> Result<bool> 
         store()?,
     )
     .ready()
-    .map_err(|error| Error::Config(error.to_string()))
 }
 
 pub(crate) fn flow(row: &crate::config::OAuth) -> LoginFlow {

@@ -20,7 +20,7 @@ async fn usage_exhaustion_stops_before_retry_or_fallback() -> Result<()> {
     let primary_sent = Arc::default();
     let fallback_sent = Arc::default();
     let primary = Fault {
-        kind: error.provider_failure().expect("provider failure").kind,
+        kind: error.provider_failure().expect("provider failure").kind(),
         partial: false,
         fails: usize::MAX,
         asked: Some(0),
@@ -44,8 +44,11 @@ async fn usage_exhaustion_stops_before_retry_or_fallback() -> Result<()> {
         .await
         .expect_err("exhausted allowance stops the turn");
     assert_eq!(
-        failure.provider_failure().expect("provider failure").kind,
-        error.provider_failure().expect("classified allowance").kind
+        failure.provider_failure().expect("provider failure").kind(),
+        error
+            .provider_failure()
+            .expect("classified allowance")
+            .kind()
     );
     let sent = primary_sent.lock().expect("primary requests");
     assert_eq!(sent.len(), 1, "exhausted allowance was retried");
@@ -91,13 +94,10 @@ impl Provider for Fault {
             if self.partial {
                 partial.text = "saved partial reply".to_string();
             }
-            Err(Error::Provider(ProviderFailure {
-                kind: self.kind,
-                status: None,
-                message: self.text.to_string(),
-                partial_output: self.partial,
-                retry_after: self.asked.or((self.fails > 1).then_some(0)),
-            }))
+            let mut failure = ProviderFailure::new(self.kind, self.text);
+            failure.set_partial_output(self.partial);
+            failure.set_retry_after(self.asked.or((self.fails > 1).then_some(0)));
+            Err(Error::Provider(failure))
         } else {
             Ok(AssistantMessage {
                 content: Some("recovered".to_string()),

@@ -30,7 +30,7 @@ pub(super) async fn login(
     let code = body
         .get("device_code")
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::Denied(format!("no device_code in the reply: {}", told(&body))))?;
+        .ok_or_else(|| crate::refused(format!("no device_code in the reply: {}", told(&body))))?;
     announce(&body, prompt);
     let wait = body
         .get("interval")
@@ -67,7 +67,7 @@ async fn requested(
     }
     let (status, body) = post(http, device_url, &form, parts.spec.token_style).await?;
     if status >= 400 {
-        return Err(Error::Denied(format!(
+        return Err(crate::refused(format!(
             "the device request failed: HTTP {status} {}",
             told(&body)
         )));
@@ -118,17 +118,17 @@ impl Poll<'_> {
                     continue;
                 }
                 Some(other) => {
-                    return Err(Error::Denied(format!("the login was refused: {other}")));
+                    return Err(crate::refused(format!("the login was refused: {other}")));
                 }
                 None => {}
             }
             if status >= 400 {
-                return Err(Error::Denied(format!("the login failed: HTTP {status}")));
+                return Err(crate::refused(format!("the login failed: HTTP {status}")));
             }
             let grant = minted(&body)?;
             return settle(self.parts, self.http, shared, grant).await;
         }
-        Err(Error::Denied(TIMED_OUT.to_string()))
+        Err(crate::refused(TIMED_OUT.to_string()))
     }
 
     fn form(&self) -> Vec<(String, String)> {

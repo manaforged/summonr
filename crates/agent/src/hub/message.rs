@@ -99,7 +99,7 @@ pub enum Fact {
     },
     Live(Vec<super::Live>),
     /// The current branch's pull request after a forge ask, or why there is none.
-    Forge(Result<Option<crate::forge::Pull>, crate::forge::Error>),
+    Forge(Result<Option<crate::forge::Pull>, crate::forge::Failure>),
     Named(String),
     Approval(String),
     Replayed,

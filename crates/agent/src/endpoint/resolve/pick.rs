@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
+use summonr_core::error::ErrorKind;
 
 static NOTED: AtomicBool = AtomicBool::new(false);
 
@@ -87,9 +88,12 @@ fn remembered(file: &File, last: Option<(String, String)>) -> Chosen {
 }
 
 fn usable(file: &File, name: &str) -> std::result::Result<(), String> {
-    let text = |error: Error| match error {
-        Error::Config(text) | Error::Setup(text) => text,
-        other => other.to_string(),
+    let text = |error: Error| {
+        if matches!(error.kind(), ErrorKind::Config | ErrorKind::Setup) {
+            error.detail()
+        } else {
+            error.to_string()
+        }
     };
     let endpoint = selection(file, name).ok_or_else(|| text(unknown(name)))?;
     let endpoint = fill_key(endpoint, true).map_err(text)?;

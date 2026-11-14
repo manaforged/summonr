@@ -1,10 +1,8 @@
-use std::io::{Read, Write};
+use serde_json::json;
 
-use serde_json::{Value, json};
-
-use super::fixture::{endpoint, request_body};
-use super::{Client, CompletionRequest, Effort, Message, Partial, Role, ToolCall, ToolFunction};
-use crate::endpoint::{CacheTtl, Endpoint};
+use super::fixture::{body, endpoint, request, sent};
+use super::{Client, CompletionRequest, Effort, Message, Role, ToolCall, ToolFunction};
+use crate::endpoint::CacheTtl;
 
 fn tool_round() -> Vec<Message> {
     let mut assistant = Message::user("");
@@ -28,10 +26,6 @@ fn tool_round() -> Vec<Message> {
         assistant,
         result,
     ]
-}
-
-pub(super) fn body(endpoint: &Endpoint, messages: &[Message], effort: Option<Effort>) -> Value {
-    request_body(endpoint, messages, Some(16_000), effort)
 }
 
 #[test]
@@ -89,79 +83,12 @@ fn claude_through_a_completions_host_marks_its_cache_breakpoints() {
     assert_eq!(other["messages"][1]["content"], "hi");
 }
 
-pub(super) fn sent(mut endpoint: Endpoint, request: &CompletionRequest<'_>) -> String {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    endpoint.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
-    endpoint.oauth = None;
-    let heard = std::thread::spawn(move || {
-        let (mut socket, _) = listener.accept().unwrap();
-        let mut seen = Vec::new();
-        let mut chunk = [0u8; 65536];
-        loop {
-            let read = socket.read(&mut chunk).unwrap();
-            if read == 0 {
-                break;
-            }
-            seen.extend_from_slice(&chunk[..read]);
-            let Some(end) = seen.windows(4).position(|window| window == b"\r\n\r\n") else {
-                continue;
-            };
-            let head = String::from_utf8_lossy(&seen[..end]).to_ascii_lowercase();
-            let length = head
-                .lines()
-                .find_map(|line| line.strip_prefix("content-length:"))
-                .and_then(|value| value.trim().parse::<usize>().ok())
-                .unwrap_or(0);
-            if seen.len() >= end + 4 + length {
-                break;
-            }
-        }
-        socket
-            .write_all(
-                b"HTTP/1.1 400 Bad Request\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
-            )
-            .unwrap();
-        String::from_utf8_lossy(&seen).to_ascii_lowercase()
-    });
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let _context = runtime.enter();
-    let client = Client::connect(&endpoint).unwrap();
-    let outcome = runtime.block_on(crate::provider::Provider::stream(
-        &client,
-        request,
-        &mut Partial::default(),
-    ));
-    let failure = outcome.unwrap_err().to_string();
-    let seen = heard.join().unwrap();
-    assert!(!seen.is_empty(), "no request reached the server: {failure}");
-    seen
-}
-
-pub(super) fn plain<'a>(
-    model: &str,
-    messages: &'a [Message],
-    effort: Option<Effort>,
-) -> CompletionRequest<'a> {
-    CompletionRequest::new(
-        "s".to_string(),
-        model.to_string(),
-        messages,
-        &[],
-        None,
-        false,
-        effort,
-    )
-}
-
 #[test]
 fn grok_routes_every_request_of_a_session_to_its_cache() {
     let messages = [Message::system("sys"), Message::user("hi")];
     let headers = sent(
         endpoint("grok", "grok-4.6"),
-        &plain("grok-4.6", &messages, None),
+        &request("grok-4.6", &messages, None, None),
     );
     assert!(headers.contains("x-grok-conv-id: s\r\n"), "{headers}");
     assert!(headers.contains("\"prompt_cache_key\":\"s\""), "{headers}");
@@ -176,7 +103,7 @@ fn current_claude_models_bind_thinking_and_ask_for_the_full_output() {
     ] {
         let seen = sent(
             endpoint("anthropic", model),
-            &plain(model, &messages, effort),
+            &request(model, &messages, None, effort),
         );
         assert!(
             seen.contains("anthropic-beta: thinking-binding-controls-2026-08-01"),
@@ -194,12 +121,12 @@ fn current_claude_models_bind_thinking_and_ask_for_the_full_output() {
     }
     let haiku = sent(
         endpoint("anthropic", "claude-haiku-5-5"),
-        &plain("claude-haiku-5-5", &messages, Some(Effort::High)),
+        &request("claude-haiku-5-5", &messages, None, Some(Effort::High)),
     );
     assert!(haiku.contains("\"effort\":\"high\""), "{haiku}");
     let older = sent(
         endpoint("anthropic", "claude-opus-4-8"),
-        &plain("claude-opus-4-8", &messages, Some(Effort::High)),
+        &request("claude-opus-4-8", &messages, None, Some(Effort::High)),
     );
     assert!(
         !older.contains("anthropic-beta: thinking-binding"),
@@ -300,15 +227,7 @@ fn a_steer_after_a_tool_result_reaches_every_endpoint_after_that_result() {
         else {
             continue;
         };
-        let request = CompletionRequest::new(
-            "s".to_string(),
-            endpoint.model.clone(),
-            &messages,
-            &[],
-            Some(16_000),
-            false,
-            None,
-        );
+        let request = request(&endpoint.model, &messages, Some(16_000), None);
         let Ok(body) =
             Client::connect(&endpoint).and_then(|client| client.request_body(&request, false))
         else {
@@ -358,15 +277,10 @@ fn responses_login_uses_session_affinity() {
     let selection = crate::endpoint::login_endpoint("openai").unwrap();
     let client = Client::connect(&selection).unwrap();
     let messages = tool_round();
-    let request = CompletionRequest::new(
-        "session-7".to_string(),
-        selection.model.clone(),
-        &messages,
-        &[],
-        None,
-        false,
-        None,
-    );
+    let request = CompletionRequest {
+        session: "session-7".to_string(),
+        ..request(&selection.model, &messages, None, None)
+    };
     let body = client.request_body(&request, true).unwrap();
     assert_eq!(body["prompt_cache_key"], "session-7", "{body}");
     let headers = client.headers(Some("session-7"));

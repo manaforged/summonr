@@ -63,6 +63,7 @@ pub(crate) struct File {
     pub mcp: BTreeMap<String, summonr_types::mcp::Entry>,
     #[serde(default)]
     pub import_mcp: Option<bool>,
+    pub import_claude_settings: Option<bool>,
     pub models_catalog: Option<bool>,
     #[serde(default)]
     pub hooks: summonr_types::hooks::Hooks,
@@ -293,6 +294,7 @@ pub(crate) fn parse(path: &Path) -> Result<File> {
     doc::<Parsed>(path).load()
 }
 
+pub(crate) mod claude;
 mod decode;
 mod edit;
 use decode::{decode, validate, warn_unknown};

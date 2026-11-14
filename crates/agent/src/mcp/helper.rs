@@ -38,8 +38,9 @@ pub(super) async fn headers(
     .trimmed();
     if ran.code != Some(0) {
         return Err(Error::Config(format!(
-            "{what} exited with {:?}: {}",
-            ran.code, ran.stderr
+            "{what} {}: {}",
+            crate::process::exited(ran.code),
+            ran.stderr
         )));
     }
     let printed: BTreeMap<String, String> = serde_json::from_str(&ran.stdout).map_err(|error| {

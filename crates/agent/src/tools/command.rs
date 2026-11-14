@@ -18,7 +18,7 @@ pub use digest::test_result;
 pub(crate) use jobs::{kill_job, own_child, stop_child_jobs, stop_jobs};
 pub(crate) use native::native_read_args;
 use native_search::native_search_args;
-pub(crate) use proc::{ProcessGroup, command_env, stop_groups};
+pub(crate) use proc::{KEEP, ProcessGroup, command_env, stop_groups};
 use proc::{background_result, stop_job};
 use run::Wait;
 pub(in crate::tools) use run::passed;

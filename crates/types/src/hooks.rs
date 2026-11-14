@@ -297,6 +297,12 @@ impl Hooks {
     pub fn push(&mut self, event: HookEvent, hook: Hook) {
         self.lists[event.slot()].push(hook);
     }
+    /// Adds every hook in `other` after the hooks already set for its event.
+    pub fn extend(&mut self, other: &Self) {
+        for event in HookEvent::ALL {
+            self.lists[event.slot()].extend(other.of(event).iter().cloned());
+        }
+    }
     /// Marks these hooks as child agent `id` of agent type `name`, so its stop runs `subagent_stop`.
     pub fn set_subagent(&mut self, id: String, name: String) {
         self.subagent = Some(Subagent { id, name });
@@ -325,4 +331,5 @@ pub struct Call<'a> {
     pub transcript: &'a Path,
     pub permission: Permission,
     pub payload: &'a Value,
+    pub env: &'a [(String, String)],
 }

@@ -4,7 +4,7 @@ use std::path::Path;
 use super::*;
 
 fn fake_herdr() -> OsString {
-    crate::fixture_tests::path("herdr").into_os_string()
+    summonr_core::dirs::fixture("herdr").into_os_string()
 }
 
 fn target_in(dir: &Path, session: &str) -> Target {

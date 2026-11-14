@@ -154,11 +154,11 @@ fn an_overflow_names_the_context_cap() {
 
 #[test]
 fn a_client_lists_models_from_the_models_base_not_the_chat_base() {
-    let mut endpoint =
-        crate::endpoint::resolve(Some("deepseek"), None, crate::Requirement::Config).unwrap();
+    let mut endpoint = super::fixture::keyed(
+        crate::endpoint::resolve(Some("deepseek"), None, crate::Requirement::Config).unwrap(),
+    );
     endpoint.base_url = Some("https://api.perplexity.ai".to_string());
     endpoint.models_url = Some("https://api.perplexity.ai/v1".to_string());
-    endpoint.api_key = Some(summonr_core::secret::Secret::new("k"));
     let client = Client::connect(&endpoint).unwrap();
     assert_eq!(client.base.as_str(), "https://api.perplexity.ai");
     assert_eq!(client.models_base.as_str(), "https://api.perplexity.ai/v1");

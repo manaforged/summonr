@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use summonr_core::text::Frontmatter;
 
-use crate::plugins::Plugin;
 use crate::plugins::agents::Origin;
+use crate::plugins::{Plugin, Source};
 
 const DIR: &str = "output-styles";
 /// The plugin manifest key that replaces the default `output-styles/` folder.
@@ -123,13 +123,15 @@ pub(crate) fn named(styles: &[Style], typed: &str) -> Option<Pick> {
         .map(|style| Pick::Custom(style.clone()))
 }
 
-/// The `output_style` key: a trusted workspace `.summonr/config.toml` over `~/.summonr/config.toml`.
+/// The `output_style` key: a trusted workspace `.summonr/config.toml` over `~/.summonr/config.toml`, then imported Claude Code `outputStyle`.
 pub(crate) fn configured(workspace: &Path, trust: bool) -> Option<String> {
     let project = trust
         .then(|| crate::config::workspace(workspace).ok())
         .flatten()
         .and_then(|file| file.output_style.clone());
-    project.or_else(|| crate::config::file().ok()?.output_style.clone())
+    project
+        .or_else(|| crate::config::file().ok()?.output_style.clone())
+        .or_else(|| crate::config::claude::load(workspace, trust).style)
 }
 
 /// The style a new session in `workspace` starts with.
@@ -168,20 +170,16 @@ fn of_dir(dir: &Path, origin: &Origin) -> Vec<Style> {
 /// Each output style `plugin` ships, by its manifest paths or its `output-styles/` folder.
 pub(crate) fn of_plugin(plugin: &Plugin) -> Vec<Style> {
     let origin = Origin::Plugin(plugin.name.clone());
-    if plugin.declared(MANIFEST_KEY).is_none() {
-        return of_dir(&plugin.dir.join(DIR), &origin);
-    }
-    plugin
-        .files(MANIFEST_KEY)
-        .iter()
-        .flat_map(|path| {
-            if path.is_dir() {
-                of_dir(path, &origin)
-            } else {
-                read(path, origin.clone()).into_iter().collect()
-            }
-        })
-        .collect()
+    plugin.components(
+        MANIFEST_KEY,
+        DIR,
+        |dir| of_dir(dir, &origin),
+        |source| match source {
+            Source::File(path) if path.is_dir() => of_dir(&path, &origin),
+            Source::File(path) => read(&path, origin.clone()).into_iter().collect(),
+            Source::Inline(_) | Source::Outside(_) => Vec::new(),
+        },
+    )
 }
 
 fn read(path: &Path, origin: Origin) -> Option<Style> {

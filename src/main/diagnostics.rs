@@ -169,7 +169,7 @@ pub(super) fn print_logs(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
     Ok(0)
 }
 
-pub(super) fn doctor(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
+pub(super) fn doctor(exclude: Option<&Path>, trust: bool) -> summonr_agent::Result<i32> {
     let home = summonr_agent::summonr_home()?;
     let dir = home.join("logs");
     let runs = runs(&dir, exclude)?;
@@ -184,6 +184,19 @@ pub(super) fn doctor(exclude: Option<&Path>) -> summonr_agent::Result<i32> {
     println!("home\t{}", home.display());
     println!("logs\t{}", dir.display());
     println!("incomplete runs\t{incomplete}");
+    let claude = summonr_agent::claude_settings(&std::env::current_dir()?, trust);
+    let shown: Vec<String> = claude
+        .iter()
+        .map(|path| summonr_agent::tilde(path))
+        .collect();
+    println!(
+        "claude settings\t{}",
+        if shown.is_empty() {
+            "none".to_string()
+        } else {
+            shown.join(", ")
+        }
+    );
     Ok(i32::from(incomplete > 0))
 }
 

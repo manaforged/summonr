@@ -108,6 +108,17 @@ Set `output_style = "Diagrams first"` in `~/.summonr/config.toml`, or in the wor
 
 A new session puts the style in its system prompt, before the `<cwd>` line. A switch during a session leaves the system prompt alone, so the cached prefix stays valid, and sends the new style's instructions at the top of your next message. `/clear` and compaction rewrite the history, and then the system prompt takes the new style. Child tasks run without the style.
 
+## Import Claude Code settings
+
+Set `import_claude_settings = true` in `~/.summonr/config.toml` to read Claude Code's settings files. summonr reads `~/.claude/settings.json` in every session, and `.claude/settings.json` and `.claude/settings.local.json` at the workspace root only when the workspace is trusted. It reads no managed settings. summonr maps four keys:
+
+- `hooks`: each command handler on an event summonr has runs as a `dialect = "claude"` hook, after your `[hooks]` and plugin hooks.
+- `permissions.deny` and `permissions.ask`: `Bash(cmd)`, `Bash(cmd *)`, and `Bash(cmd:*)` become the policy pattern `cmd`, and `mcp__server`, `mcp__server__*`, and `mcp__server__tool` become a deny on `server__*` or `server__tool`. A summonr pattern matches any command that contains it, so it blocks at least what the Claude Code rule blocks. Deny rules apply under `--strict`, the same as `policy.toml`.
+- `env`: tool commands and hooks get these variables. Your endpoint's `env` wins, and a variable summonr sets itself, such as `PATH`, `HOME`, or `SUMMONR_HOME`, is skipped.
+- `outputStyle`: the style a session starts with when no `output_style` key is set.
+
+summonr never imports `permissions.allow` or `permissions.defaultMode`, because neither has a summonr rule that only narrows what runs. When a file is not valid JSON, or a rule, hook event, or handler has no summonr equivalent, summonr prints a note at session start and skips that item; the session still starts. `summonr doctor` lists the settings files it reads. The [reference](reference.md#claude-code-settings) has the precedence and the keys it does not read.
+
 ## Add a CLI
 
 Put the binary on `PATH` or under `~/.summonr/bin/<name>/`. The model runs it with `run_command`. Policy and the danger prompt still apply. summonr doesn't put a workspace `.summonr/bin` on `PATH` until you approve it, the same way as `.mcp.json`.

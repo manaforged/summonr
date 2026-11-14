@@ -99,6 +99,7 @@ pub mod workflow;
 
 pub use command::{SlashCommand, command_specs, parse_command, table};
 pub use config::check as check_config;
+pub use config::claude::files as claude_settings;
 pub use config::tilde;
 pub use durable::store::lock as lock_file;
 pub use durable::work::{WorkKind, WorkProgress};
@@ -147,7 +148,3 @@ pub fn revision() -> &'static str {
 #[cfg(test)]
 #[path = "fuzz_tests.rs"]
 pub(crate) mod fuzz_tests;
-
-#[cfg(all(test, unix))]
-#[path = "fixture_tests.rs"]
-pub(crate) mod fixture_tests;

@@ -75,7 +75,7 @@ impl Home {
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        let shim = stub::link("git", &bin.join("git"));
+        let shim = summonr_core::dirs::link_fixture("git", &bin.join("git"));
         let calls = stub::state(&shim, "calls");
         if forward {
             std::fs::write(

@@ -34,6 +34,8 @@ mod search_index;
 mod secrets;
 #[path = "mcp/session.rs"]
 mod session;
+#[path = "mcp/settings.rs"]
+mod settings;
 mod support;
 #[path = "mcp/tools.rs"]
 mod tools;
@@ -186,6 +188,10 @@ fn main() {
         policy::a_zero_timeout_is_refused,
         policy::a_local_claude_server_replaces_the_project_one_whole,
         policy::a_websocket_server_is_skipped_and_named,
+        #[cfg(unix)]
+        settings::claude_settings_hooks_and_env_load_only_when_imported,
+        settings::a_project_deny_rule_holds_only_in_a_trusted_workspace,
+        settings::a_malformed_settings_file_is_a_note_and_the_session_runs,
         #[cfg(unix)]
         policy::an_unset_variable_without_a_default_reaches_the_server_as_written,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

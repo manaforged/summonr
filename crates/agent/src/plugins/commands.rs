@@ -188,20 +188,19 @@ fn bare(all: &[Command], name: &str) -> bool {
 /// The commands `plugin` ships: the manifest `commands` key when set, else every file under `commands/`.
 pub(super) fn load(plugin: &Plugin) -> Vec<Command> {
     let build = |name: String, front: Frontmatter<'_>| Command::new(plugin, name, &front);
-    let mut commands: Vec<Command> = match plugin.declared(KEY) {
-        Some(sources) => sources
-            .into_iter()
-            .flat_map(|source| match source {
-                Source::File(path) => listed(&path, build),
-                Source::Inline(Value::Object(map)) => map
-                    .iter()
-                    .filter_map(|(name, entry)| mapped(plugin, name, entry))
-                    .collect(),
-                Source::Inline(_) | Source::Outside(_) => Vec::new(),
-            })
-            .collect(),
-        None => skills::markdown_tree(&plugin.dir.join(DIR), build),
-    };
+    let mut commands: Vec<Command> = plugin.components(
+        KEY,
+        DIR,
+        |dir| skills::markdown_tree(dir, build),
+        |source| match source {
+            Source::File(path) => listed(&path, build),
+            Source::Inline(Value::Object(map)) => map
+                .iter()
+                .filter_map(|(name, entry)| mapped(plugin, name, entry))
+                .collect(),
+            Source::Inline(_) | Source::Outside(_) => Vec::new(),
+        },
+    );
     commands.sort_by(|left, right| left.name.cmp(&right.name));
     commands.dedup_by(|left, right| left.name == right.name);
     commands

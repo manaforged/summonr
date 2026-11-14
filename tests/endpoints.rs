@@ -187,7 +187,7 @@ fn a_custom_server_without_a_listing_is_asked_once_then_read_from_the_cache() {
 fn listing_never_starts_claude_code() {
     let home = Home::new();
     home.config("models_catalog = false\n[provider.anthropic]\naccess = \"plan\"\n");
-    let shim = stub::link("claude/started", &home.path().join("bin/claude"));
+    let shim = summonr_core::dirs::link_fixture("claude/started", &home.path().join("bin/claude"));
     let marker = stub::state(&shim, "started");
     let home = home.offline();
     for args in [&[][..], &["--all"]] {

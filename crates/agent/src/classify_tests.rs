@@ -1,5 +1,6 @@
 use super::*;
 use crate::endpoint::Wire;
+use crate::provider::fixture::keyed;
 
 const LIVE: &str = r#"{
   "model": "typesafe/jev-1.13-20260917",
@@ -23,12 +24,12 @@ const LIVE: &str = r#"{
 }"#;
 
 pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
-    Endpoint {
+    keyed(Endpoint {
         name: name.to_string(),
         model: "jev-latest".to_string(),
         base_url: Some("https://api.typesafe.ai/v1/systemone".to_string()),
         models_url: None,
-        api_key: Some(summonr_core::secret::Secret::new("k")),
+        api_key: None,
         source: None,
         reasoning: crate::provider::Reasoning::default(),
         oauth: None,
@@ -49,7 +50,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         assistant_after_tool: false,
         cache_ttl: crate::limits::limits().cache_ttl,
         cache_marks: false,
-    }
+    })
 }
 
 #[test]

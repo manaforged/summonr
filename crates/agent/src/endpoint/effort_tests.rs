@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use super::keys::builtin;
-use crate::provider::fixture::{keyed, request_body};
+use crate::provider::fixture::{keyed, request, request_body};
 use crate::provider::{Client, CompletionRequest, Effort, Message};
 
 fn body(name: &str, model: &str, effort: Option<Effort>) -> Value {
@@ -185,15 +185,7 @@ fn replayed_through(name: &str, model: &str, proxy: Option<&str>) -> Value {
         assistant,
         Message::user("go on".to_string()),
     ];
-    let request = CompletionRequest::new(
-        "s".to_string(),
-        model.to_string(),
-        &messages,
-        &[],
-        Some(16_000),
-        false,
-        None,
-    );
+    let request = request(model, &messages, Some(16_000), None);
     let body = client.request_body(&request, false).unwrap();
     body["messages"]
         .as_array()
@@ -262,15 +254,7 @@ fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
         ..Message::tool("t1", "board.png is attached")
     };
     let messages = [Message::user("look".to_string()), assistant, result];
-    let request = CompletionRequest::new(
-        "s".to_string(),
-        endpoint.model.clone(),
-        &messages,
-        &[],
-        Some(16_000),
-        false,
-        None,
-    );
+    let request = request(&endpoint.model, &messages, Some(16_000), None);
     let body = client.request_body(&request, false).unwrap();
     let sent = body["messages"].as_array().unwrap();
     let tool = sent.iter().find(|m| m["role"] == "tool").unwrap();
@@ -298,15 +282,10 @@ fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
                 .unwrap(),
         },
     }];
-    let request = CompletionRequest::new(
-        "s".to_string(),
-        endpoint.model.clone(),
-        &messages,
-        &tools,
-        Some(16_000),
-        false,
-        Some(Effort::High),
-    );
+    let request = CompletionRequest {
+        tools: &tools,
+        ..request(&endpoint.model, &messages, Some(16_000), Some(Effort::High))
+    };
     let sent = client.request_body(&request, true).unwrap();
     assert_eq!(
         sent["thinking"],

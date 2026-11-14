@@ -1,20 +1,19 @@
 use serde_json::json;
 
 use super::Message;
-use super::cache_tests::{body, plain, sent};
-use super::fixture::endpoint;
+use super::fixture::{body, endpoint, request, sent};
 
 #[test]
 fn each_host_gets_the_session_cache_hint_its_docs_name() {
     let messages = [Message::system("sys"), Message::user("hi")];
     let openrouter = sent(
         endpoint("openrouter", "openai/gpt-4o"),
-        &plain("openai/gpt-4o", &messages, None),
+        &request("openai/gpt-4o", &messages, None, None),
     );
     assert!(openrouter.contains("x-session-id: s\r\n"), "{openrouter}");
     let fireworks = sent(
         endpoint("fireworks", "accounts/fireworks/models/kimi-k3"),
-        &plain("accounts/fireworks/models/kimi-k3", &messages, None),
+        &request("accounts/fireworks/models/kimi-k3", &messages, None, None),
     );
     assert!(
         fireworks.contains("x-session-affinity: s\r\n"),

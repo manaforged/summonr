@@ -93,6 +93,15 @@ impl Policy {
         }
     }
 
+    /// Adds deny and ask patterns from another source; it can only narrow what runs.
+    pub(crate) fn narrow(&mut self, deny: Vec<String>, ask: Vec<String>) {
+        self.overlay(File {
+            deny,
+            ask,
+            ..File::default()
+        });
+    }
+
     pub(crate) fn allow_path(&mut self, path: PathBuf) {
         let resolved = path.canonicalize().unwrap_or(path);
         if !self.roots.contains(&resolved) {

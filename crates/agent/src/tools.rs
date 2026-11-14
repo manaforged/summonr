@@ -51,6 +51,7 @@ pub(crate) struct ToolRegistry {
     search: Option<Search>,
     browser: Option<crate::browser::Browser>,
     env: Vec<(String, String)>,
+    imported: Vec<(String, String)>,
     background: bool,
     language: bool,
     skills: bool,
@@ -107,6 +108,7 @@ impl ToolRegistry {
             search,
             browser: None,
             env: Vec::new(),
+            imported: Vec::new(),
             background: true,
             language: true,
             skills: true,
@@ -160,6 +162,7 @@ impl ToolRegistry {
     pub(crate) fn child_at(&self, workspace: &Path, session: &str) -> Result<Self> {
         let mut child = Self::with_policy_and_search(workspace, self.policy.clone(), None)?;
         child.env.clone_from(&self.env);
+        child.imported.clone_from(&self.imported);
         child.background = self.background;
         child.language = self.language;
         child.skills = self.skills;

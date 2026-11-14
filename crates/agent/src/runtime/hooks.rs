@@ -64,6 +64,7 @@ impl<P: Provider> Loop<P> {
             transcript,
             permission,
             payload: &payload,
+            env: self.tools.imported_env(),
         };
         for hook in hooks {
             let heard = crate::hooks::run(hook, &call).await;

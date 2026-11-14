@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::{Plugin, enabled};
+use super::{Plugin, Source, enabled};
 use crate::skills;
 use summonr_core::text::Frontmatter;
 
@@ -227,18 +227,20 @@ pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
         let name = front.get("name").unwrap_or(stem);
         agent(Origin::Plugin(scope), name, &front, body)
     };
-    if plugin.declared(DIR).is_none() {
-        return skills::markdown_tree(&plugin.dir.join(DIR), build);
-    }
-    plugin
-        .files(DIR)
-        .iter()
-        .filter(|path| skills::is_markdown(path))
-        .filter_map(|path| {
-            let stem = path.file_stem()?.to_str()?.to_string();
-            skills::markdown_file(path, stem, build)
-        })
-        .collect()
+    plugin.components(
+        DIR,
+        DIR,
+        |dir| skills::markdown_tree(dir, build),
+        |source| match source {
+            Source::File(path) if skills::is_markdown(&path) => path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| skills::markdown_file(&path, stem.to_string(), build))
+                .into_iter()
+                .collect(),
+            Source::File(_) | Source::Inline(_) | Source::Outside(_) => Vec::new(),
+        },
+    )
 }
 
 fn of_dir(dir: &Path, origin: &Origin) -> Vec<Agent> {

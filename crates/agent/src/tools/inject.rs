@@ -12,6 +12,22 @@ impl ToolRegistry {
         self.trust = trust;
     }
 
+    /// Adds the deny and ask rules and the environment that imported Claude Code settings give.
+    pub(crate) fn import_claude(&mut self, settings: crate::config::claude::Settings) {
+        self.policy.narrow(settings.deny, settings.ask);
+        self.imported = settings.env;
+    }
+
+    /// The environment imported Claude Code settings give tool commands and hooks.
+    pub(crate) fn imported_env(&self) -> &[(String, String)] {
+        &self.imported
+    }
+
+    /// The variables a tool command gets: imported settings first, so the endpoint's own win.
+    pub(crate) fn command_vars(&self) -> Vec<(String, String)> {
+        self.imported.iter().chain(&self.env).cloned().collect()
+    }
+
     /// `body` with each `@path` file attached through the read policy and each `!` block replaced by its command's output; any refusal or failure stops the whole invocation.
     pub(crate) async fn inject(&self, body: &Body) -> Result<UserInput> {
         let written: Vec<&str> = body

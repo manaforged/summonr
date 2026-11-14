@@ -17,7 +17,8 @@ pub(crate) mod lsp;
 pub mod manage;
 pub mod market;
 
-pub(crate) use expand::{USER_CONFIG, Unset, Vars, expand, hook_env, scan};
+pub(crate) use expand::{HOOK_VARS, USER_CONFIG, Unset, Vars, expand, hook_env, scan};
+pub(crate) use hooks::{claude as claude_hooks, unsupported as unsupported_hooks};
 pub(crate) use manage::off::{unknown_off, warn_unknown_off};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
@@ -103,6 +104,20 @@ impl Plugin {
         )
     }
 
+    /// Component `key`: `folder` reads the `default_dir` folder unless the manifest declares `key`, whose entries `entry` reads instead.
+    pub(crate) fn components<T>(
+        &self,
+        key: &str,
+        default_dir: &str,
+        folder: impl Fn(&Path) -> Vec<T>,
+        entry: impl Fn(Source) -> Vec<T>,
+    ) -> Vec<T> {
+        match self.declared(key) {
+            None => folder(&self.dir.join(default_dir)),
+            Some(sources) => sources.into_iter().flat_map(entry).collect(),
+        }
+    }
+
     pub(crate) fn files(&self, key: &str) -> Vec<PathBuf> {
         self.declared(key)
             .into_iter()
@@ -134,10 +149,8 @@ impl Plugin {
     pub(super) fn skipped_mods(&self) -> Vec<String> {
         let docs = self.hook_docs();
         docs.iter()
-            .flat_map(hooks::handlers)
-            .filter(|(_, _, handler)| handler["type"] != "command")
-            .map(|(event, _, handler)| {
-                let kind = handler["type"].as_str().unwrap_or("hook");
+            .flat_map(hooks::skipped)
+            .map(|(event, kind)| {
                 format!(
                     "skipped\t{} {kind} (summonr runs command hooks only)",
                     event.claude()

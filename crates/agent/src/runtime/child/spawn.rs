@@ -110,6 +110,7 @@ impl<P: Provider> Loop<P> {
             None,
         )?;
         child.tools = self.child_tools(agent.as_ref(), &workspace, &child)?;
+        child.hooks = self.hooks.clone();
         child.set_subagent(args.agent.as_deref().unwrap_or(args.access.name()));
         if let Some(set) = self.tools.skill_set().cloned() {
             child.choose_skills(set)?;

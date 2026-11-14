@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::provider::Client;
 
 fn endpoint(dir: &std::path::Path, mode: &str) -> crate::Endpoint {
-    let program = crate::fixture_tests::link("claude/auth", &dir.join("claude"));
+    let program = summonr_core::dirs::link_fixture("claude/auth", &dir.join("claude"));
     std::fs::write(dir.join("claude.mode"), mode).expect("set the fixture login behavior");
     std::fs::write(
         dir.join("claude.status"),

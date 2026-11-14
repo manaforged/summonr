@@ -1,5 +1,4 @@
 use serde_json::Value;
-use std::path::Path;
 
 use crate::process::Cap;
 
@@ -15,19 +14,16 @@ pub(crate) use summonr_types::hooks::{
 #[must_use]
 pub(crate) fn with_plugins(mut hooks: Hooks, plugins: &[crate::plugins::Plugin]) -> Hooks {
     for plugin in plugins {
-        let extra = plugin.hooks();
-        for event in HookEvent::ALL {
-            for hook in extra.of(event) {
-                hooks.push(event, hook.clone());
-            }
-        }
+        hooks.extend(&plugin.hooks());
     }
     hooks
 }
 
-async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome, String> {
+async fn execute(hook: &Hook, call: &Call<'_>, body: &Value) -> Result<Outcome, String> {
+    let workspace = call.workspace;
     let spec = crate::process::shell(&hook.command, workspace)
         .map_err(|error| error.to_string())?
+        .envs(call.env.iter().cloned())
         .envs(crate::plugins::hook_env(workspace, hook.root.as_deref()))
         .envs(summonr_core::dirs::summonr_home().map(|home| (summonr_core::dirs::HOME_ENV, home)));
     let process = crate::process::start(spec)
@@ -50,7 +46,7 @@ pub(crate) async fn run(hook: &Hook, call: &Call<'_>) -> Verdict {
         Dialect::Summonr => call.payload.clone(),
         Dialect::Claude => hook.claude_payload(call),
     };
-    match execute(hook, call.workspace, &body).await {
+    match execute(hook, call, &body).await {
         Ok(outcome) => judge(hook.dialect, call.event, &outcome),
         Err(error) => failed(hook.dialect, call.event, error),
     }

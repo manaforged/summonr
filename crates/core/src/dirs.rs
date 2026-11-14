@@ -86,3 +86,19 @@ pub fn user_home() -> Option<PathBuf> {
         .clone(),
     )
 }
+
+/// The test fixture `name` under the repository's `tests/fixtures`.
+#[cfg(any(test, feature = "test-home"))]
+#[must_use]
+pub fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures")
+        .join(name)
+}
+
+/// Symlinks the test fixture `name` at `at` and returns `at`.
+#[cfg(all(unix, any(test, feature = "test-home")))]
+pub fn link_fixture(name: &str, at: &Path) -> PathBuf {
+    std::os::unix::fs::symlink(fixture(name), at).unwrap();
+    at.to_path_buf()
+}

@@ -10,6 +10,9 @@ use summonr_core::error::Result;
 
 pub type Secret = Zeroizing<String>;
 
+/// The askpass variables summonr sets for commands, besides `SUMMONR_ASKPASS` and `PATH`.
+pub(crate) const VARS: [&str; 3] = ["SUDO_ASKPASS", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE"];
+
 pub struct Request {
     pub prompt: String,
     reply: SyncSender<Option<Secret>>,
@@ -163,10 +166,11 @@ fn serve(mut stream: std::os::unix::net::UnixStream, send: &impl Fn(Request)) {
 pub fn env(path: &str) -> Vec<(String, String)> {
     BROKER.get().map_or_else(Vec::new, |broker| {
         let helper = broker.helper.display().to_string();
+        let [sudo, ssh, require] = VARS;
         vec![
-            ("SUDO_ASKPASS".to_string(), helper.clone()),
-            ("SSH_ASKPASS".to_string(), helper),
-            ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
+            (sudo.to_string(), helper.clone()),
+            (ssh.to_string(), helper),
+            (require.to_string(), "force".to_string()),
             (
                 "SUMMONR_ASKPASS".to_string(),
                 broker.socket.display().to_string(),

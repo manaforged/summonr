@@ -214,6 +214,7 @@ Top-level keys in `~/.summonr/config.toml`:
 | `splash` | `true`, `false` (default) | Show the decorative startup screen. |
 | `output_style` | A style name, matched exactly; default none | The [output style](extending.md#add-an-output-style) new sessions start with. A trusted workspace `.summonr/config.toml` overrides it. A plugin style with `force-for-plugin: true` overrides both. |
 | `usage` | `off = ["NAME", …]`, `[[usage.plan]]` | Plans for `summonr endpoint usage`: `off` skips plans by name. Each `[[usage.plan]]` adds one with `name`, `shape` (`codex`, `zai`, `antigravity`, or `windows` for a list of `{group, minutes, used, resets}`), and a source: `command = [...]` that prints JSON (with `stdin = [lines]` and `reply = "/json/pointer"`, summonr writes the lines and takes the first printed line that has the pointer); `file` with JSON; or `url` with `via` (a URL prefix of a set-up endpoint's `base_url` or OAuth `token_url`, whose login is used); or `url` with `token`. `token` and each `headers` value is text, `{ file, pointer }`, or `{ command, pointer }` (a JSON pointer into the file or the output). `installed = "PROGRAM"` and `os = "macos"` limit where a plan applies. Settings → Usage shows the saved readings and reads again every 30 minutes while it shows; one read runs at a time. `every_secs = N` sets the interval; `every_secs = 0` reads only on `summonr endpoint usage`. |
+| `import_claude_settings` | `true`, `false` (default) | Read Claude Code's `settings.json` files for hooks, deny and ask rules, `env`, and `outputStyle`; see [Claude Code settings](#claude-code-settings). |
 | `models_catalog` | `true` (default), `false` | Fetch the models.dev catalog for `summonr endpoint list --check` and `/model`; `false` keeps every request on your own endpoints. |
 | `animations` | `true` (default), `false` | Animate the interface. |
 | `spinner` | `dots` (default), `symbols` | Working indicator style; also selectable in settings. |
@@ -1049,6 +1050,28 @@ Both dialects read one JSON object on stdout:
 Plain stdout from `SessionStart` and `UserPromptSubmit` goes to the model as context, and from `PreCompact` it adds to the summary instructions. A `stop` or `subagent_stop` hook can keep the turn going at most 8 times in a row; a turn that calls a tool resets the count. A child agent runs `subagent_stop` and not `stop`. `notification` runs when the prompt opens; summonr does not wait for you to be away from the keyboard, and has no `idle_prompt` notification. summonr does not run `if`, `async`, `onFailure`, or non-command handler types.
 
 Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR` in its environment. A plugin hook also gets `CLAUDE_PLUGIN_ROOT` and `SUMMONR_PLUGIN_ROOT`, and `CLAUDE_PLUGIN_DATA` and `SUMMONR_PLUGIN_DATA`.
+
+### Claude Code settings
+
+With `import_claude_settings = true`, summonr reads these files, lowest precedence first:
+
+| Layer | File | Read when |
+| --- | --- | --- |
+| User | `~/.claude/settings.json` | Every session |
+| Project | `<workspace>/.claude/settings.json` | The workspace is trusted |
+| Local | `<workspace>/.claude/settings.local.json` | The workspace is trusted |
+
+A higher layer's `env` value or `outputStyle` replaces a lower one. `hooks`, `permissions.deny`, and `permissions.ask` add together across layers, so a deny from any layer stays a deny. `--no-trust` reads only the user file. summonr reads the project and local files at the workspace root, not at the repository root.
+
+| Key | In summonr |
+| --- | --- |
+| `hooks` | Command handlers on the events in the [Hooks](#hooks) table run in the `claude` dialect, after `[hooks]` and plugin hooks, in the lead and in child sessions. Other events and handler types are named in a note. |
+| `permissions.deny` | `Bash(cmd)`, `Bash(cmd *)`, and `Bash(cmd:*)` add `cmd` to the deny list. `mcp__server` and `mcp__server__*` add `server__*`; `mcp__server__tool` and `mcp__server__prefix*` add that alias. The deny list applies under `--strict`. |
+| `permissions.ask` | The `Bash` forms above add `cmd` to the `ask` list. |
+| `env` | Variables for `run_command`, `monitor`, and hooks. The endpoint `env` wins. Skipped: `SUMMONR_*`, `XDG_*`, the variables summonr passes to every command (`PATH`, `HOME`, `TMPDIR`, `SHELL`, `CARGO_HOME`, and the Windows profile variables), the askpass variables, `CLAUDE_PROJECT_DIR`, the plugin root and data variables, `CLAUDE_CONFIG_DIR`, and `CLAUDE_CODE_TMPDIR`. |
+| `outputStyle` | The starting style when neither `.summonr/config.toml` sets `output_style`. |
+
+Not imported, each named in a note: `permissions.allow`, because a summonr allow list blocks every command not on it; `permissions.defaultMode` other than `default` or `manual`; `Read`, `Edit`, `Write`, `WebFetch`, `Agent`, and `Skill` rules; a bare `Bash` or a `*` before the end of a `Bash` rule; tool-name globs such as `mcp__*`; and parameter rules. Not read: every other key, including `model`, `apiKeyHelper`, `statusLine`, `enabledPlugins`, `disableAllHooks`, `permissions.additionalDirectories`, managed settings, and `--settings`. A file that is not valid JSON is skipped with a note. `summonr doctor` prints the files read on its `claude settings` line.
 
 Intent permissions: a `pre_tool` hook that exits nonzero blocks the call. Keep argv policy in `policy.toml`; do not add a second classifier unless it is a compiled module row.
 

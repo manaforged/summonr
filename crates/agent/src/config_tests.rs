@@ -306,3 +306,64 @@ fn a_misspelled_limit_is_named_as_an_unknown_key() {
     let file = parse(&path).unwrap();
     assert_eq!(unknown(&file), ["limits.retry_limitt"]);
 }
+
+#[test]
+fn claude_deny_and_ask_rules_map_only_where_summonr_matches_at_least_as_much() {
+    use super::claude::{Rule, rule};
+    let command = |text: &str| Some(Rule::Command(text.to_string()));
+    let tool = |text: &str| Some(Rule::Tool(text.to_string()));
+    assert_eq!(rule("Bash(git commit:*)"), command("git commit"));
+    assert_eq!(rule("Bash(rm *)"), command("rm"));
+    assert_eq!(rule("Bash(npm run build)"), command("npm run build"));
+    assert_eq!(rule("mcp__github"), tool("github__*"));
+    assert_eq!(rule("mcp__github__get_*"), tool("github__get_*"));
+    assert_eq!(
+        rule("mcp__github__create_issue"),
+        tool("github__create_issue")
+    );
+    for refused in [
+        "Bash",
+        "Bash(*)",
+        "Bash(git * main)",
+        "Read(./.env)",
+        "Edit(/src/**)",
+        "WebFetch(domain:example.com)",
+        "mcp__*",
+        "mcp__github__create_issue(title:x)",
+    ] {
+        assert_eq!(rule(refused), None, "{refused}");
+    }
+}
+
+#[test]
+fn claude_settings_never_widen_and_keep_summonr_variables() {
+    let mut settings = super::claude::Settings::default();
+    settings.merge(&serde_json::json!({
+        "permissions": {
+            "allow": ["Bash(curl *)"],
+            "deny": ["Bash(rm:*)", "Read(./.env)"],
+            "ask": ["Bash(git commit *)", "mcp__github"],
+            "defaultMode": "bypassPermissions"
+        },
+        "env": {"TEAM": "one", "PATH": "/elsewhere", "SUMMONR_HOME": "/elsewhere"},
+        "outputStyle": "Explanatory",
+        "hooks": {"Elicitation": [{"hooks": [{"type": "command", "command": "true"}]}]}
+    }));
+    settings.merge(&serde_json::json!({"env": {"TEAM": "two"}}));
+    assert_eq!(settings.deny, ["rm"]);
+    assert_eq!(settings.ask, ["git commit"]);
+    assert_eq!(settings.env, [("TEAM".to_string(), "two".to_string())]);
+    assert_eq!(settings.style.as_deref(), Some("Explanatory"));
+    let notes = settings.notes.join("\n");
+    for named in [
+        "permissions.allow",
+        "Read(./.env)",
+        "mcp__github",
+        "bypassPermissions",
+        "env `PATH`",
+        "env `SUMMONR_HOME`",
+        "hook event `Elicitation`",
+    ] {
+        assert!(notes.contains(named), "{named}: {notes}");
+    }
+}

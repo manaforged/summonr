@@ -7,6 +7,8 @@ use super::{Plugin, data_dir};
 const ROOTS: [&str; 2] = ["CLAUDE_PLUGIN_ROOT", "SUMMONR_PLUGIN_ROOT"];
 const DATA: [&str; 2] = ["CLAUDE_PLUGIN_DATA", "SUMMONR_PLUGIN_DATA"];
 const PROJECT: &str = "CLAUDE_PROJECT_DIR";
+/// The variables summonr sets for every hook it runs.
+pub(crate) const HOOK_VARS: [&str; 5] = [PROJECT, ROOTS[0], ROOTS[1], DATA[0], DATA[1]];
 const SKILL_DIR: &str = "CLAUDE_SKILL_DIR";
 const SESSION: &str = "CLAUDE_SESSION_ID";
 pub(crate) const USER_CONFIG: &str = "${user_config.";

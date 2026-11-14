@@ -16,9 +16,13 @@ impl<P: Provider> Loop<P> {
         self.context_sample = None;
     }
 
-    /// Lets skills and commands this workspace defines run their `!` blocks; set from `--trust`.
+    /// Lets skills and commands this workspace defines run their `!` blocks and imports Claude Code settings; set from `--trust`.
     pub fn set_trust(&mut self, trust: bool) {
         self.tools.set_trust(trust);
+        let claude = crate::config::claude::load(&self.workspace, trust);
+        claude.report();
+        self.hooks.extend(&claude.hooks);
+        self.tools.import_claude(claude);
     }
 
     pub(crate) fn set_compact_tokens(&mut self, tokens: Option<u32>) {

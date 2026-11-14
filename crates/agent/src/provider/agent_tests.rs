@@ -32,7 +32,7 @@ pub(super) fn ask<'a>(
 pub(super) const PLAIN: &str = "claude/plain";
 
 pub(super) fn client_at(dir: &std::path::Path, fixture: &str) -> Client {
-    let stub = crate::fixture_tests::link(fixture, &dir.join("claude"));
+    let stub = summonr_core::dirs::link_fixture(fixture, &dir.join("claude"));
     let mut selection = crate::endpoint::resolve(
         Some("claude"),
         Some("claude-opus-5-5"),

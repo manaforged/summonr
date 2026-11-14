@@ -17,7 +17,7 @@ fn with_fake_gh(test: &str) -> Option<PathBuf> {
     let fake = tempfile::tempdir().unwrap();
     let bin = fake.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
-    crate::fixture_tests::link("gh", &bin.join("gh"));
+    summonr_core::dirs::link_fixture("gh", &bin.join("gh"));
     let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
         &std::env::var_os("PATH").unwrap_or_default(),
     )))

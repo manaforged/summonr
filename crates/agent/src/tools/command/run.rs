@@ -61,7 +61,7 @@ impl ToolRegistry {
         let script = record_path
             .as_ref()
             .map_or(command, |(_, script)| script.as_str());
-        let mut env = self.env.clone();
+        let mut env = self.command_vars();
         if let Some(session) = self.session_id() {
             env.push((crate::session::SESSION_ENV.to_string(), session.clone()));
             env.push((crate::session::PARENT_ENV.to_string(), session));

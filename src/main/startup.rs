@@ -99,7 +99,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
     match verb {
         Verb::Doctor if args.logs => diagnostics::print_logs(path),
         Verb::Doctor if args.report => diagnostics::report(path),
-        Verb::Doctor => diagnostics::doctor(path),
+        Verb::Doctor => diagnostics::doctor(path, args.trust),
         Verb::Mail(command) => {
             in_cwd(&|cwd| summonr_agent::mail::cli::run(command, args.json, cwd))
         }

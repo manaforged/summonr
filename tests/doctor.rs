@@ -36,3 +36,28 @@ fn doctor_report_shows_the_last_crash_with_home_paths_hidden() {
         "the report leaks the home path:\n{text}"
     );
 }
+
+#[test]
+fn doctor_names_the_claude_settings_files_only_when_imported() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(work.path().join(".claude")).unwrap();
+    std::fs::write(work.path().join(".claude/settings.json"), "{}").unwrap();
+    for (config, shown) in [
+        ("", "claude settings\tnone"),
+        ("import_claude_settings = true\n", ".claude/settings.json"),
+    ] {
+        std::fs::write(home.path().join("config.toml"), config).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
+            .arg("doctor")
+            .current_dir(work.path())
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .env("SUMMONR_HOME", home.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains(shown), "{shown}: {text}");
+    }
+}

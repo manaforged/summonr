@@ -165,10 +165,17 @@ where
 
     async fn load(&mut self, params: &Value) -> Reply {
         let id = session_id(params);
-        if self.sessions.contains_key(id) {
-            return Err((codes::INVALID, format!("session {id} is already open")));
-        }
         let path = crate::session::resolve_id(id).map_err(|_unknown| missing(id))?;
+        if let Some(open) = self
+            .sessions
+            .iter()
+            .find(|(_, seat)| seat.agent.session_path() == path)
+        {
+            return Err((
+                codes::INVALID,
+                format!("session {} is already open", open.0),
+            ));
+        }
         self.open(params, "session/load", Some(path)).await
     }
 

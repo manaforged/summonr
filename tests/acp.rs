@@ -513,6 +513,17 @@ fn loading_an_unknown_session_is_resource_not_found() {
     assert_eq!(reply["error"]["code"], -32002, "{reply}");
 }
 
+#[test]
+fn loading_an_open_session_by_its_prefix_is_invalid_params() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    let id = editor.session(home.path());
+    let prefix = id.get(..8).expect("a session id is longer than 8 bytes");
+    let reply = editor.load(4, prefix, home.path());
+    assert_eq!(reply["error"]["code"], -32602, "{reply}");
+}
+
 const PROBE: &str = r##"while IFS= read -r line; do
   id=$(printf %s "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
   [ -n "$id" ] || continue

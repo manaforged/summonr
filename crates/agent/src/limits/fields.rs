@@ -142,6 +142,7 @@ table! {
     speed_window_secs: u64 => speed_window(Duration::from_secs),
     reader_window_ms: u64 => reader_window(Duration::from_millis),
     stamp_settle_ms: u64 => stamp_settle(Duration::from_millis),
+    thread_keep_alive_ms: u64 => thread_keep_alive(Duration::from_millis),
     frame_window_secs: u64 => frame_window(Duration::from_secs),
     animation_ms: u64 => animation(Duration::from_millis),
     wake_margin_ms: u64 => wake_margin(Duration::from_millis),

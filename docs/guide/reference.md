@@ -328,6 +328,7 @@ cache_ttl = "5m"
 | `speed_window_secs` | `3` | Window for the tokens-per-second figure. |
 | `reader_window_ms` | `400` | Stream batching window. |
 | `stamp_settle_ms` | `2000` | A cached secret scan trusts a file stamp only once the file is this much older than the scan. |
+| `thread_keep_alive_ms` | `1000` | An idle blocking-pool thread exits after this long, so a finished turn returns its stack memory. |
 | `frame_window_secs` | `1` | Frame budget window. |
 | `animation_ms` | `40` | Animation frame period. |
 | `wake_margin_ms` | `1` | Delay added after the start screen's next visible change before it wakes. |

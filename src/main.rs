@@ -48,6 +48,7 @@ fn start(window: bool) {
         .unwrap_or_else(|error| fail_parse(&error));
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
+        .thread_keep_alive(summonr_agent::limits::limits().thread_keep_alive())
         .enable_all()
         .build()
         .unwrap_or_else(|error| fail(&error));

@@ -196,3 +196,24 @@ pub(super) fn update(session: &str, content: Value) -> Value {
 fn kind(name: &str) -> &'static str {
     crate::tools::Builtin::live(name).map_or("other", crate::tools::Builtin::acp_kind)
 }
+
+pub(super) fn prompt_text(params: &Value) -> String {
+    params
+        .get("prompt")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(block)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn block(item: &Value) -> Option<String> {
+    let text = match item.get("type").and_then(Value::as_str)? {
+        "text" => item.get("text"),
+        "resource" => item.pointer("/resource/text"),
+        "resource_link" => item.get("uri"),
+        _other => None,
+    };
+    text.and_then(Value::as_str).map(str::to_string)
+}

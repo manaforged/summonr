@@ -166,15 +166,12 @@ where
     async fn load(&mut self, params: &Value) -> Reply {
         let id = session_id(params);
         let path = crate::session::resolve_id(id).map_err(|_unknown| missing(id))?;
-        if let Some(open) = self
+        if self
             .sessions
-            .iter()
-            .find(|(_, seat)| seat.agent.session_path() == path)
+            .values()
+            .any(|seat| seat.agent.session_path() == path)
         {
-            return Err((
-                codes::INVALID,
-                format!("session {} is already open", open.0),
-            ));
+            return Err((codes::INVALID, format!("session {id} is already open")));
         }
         self.open(params, "session/load", Some(path)).await
     }
@@ -252,7 +249,7 @@ where
 
     async fn prompt(&mut self, params: &Value, input: &mut Input) -> Reply {
         let session = session_id(params).to_string();
-        let text = prompt_text(params);
+        let text = update::prompt_text(params);
         let out = self.out.clone();
         let opted = self.ext;
         let Some(Seat {
@@ -363,7 +360,7 @@ fn during(
             Ok(json!({"configOptions": config::options(effort)}))
         }
         Ask::Extension if mine && ext::call(opted, method)? == ext::Method::Steer => {
-            steering.push([UserInput::from(prompt_text(params))]);
+            steering.push([UserInput::from(update::prompt_text(params))]);
             Ok(json!({}))
         }
         _other => Err((codes::BUSY, "a prompt is already running".to_string())),
@@ -382,25 +379,4 @@ fn session_id(params: &Value) -> &str {
         .get("sessionId")
         .and_then(Value::as_str)
         .unwrap_or_default()
-}
-
-fn prompt_text(params: &Value) -> String {
-    params
-        .get("prompt")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(block)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn block(item: &Value) -> Option<String> {
-    let text = match item.get("type").and_then(Value::as_str)? {
-        "text" => item.get("text"),
-        "resource" => item.pointer("/resource/text"),
-        "resource_link" => item.get("uri"),
-        _other => None,
-    };
-    text.and_then(Value::as_str).map(str::to_string)
 }

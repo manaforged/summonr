@@ -6,7 +6,7 @@ impl App {
     pub(crate) fn update(&self, msg: Msg) {
         match msg {
             Msg::Fact(Fact::Transcript(lines)) => {
-                lines.into_iter().for_each(|msg| self.update(msg))
+                batch(|| lines.into_iter().for_each(|msg| self.update(msg)))
             }
             Msg::Fact(Fact::Held(id)) => self.held.set(Some(id)),
             Msg::Fact(Fact::TakenOver) => self.notice.set(Some(Notice {
@@ -311,3 +311,7 @@ impl App {
         drop(self.cmd.send(Cmd::Answer(dialog, text)));
     }
 }
+
+#[cfg(test)]
+#[path = "update_tests.rs"]
+mod tests;

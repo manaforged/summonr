@@ -43,6 +43,7 @@ pub enum SlashCommand {
     Stop,
     Auto,
     Goal,
+    Swarm,
     Exit,
 }
 
@@ -101,6 +102,11 @@ struct Commands {
 }
 
 pub mod table;
+
+/// The lead's first message for `/swarm TASK`.
+pub(crate) fn swarm_prompt(task: &str) -> String {
+    include_str!("command/swarm.md").replace("{task}", task.trim())
+}
 
 fn commands() -> &'static Commands {
     static LOADED: OnceLock<Commands> = OnceLock::new();

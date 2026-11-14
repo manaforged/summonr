@@ -239,6 +239,38 @@ fn board_path(dir: &Path, cwd: &Path) -> PathBuf {
         .join(format!("{}.jsonl", slug(&cwd.display().to_string())))
 }
 
+fn feed_path(dir: &Path, root: &Path) -> PathBuf {
+    board_path(dir, root).with_extension("feed.jsonl")
+}
+
+/// Appends a board post to the board's history, keeping the newest half once the file passes the compaction size.
+pub(crate) fn append_feed(dir: &Path, root: &Path, mail: &Mail) -> Result<()> {
+    let path = feed_path(dir, root);
+    append_record(&path, mail, true)?;
+    if std::fs::metadata(&path)?.len() <= BOARD_COMPACT_BYTES as u64 {
+        return Ok(());
+    }
+    let _lock = store::lock(&path, true)?;
+    let bytes = std::fs::read(&path)?;
+    let cut = bytes.len().saturating_sub(BOARD_COMPACT_BYTES / 2);
+    let start = bytes[cut..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(bytes.len(), |at| cut + at + 1);
+    store::write(&path, &bytes[start..], store::Durability::Synced)?;
+    Ok(())
+}
+
+/// The newest `board_posts` posts on the board at `root`, oldest first.
+pub(crate) fn read_feed(dir: &Path, root: &Path) -> Result<Vec<Mail>> {
+    let path = feed_path(dir, root);
+    let _lock = store::lock(&path, true)?;
+    let mut posts = parse_inbox(&store::read_or_empty(&path)?)?;
+    let keep = crate::limits::limits().board_posts;
+    posts.drain(..posts.len().saturating_sub(keep));
+    Ok(posts)
+}
+
 pub(super) fn inbox_path(dir: &Path, id: &str) -> PathBuf {
     dir.join("inbox").join(format!("{}.jsonl", clean_id(id)))
 }

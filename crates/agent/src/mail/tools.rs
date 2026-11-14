@@ -51,8 +51,8 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
         (Tool::Inbox, "Read mail that arrived since the last read. New messages arrive automatically between rounds; polling is unnecessary.", none),
         (
             Tool::Board,
-            "The workspace board shared by agents here: list, get key, set key=value. Claim files, post decisions, split work.",
-            serde_json::json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["get", "set", "list"]}, "key": {"type": "string"}, "value": {"type": "string"}}, "required": ["action"], "additionalProperties": false}),
+            "The board every agent in this swarm shares. post: say value to all of them; it wakes only agents it @mentions (@all wakes everyone), the rest read it at their next step. set key=value: claim files or record a decision. get key. list: the claims and the newest posts.",
+            serde_json::json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["post", "get", "set", "list"]}, "key": {"type": "string"}, "value": {"type": "string"}}, "required": ["action"], "additionalProperties": false}),
         ),
     ]
     .into_iter()

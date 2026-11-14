@@ -199,8 +199,13 @@ pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
         if let Some(mailbox) = child.mailbox.as_mut()
             && let Ok(notes) = mailbox.poll()
         {
-            let text = notes
-                .into_iter()
+            child.inbox.extend(notes);
+        }
+        let (front, back) = child.inbox.as_slices();
+        if child.mail_wakes(front) || child.mail_wakes(back) {
+            let text = child
+                .inbox
+                .drain(..)
                 .map(|note| crate::mail::envelope(&note))
                 .collect::<Vec<_>>()
                 .join("\n\n");

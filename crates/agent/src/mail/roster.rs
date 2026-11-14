@@ -11,6 +11,8 @@ pub struct Agent {
     pub kind: String,
     pub model: String,
     pub cwd: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub board: String,
     pub pid: u32,
     pub status: Presence,
     pub last_seen: u64,
@@ -30,6 +32,15 @@ impl Agent {
             &self.id
         } else {
             &self.name
+        }
+    }
+
+    /// The workspace whose board this agent reads: its lead's for a child, else its own.
+    pub fn board_root(&self) -> &str {
+        if self.board.is_empty() {
+            &self.cwd
+        } else {
+            &self.board
         }
     }
 

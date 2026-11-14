@@ -103,6 +103,7 @@ impl Worker {
             }
             crate::SlashCommand::Compact => self.compact().await.then_some(true),
             crate::SlashCommand::Goal => Some(self.goal(argument.unwrap_or_default()).await),
+            crate::SlashCommand::Swarm => Some(self.swarm(argument.unwrap_or_default()).await),
             crate::SlashCommand::Retry => Some(self.retry().await),
             crate::SlashCommand::Steps => Some(self.steps(argument.unwrap_or_default()).await),
             crate::SlashCommand::Auto => {

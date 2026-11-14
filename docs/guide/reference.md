@@ -272,6 +272,7 @@ cache_ttl = "5m"
 | `job_poll_cap_secs` | `2` | Longest job poll interval. |
 | `mail_per_round` | `5` | Most peer mail messages delivered into one model round; the rest wait for the next round. |
 | `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
+| `board_posts` | `20` | Newest board posts that `board list`, `summonr mail board`, and `/swarm board` show. |
 | `verify_timeout_secs` | `600` | Timeout for a check command. |
 | `probe_secs` | `5` | Endpoint probe timeout. |
 | `auth_secs` | `30` | Sign-in request timeout. |
@@ -640,6 +641,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `/login [NAME]` | sign in to a provider or store its key. Rows sit under `ready`, `needs attention`, and `not set up`; at 96 columns or more a detail pane shows the row's key, sign-in, models, and actions |
 | `/auto` | return to auto mode |
 | `/goal TEXT` | work toward an objective across turns |
+| `/swarm TASK\|board` | lead named agents that share one board; `board` prints the board (see Board) |
 | `/steps PLAN.md\|clear` | run a plan's `## Steps` one at a time |
 | `/diff [PATH]` | changes against the base, or one PATH |
 | `/view PATH` | read a file in a pane |
@@ -701,7 +703,7 @@ A `task` call may name a plugin agent with `agent`; its instructions open the ch
 
 With `workspace: "shared"`, an `implement` child edits the parent checkout directly. Assign disjoint paths: edits are visible immediately and the harness does not reconcile or roll them back. No child checkout is created. The default `workspace: "isolated"` retains checkout isolation and completion reconciliation.
 
-A `research` child reads the parent workspace. It cannot write files or start background commands. It can run a foreground command. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal, and a research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A `research` child reads the parent workspace. It cannot write files or start background commands. It can run a foreground command. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task`, `web`, or an MCP tool gets a refusal. A child keeps the mail tools when its lead has them, so it can post to the lead's board; a research child cannot `send`, `post`, or `set`. A research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 `task` with `background: true` starts the child and returns its id at once. `task` with `child: ID` reports its state, elapsed time, and last action while it runs, and its full result once it finishes; `kill: true` stops it. A turn does not end while a background child runs: summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it. **Clear** on a background status row dismisses that row for the current view without stopping the child. Its completion report and session log stay available. `task` with `child: ID` and `clear: true` performs the same dismissal through the native tool; combine `kill: true` and `clear: true` to stop and dismiss. An unknown child id returns an error without hiding another card. New children still appear.
 
@@ -728,7 +730,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `agents` | `mail` module | List live agent sessions by name |
 | `send` | `mail` module | `to` (a name, an id, or `all`) and `text`: write to a peer's inbox |
 | `inbox` | `mail` module | Read mail that arrived since the last read |
-| `board` | `mail` module | `action` get, set, or list; `key`, `value` |
+| `board` | `mail` module | `action` post, get, set, or list; `key`, `value` |
 | `mcp` | an MCP server has over 8 KB of tool schemas | Lists those servers' tool names; `query` returns matching tools with schemas; `tool` and `arguments` call one |
 
 The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. A read-only research child keeps the parent's tool list, so its first request reuses the parent's prompt cache. It can call `read`, `search`, `skill`, and, with `search` on, `web`; `run_command`, `edit`, and `write` are refused when called.
@@ -756,11 +758,26 @@ Unknown flags exit 1. A red verify gate exits 2. In `--goal` and `--steps`, the 
 
 Agent sessions on this machine share a mailbox: files under `~/.summonr/mail`: a roster, one inbox per session, and one board per workspace. There is no server; each session appends and polls files. Mail is peer text, never user instructions, and each session's own permissions still apply.
 
-Every summonr session joins the roster under a name: the one you set with `--name` or `/name`, or else the workspace folder and a number, such as `summonr-1`. Child sessions stay off the roster, and `SUMMONR_MAIL=off` keeps a session off it. `/agents` lists the sessions on the roster.
+Every summonr session joins the roster under a name: the one you set with `--name` or `/name`, or else the workspace folder and a number, such as `summonr-1`. A child session joins too, under its `name` when the `task` call gives one, with its lead as `parent`; `SUMMONR_MAIL=off` keeps a session off the roster. `/agents` lists the sessions on the roster.
 
 To message a session, type `@` in the composer and pick it from the list, or type its name, such as `@summonr-2 the schema landed`. A prompt that names a live session goes to that session's inbox instead of to the model. The mail arrives there as `[mail from @summonr-1 …]`; `[agent] mail` in settings decides whether it starts a turn or waits for the next one. Reply the same way, with `@summonr-1`.
 
-The `mail` module, off by default, also gives the model the tools `agents`, `send`, `inbox`, and `board`. `send` takes a name, an id, or `all`.
+The `mail` module, off by default, also gives the model the tools `agents`, `send`, `inbox`, and `board`. `send` takes a name, an id, or `all`; `all` is every live session on this machine.
+
+### Board
+
+The board is where a swarm talks. Every session reads the board of its workspace, and a child reads its lead's board, even from an isolated checkout. `board` takes an `action`:
+
+| Action | Does |
+| --- | --- |
+| `post` | Sends `value` to every other agent on this board and adds it to the board's history. It wakes only the agents it names as `@name`; `@all` wakes every agent. An agent that is not named reads the post at its next step, so idle agents spend nothing. |
+| `set` | Records `key` = `value`, such as a file claim or a decision. A later `set` of the same key replaces it. |
+| `get` | Reads one `key`. |
+| `list` | The claims, then the newest `board_posts` posts. |
+
+A post arrives as `[board post from @NAME …]`. Direct mail always wakes its recipient; a post wakes only the agents it mentions. `post` and `set` are refused in a read-only session.
+
+`/swarm TASK` makes this session the lead of a swarm. It turns on the mail tools for the session and sends the model a plan: check `summonr endpoint list`, split the task into lanes with disjoint paths, post the plan, start one named background `task` per lane on its own endpoint, and start a `verifier` that runs `.summonr/check.toml` when the lanes report done. Named workers stay alive after their first task, and mail or a mention gives each one its next turn. The mail tools can be added only before the session's first model request, so run `/swarm` in a new session (`/new`) unless the `mail` module is already on. `/swarm board` prints the board. Posts reach the lead's transcript as they arrive.
 
 The same mailbox is a CLI, so any agent CLI (Claude Code, Codex, a script) can take part without a server:
 
@@ -768,7 +785,7 @@ The same mailbox is a CLI, so any agent CLI (Claude Code, Codex, a script) can t
 summonr mail                  # who is on this machine
 summonr mail send [--json] [--reply-to ID] <name|id|all> <text>
 summonr mail inbox <id> [--clear]
-summonr mail board [get <key>|set <key> <text>]
+summonr mail board [get <key>|set <key> <text>|post <text>]
 ```
 
 A foreign agent takes part by picking an id: it reads `summonr mail inbox <id>`, and anyone can write to it with `summonr mail send <id> <text>`. Its messages arrive from `cli` unless it writes its own inbox name into replies. `send --json` returns the message id and delivered inbox count. `--reply-to ID` records the original message id. `inbox <id> --clear` prints the mail and empties that inbox. Clear attempts and completions are separate audit events, not read receipts. Corrupt input or an audit failure before rewriting leaves the inbox unchanged. It refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost between them.

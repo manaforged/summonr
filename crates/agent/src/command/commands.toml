@@ -50,6 +50,7 @@ commands = [
   { name = "/login", takes = "value", usage = "[NAME]", help = "sign in to a provider or store its key" },
   { name = "/auto", takes = "bare", help = "return to auto mode" },
   { name = "/goal", takes = "text", usage = "TEXT", help = "work toward an objective across turns" },
+  { name = "/swarm", takes = "text", usage = "TASK|board", help = "split a task across named agents that share one board" },
   { name = "/steps", takes = "value", usage = "PLAN.md|clear", help = "run a plan's `## Steps` one at a time" },
 ]
 

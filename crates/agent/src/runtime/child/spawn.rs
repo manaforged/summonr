@@ -137,6 +137,7 @@ impl<P: Provider> Loop<P> {
             child.set_name(name)?;
         }
         child.roster();
+        child.share_board(self.board_root());
 
         let record = ChildRecord {
             version: 1,

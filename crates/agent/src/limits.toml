@@ -30,6 +30,7 @@ watch_settle_ms = 500
 strip_rows = 6
 mail_sweep_secs = 86400
 mail_per_round = 5
+board_posts = 20
 verify_timeout_secs = 600
 probe_secs = 5
 auth_secs = 30

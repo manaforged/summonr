@@ -101,6 +101,7 @@ pub(crate) struct Entries {
     clock: u64,
     asked: bool,
     pub(crate) stamp: u64,
+    unfolded: BTreeSet<usize>,
 }
 
 impl Entries {
@@ -124,6 +125,15 @@ impl Entries {
 
     pub(crate) fn rev(&self, index: usize) -> u64 {
         self.revs.get(index).copied().unwrap_or_default()
+    }
+
+    pub(crate) fn unfolded(&self, index: usize) -> bool {
+        self.unfolded.contains(&index)
+    }
+
+    pub(crate) fn unfold(&mut self, index: usize) {
+        self.unfolded.insert(index);
+        self.touch(index);
     }
 
     pub(crate) fn asked(&self) -> bool {
@@ -163,12 +173,20 @@ impl Entries {
         self.inner.insert(index, entry);
         self.revs.truncate(index);
         self.sync();
+        if !self.unfolded.is_empty() {
+            self.unfolded = self
+                .unfolded
+                .iter()
+                .map(|&at| if at >= index { at + 1 } else { at })
+                .collect();
+        }
     }
 
     pub(crate) fn clear(&mut self) {
         self.invalidate();
         self.inner.clear();
         self.revs.clear();
+        self.unfolded.clear();
         self.asked = false;
     }
 }

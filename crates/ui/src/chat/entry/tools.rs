@@ -3,7 +3,7 @@ use sigil::prelude::TextBuilder;
 use sigil::prelude::{AlignItems, MouseButton, NodeBuilder, Paint, PointerEvent, Signal, Token};
 
 use super::super::{App, Call, Entry};
-use super::tree::{branch, label, tree};
+use super::tree::{label, tree};
 use super::{COMPACT_ROWS, patch_of, patch_path, patch_view, preview, wrap};
 use crate::ToolState;
 use crate::text_style::TextStyle;
@@ -247,92 +247,8 @@ pub(super) fn tool_card(
     }
 }
 
-fn group_state(calls: &[Call]) -> ToolState {
-    if calls
-        .iter()
-        .any(|call| matches!(call.state, ToolState::Running))
-    {
-        ToolState::Running
-    } else if calls
-        .iter()
-        .any(|call| matches!(call.state, ToolState::Failed))
-    {
-        ToolState::Failed
-    } else {
-        ToolState::Ok
-    }
-}
-
-fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
-    if !Builtin::is(name, Builtin::Read) {
-        return (tool_label(name), format!("×{}", calls.len()));
-    }
-    ("Explored", summonr_core::text::plural(calls.len(), "file"))
-}
-
-fn group_row(
-    name: &str,
-    call: &Call,
-    at: usize,
-    tools: ToolOutput,
-    layout: DiffLayout,
-    app: &App,
-    index: usize,
-) -> NodeBuilder {
-    let expanded = call.expanded || tools == ToolOutput::Full;
-    let resolved = (expanded && call.compacted).then(|| call.resolved_output(&app.workspace()));
-    let raw_output = resolved.as_deref().unwrap_or(&call.output);
-    let output = preview::plain(raw_output);
-    let shown = workspace_relative(&call.arg, &app.roots());
-    let (verb, arg) = (tool_label(name), shown.as_str());
-    let detail = match call.state {
-        ToolState::Failed => Some((
-            preview::summary(&output, true),
-            TextStyle::xs(Token::Error11),
-        )),
-        _ => detail(name, call, &output),
-    };
-    let line =
-        branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, at));
-    let column = sigil::prelude::column()
-        .fill_width()
-        .gap(Space::None)
-        .child(line);
-    match expanded
-        .then(|| call_output(name, call, &output, true, layout, app))
-        .flatten()
-    {
-        Some(body) => column.child(body),
-        None => column,
-    }
-}
-
-pub(super) fn group_card(
-    name: &str,
-    calls: &[Call],
-    tools: ToolOutput,
-    layout: DiffLayout,
-    app: &App,
-    index: usize,
-) -> NodeBuilder {
-    let (title, counts) = group_title(name, calls);
-    let mut card = sigil::prelude::column()
-        .fill_width()
-        .gap(Space::None)
-        .child(header(
-            &group_state(calls),
-            call_line(
-                title,
-                "",
-                Some((counts, TextStyle::xs(Token::Gray10))),
-                true,
-            ),
-        ));
-    for (at, call) in calls.iter().enumerate() {
-        card = card.child(group_row(name, call, at, tools, layout, app, index));
-    }
-    card
-}
+mod group;
+pub(super) use group::group_card;
 
 pub(crate) fn tool_label(name: &str) -> &str {
     match summonr_agent::tools::Builtin::of(name) {

@@ -335,7 +335,7 @@ impl ChildRecord {
                 self.fail_record(&kept);
                 return;
             }
-            self.note_record(&kept);
+            self.add_note(&kept);
         }
         let Some(result) = self.state.result_mut() else {
             return;

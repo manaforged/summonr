@@ -206,12 +206,6 @@ pub(super) fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
 }
 
 impl ChildRecord {
-    pub(super) fn note_record(&mut self, diagnostic: &str) {
-        if let Some(result) = self.state.result_mut() {
-            result.diagnostic = Some(diagnostic.to_string());
-        }
-    }
-
     pub(super) fn add_note(&mut self, note: &str) {
         let Some(result) = self.state.result_mut() else {
             return;

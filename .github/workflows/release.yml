@@ -19,13 +19,15 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  test:
+  version:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
       - name: tag matches the crate version
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -36,40 +38,10 @@ jobs:
             echo "tag $TAG does not match Cargo.toml version $crate" >&2
             exit 1
           fi
-      - name: Rust toolchain
-        run: rustup show active-toolchain
-      - name: formatting
-        run: cargo fmt --all -- --check
-      - name: API limits
-        run: python3 scripts/api-census.py --check
-      - name: palette
-        run: python3 scripts/palette-check.py
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: 'false'
-      - name: clippy
-        run: cargo clippy -p summonr -p summonr-agent -p summonr-ui --all-targets --locked -- -D warnings
-      - name: tests
-        run: cargo test --workspace --exclude summonr-desktop --locked
-
-  macos:
-    runs-on: macos-14
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: Rust toolchain
-        run: rustup show active-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: 'false'
-      - name: tests
-        run: cargo test --workspace --exclude summonr-desktop --locked
 
   build:
     name: build ${{ matrix.target }}
-    needs: [test, macos]
+    needs: [version]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:

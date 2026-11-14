@@ -4,7 +4,7 @@ set -uo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 image=${BENCH_IMAGE:-alexgshaw/fix-git:20251031}
 workdir=${BENCH_WORKDIR:-/app/personal-site}
-proxy=${BENCH_PROXY:-http://172.17.0.1:8095}
+proxy=${BENCH_PROXY:-http://host.docker.internal:8095}
 log=${BENCH_PROXY_LOG:-$root/logs/glm.jsonl}
 prompt=${BENCH_PROMPT:-Run git log --oneline -3 and reply with the subject of the newest commit.}
 run=${BENCH_RUN:-smoke}
@@ -15,7 +15,7 @@ for name in "${@:-summonr}"; do
     label=$harness.$run
     before=$(grep -c "\"label\": \"$label\"" "$log" 2>/dev/null || true)
     start=$(date +%s)
-    docker run --rm \
+    docker run --rm --add-host=host.docker.internal:host-gateway \
       -e BENCH_BASE="$proxy/$label/v1" -e BENCH_MODEL=glm-5.3-flash -e BENCH_PROVIDER=zai -e BENCH_API_KEY=bench-proxy ${BENCH_EFFORT:+-e BENCH_EFFORT} \
       -e BENCH_LOGS=/tmp/logs \
       -v "$root/tools":/opt/tools:ro -v "$root/logs/prompt.txt":/opt/prompt.txt:ro \

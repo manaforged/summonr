@@ -66,8 +66,10 @@ fn info(
 #[test]
 fn a_host_on_a_private_network_needs_no_key() {
     for (name, url) in [
-        ("lan", "http://192.168.1.20:8080/v1"),
-        ("tailnet", "http://100.64.3.4:8081/v1"),
+        ("lan10", "http://10.0.0.0:8080/v1"),
+        ("lan172", "http://172.16.0.0:8080/v1"),
+        ("lan192", "http://192.168.0.0:8080/v1"),
+        ("tailnet", "http://100.64.0.0:8081/v1"),
         ("mdns", "http://mybox.local:8080/v1"),
         ("loop", "http://[::1]:8080/v1"),
         ("docker", "http://host.docker.internal:8080/v1"),

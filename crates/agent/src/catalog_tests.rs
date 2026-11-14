@@ -69,7 +69,7 @@ fn selection(images: Option<bool>) -> crate::Endpoint {
     )
     .unwrap();
     endpoint.name = "env".to_string();
-    endpoint.base_url = Some("http://172.17.0.1:8095/zai/v1".to_string());
+    endpoint.base_url = Some("http://127.0.0.1:8095/zai/v1".to_string());
     endpoint.images = images;
     endpoint
 }

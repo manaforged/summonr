@@ -210,7 +210,7 @@ fn deepseek_and_glm_get_their_earlier_reasoning_back() {
 
 #[test]
 fn deepseek_and_glm_get_their_reasoning_back_behind_a_proxy() {
-    let proxy = Some("http://172.17.0.1:8095/label/v1");
+    let proxy = Some("http://127.0.0.1:8095/label/v1");
     assert_eq!(
         replayed_through("deepseek", "deepseek-flash", proxy),
         "my earlier chain of thought"
@@ -268,7 +268,7 @@ fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
 fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
     let mut endpoint = builtin("zai-intl").unwrap();
     endpoint.name = super::ENV_ENDPOINT.to_string();
-    endpoint.base_url = Some("http://172.17.0.1:8095/label/v1".to_string());
+    endpoint.base_url = Some("http://127.0.0.1:8095/label/v1".to_string());
     endpoint.model = "glm-5.3-flash".to_string();
     let endpoint = keyed(endpoint);
     let client = Client::connect(&endpoint).unwrap();

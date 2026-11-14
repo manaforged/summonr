@@ -249,7 +249,7 @@ fn art(app: &App, size: f32, moving: bool, source: Source) -> NodeBuilder {
     interval(period, move || frame.update(|at| *at = at.wrapping_add(1)));
     let (watch, seen) = (app.clone(), source.clone());
     let look = derived(move || {
-        let _ = frame.get();
+        _ = frame.get();
         let light = u64::from(appearance.get().light());
         let tint = model.with(|model| model.prefs.will_tint) as u64;
         light << 16 | tint << 8 | seen.mood(&watch) as u64

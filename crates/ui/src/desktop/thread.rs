@@ -288,5 +288,4 @@ fn held(app: App) -> NodeBuilder {
                 .size(ControlSize::Compact)
                 .activate(move || take.take_over()),
         )
-        .into()
 }

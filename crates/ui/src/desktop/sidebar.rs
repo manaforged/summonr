@@ -119,8 +119,7 @@ fn threads(
                 let app = app.clone();
                 move || row::add_items(&app)
             },
-        )
-        .into(),
+        ),
         sigil::prelude::column()
             .gap(sigil::prelude::Space::None)
             .fill_width()

@@ -227,14 +227,14 @@ pub(in crate::desktop) fn confirm_remove(
             button("Cancel")
                 .ghost()
                 .size(ControlSize::Compact)
-                .activate(move || cancel()),
+                .activate(cancel),
         )
         .child(
             button("Remove")
                 .tone(Tone::Error)
                 .size(ControlSize::Compact)
                 .accessible(format!("Remove {name} now"))
-                .activate(move || remove()),
+                .activate(remove),
         )
 }
 

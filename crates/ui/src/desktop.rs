@@ -78,7 +78,6 @@ fn sidebar_toggle(app: &App) -> NodeBuilder {
         .align_items(sigil::prelude::AlignItems::Center)
         .child(tip(SIDEBAR, Some("⌘B"), toggle.into()))
         .child(count)
-        .into()
 }
 
 /// Wraps `node` in a hover tooltip naming it and its shortcut.

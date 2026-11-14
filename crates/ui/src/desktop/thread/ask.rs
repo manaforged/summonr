@@ -170,7 +170,6 @@ fn wider_menu(app: &App, wider: &[&(String, Pick)]) -> NodeBuilder {
                     vec![NodeBuilder::from(menu)]
                 }),
         )
-        .into()
 }
 
 /// Splits a step's detail into what runs and why it needs the user's OK.

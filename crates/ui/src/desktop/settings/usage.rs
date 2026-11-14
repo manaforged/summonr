@@ -134,7 +134,7 @@ fn totals(total: &Total) -> NodeBuilder {
                 .child(text(Text::Title, value)),
         );
     }
-    section(None, vec![strip.into()])
+    section(None, vec![strip])
 }
 
 fn chart(report: &Report) -> NodeBuilder {
@@ -162,7 +162,6 @@ fn chart(report: &Report) -> NodeBuilder {
                 .child(text(Text::Meta, report.first))
                 .child(text(Text::Meta, "Now")),
         )
-        .into()
 }
 
 #[allow(
@@ -188,7 +187,6 @@ fn bar(value: f64, peak: f64) -> NodeBuilder {
         .height(height)
         .background(CHART_BAR)
         .radius(Radius::Sm)
-        .into()
 }
 
 fn line(total: &Total) -> NodeBuilder {

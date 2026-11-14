@@ -224,9 +224,9 @@ impl Body {
         let mut left = dt;
         while left > 0.0 {
             let h = left.min(STEP);
-            for at in 0..8 {
+            for (at, goal) in goal.iter().enumerate() {
                 let (stiff, damp) = if (6..8).contains(&at) { GLANCE } else { SPRING };
-                let pull = stiff * (goal[at] - self.at[at]) - damp * self.speed[at];
+                let pull = stiff * (goal - self.at[at]) - damp * self.speed[at];
                 self.speed[at] += pull * h;
                 self.at[at] += self.speed[at] * h;
             }

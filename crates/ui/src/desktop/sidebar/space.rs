@@ -56,7 +56,7 @@ pub(in crate::desktop) fn heading(app: &App) -> NodeBuilder {
                     vec![NodeBuilder::from(menu)]
                 }),
         );
-    title_row(PROJECTS, anchored.into())
+    title_row(PROJECTS, anchored)
 }
 
 fn title_row(title: &str, button: NodeBuilder) -> NodeBuilder {

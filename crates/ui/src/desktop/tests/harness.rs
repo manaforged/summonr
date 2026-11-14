@@ -91,7 +91,7 @@ fn center(host: &mut Host, label: &str) -> (f32, f32) {
         .nodes
         .iter()
         .find_map(|(_, node)| {
-            (node.label().as_deref() == Some(label))
+            (node.label() == Some(label))
                 .then(|| node.bounds())
                 .flatten()
         })
@@ -108,7 +108,7 @@ fn click(host: &mut Host, label: &str) {
         .nodes
         .iter()
         .find_map(|(_, node)| {
-            (node.label().as_deref() == Some(label))
+            (node.label() == Some(label))
                 .then(|| node.bounds())
                 .flatten()
         })
@@ -125,7 +125,7 @@ fn click_rightmost(host: &mut Host, label: &str) {
         .accessibility_tree()
         .nodes
         .iter()
-        .filter(|(_, node)| node.label().as_deref() == Some(label))
+        .filter(|(_, node)| node.label() == Some(label))
         .filter_map(|(_, node)| node.bounds())
         .max_by(|a, b| a.x0.total_cmp(&b.x0))
         .unwrap_or_else(|| panic!("no control named {label}"));
@@ -149,7 +149,7 @@ fn right_click(host: &mut Host, label: &str) {
         .nodes
         .iter()
         .find_map(|(_, node)| {
-            (node.label().as_deref() == Some(label))
+            (node.label() == Some(label))
                 .then(|| node.bounds())
                 .flatten()
         })

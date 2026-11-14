@@ -63,7 +63,7 @@ fn the_terminal_tab_runs_commands_in_the_chats_folder() {
                 if screen.iter().any(|line| line.trim() == folder) || Instant::now() > deadline {
                     return (folder, screen);
                 }
-                std::thread::sleep(Duration::from_millis(20));
+                std::thread::park_timeout(Duration::from_millis(20));
             }
         },
     );
@@ -204,7 +204,7 @@ fn a_repeating_panel_runs_again_and_stops_when_it_is_hidden() {
             let until = Instant::now() + Duration::from_millis(1300);
             while Instant::now() < until {
                 runtime.borrow_mut().pump();
-                std::thread::sleep(Duration::from_millis(20));
+                std::thread::park_timeout(Duration::from_millis(20));
             }
         })));
         let seen = steps(

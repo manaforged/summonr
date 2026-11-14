@@ -45,7 +45,7 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
             .gap(M)
             .align_items(AlignItems::Stretch)
             .children_reactive(move || {
-                let _ = page.version.get();
+                _ = page.version.get();
                 let notice = page
                     .error
                     .get()
@@ -60,7 +60,7 @@ pub(super) fn view(app: &App) -> Vec<NodeBuilder> {
             .fill_width()
             .align_items(AlignItems::Stretch)
             .children_reactive(move || {
-                let _ = page.version.get();
+                _ = page.version.get();
                 std::iter::once(sets(page))
                     .chain(skills(&workspace, page))
                     .collect::<Vec<_>>()
@@ -148,7 +148,6 @@ fn status(page: Page, plugin: &Installed) -> NodeBuilder {
                     defer(move || page.armed.set(Some(name)));
                 }),
         )
-        .into()
 }
 
 fn set_on(page: Page, name: &str, on: bool) {
@@ -212,7 +211,7 @@ fn install(page: Page, path: &Path) {
 fn sets(page: Page) -> NodeBuilder {
     let names = match summonr_agent::skills::set_names() {
         Ok(names) => names,
-        Err(error) => return notice_band(first_line(&error.to_string()), Tone::Error).into(),
+        Err(error) => return notice_band(first_line(&error.to_string()), Tone::Error),
     };
     let current = summonr_agent::skills::default_set().ok().flatten();
     let at = current
@@ -284,7 +283,7 @@ fn skill(workspace: &Path, name: &str, about: &str, page: Page) -> NodeBuilder {
 
 fn open_skill(workspace: &Path, name: &str, page: Page) -> NodeBuilder {
     let Some(file) = summonr_agent::skills::file(workspace, name) else {
-        return container().into();
+        return container();
     };
     button("Open")
         .ghost()

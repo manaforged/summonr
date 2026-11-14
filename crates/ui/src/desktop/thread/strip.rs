@@ -27,12 +27,7 @@ fn header_items(app: &App, beside: bool) -> Vec<NodeBuilder> {
     let corner = !beside && super::super::split::is_first(app);
     let mut items: Vec<NodeBuilder> = Vec::new();
     if corner {
-        items.push(
-            container()
-                .width(super::super::CONTROLS - 8.0)
-                .shrink(0.0)
-                .into(),
-        );
+        items.push(container().width(super::super::CONTROLS - 8.0).shrink(0.0));
         items.push(super::super::sidebar_toggle(app));
     }
     let terminal = app.shown_terminal();

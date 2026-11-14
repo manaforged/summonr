@@ -61,8 +61,7 @@ pub(super) fn view(app: &App) -> NodeBuilder {
                     )
                     .background(RECESSED)
                     .border_right(1)
-                    .border_color(DIVIDER)
-                    .into(),
+                    .border_color(DIVIDER),
             ]
         })
 }

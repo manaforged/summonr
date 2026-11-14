@@ -41,14 +41,14 @@ pub(super) fn refresh(app: &App) {
     let list = app.window.friends;
     let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
     sigil::tasks::on_message(inbox, move |seen| list.set(seen), || {});
-    let _ = sigil::tasks::spawn(async move {
+    _ = sigil::tasks::spawn(async move {
         let mut set = tokio::task::JoinSet::new();
         for (at, friend) in friends().enumerate() {
             set.spawn(async move { (at, check(friend).await) });
         }
         let mut pairs = set.join_all().await;
         pairs.sort_by_key(|(at, _)| *at);
-        let _ = out.send(pairs.into_iter().map(|(_, seen)| seen).collect());
+        drop(out.send(pairs.into_iter().map(|(_, seen)| seen).collect()));
         Ok::<(), std::convert::Infallible>(())
     });
 }
@@ -60,8 +60,8 @@ pub(super) fn launch(app: &App, friend: Friend, model: String) {
     let ask = move || {
         let (out, inbox) = tokio::sync::mpsc::unbounded_channel();
         sigil::tasks::on_message(inbox, move |seen| start(&app, seen, model.clone()), || {});
-        let _ = sigil::tasks::spawn(async move {
-            let _ = out.send(check(friend).await);
+        _ = sigil::tasks::spawn(async move {
+            _ = out.send(check(friend).await);
             Ok::<(), std::convert::Infallible>(())
         });
     };

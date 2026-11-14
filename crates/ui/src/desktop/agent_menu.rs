@@ -20,8 +20,10 @@ enum Dialog {
     Quit { running: usize },
 }
 
+type DialogOpen = (Signal<bool>, Signal<Option<Dialog>>);
+
 thread_local! {
-    static DIALOG_OPEN: Cell<Option<(Signal<bool>, Signal<Option<Dialog>>)>> = const { Cell::new(None) };
+    static DIALOG_OPEN: Cell<Option<DialogOpen>> = const { Cell::new(None) };
 }
 
 /// Creates the agent menu's dialog state for this window.

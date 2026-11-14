@@ -150,7 +150,11 @@ fn wheel(n: usize) -> sigil::events::Event {
         19 => ScrollPhase::Ended,
         _ => ScrollPhase::Moved,
     };
-    let dy = if (n / 20) % 2 == 0 { 12.0 } else { -12.0 };
+    let dy = if (n / 20).is_multiple_of(2) {
+        12.0
+    } else {
+        -12.0
+    };
     Event::scroll(
         sigil::geometry::Point::new(VIEW.0 * 0.6, VIEW.1 / 2.0),
         ScrollDelta::Pixels(sigil::geometry::Point::new(0.0, dy)),
@@ -247,7 +251,7 @@ fn navigate(step: Step) -> f64 {
                 Step::Scroll => {
                     host.route(wheel(n));
                 }
-                Step::Settings => app.settings_open.set(n % 2 == 0),
+                Step::Settings => app.settings_open.set(n.is_multiple_of(2)),
                 Step::Hover(_) => {
                     host.route(sigil::events::Event::pointer_move(over_text(n)));
                 }
@@ -293,8 +297,7 @@ fn navigate(step: Step) -> f64 {
             scene_us.get() / MOVES as f64,
             a11y_us.get() / MOVES as f64
         );
-        let spent = wall.elapsed().as_secs_f64() * 1e6 / MOVES as f64;
-        spent
+        wall.elapsed().as_secs_f64() * 1e6 / MOVES as f64
     })
 }
 

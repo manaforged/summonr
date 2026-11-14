@@ -219,7 +219,7 @@ fn clicking_a_friend_in_the_model_menu_acts_after_the_menu_closes() {
             let acted = || app.settings_open.peek() || !app.window.terminals.list.peek().is_empty();
             while !acted() && std::time::Instant::now() < deadline {
                 runtime.borrow_mut().pump();
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                std::thread::park_timeout(std::time::Duration::from_millis(10));
             }
             acted()
         },

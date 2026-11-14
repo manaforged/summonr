@@ -185,7 +185,6 @@ fn heading(title: &str) -> NodeBuilder {
         .padding_left(S)
         .padding_right(SCROLLBAR)
         .child(text(Text::Heading, title))
-        .into()
 }
 
 fn render(app: &App, name: &str, outcome: Option<Result<Content, String>>) -> Vec<NodeBuilder> {
@@ -229,7 +228,6 @@ fn list(app: &App, rows: Vec<Item>) -> Vec<NodeBuilder> {
                     ..ListRowSlots::default()
                 },
             )
-            .into()
         })
         .collect()
 }

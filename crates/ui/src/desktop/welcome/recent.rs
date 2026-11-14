@@ -49,8 +49,7 @@ pub(super) fn list(busy: Signal<bool>, error: Signal<Option<String>>, open: Open
                 .border_top(1)
                 .border_color(DIVIDER)
                 .child(container().padding_top(GAP).child(heading))
-                .child(list)
-                .into(),
+                .child(list),
         ]
     })
 }

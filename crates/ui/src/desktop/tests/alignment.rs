@@ -164,7 +164,7 @@ fn marks(setup: impl FnOnce(&App)) -> Vec<Mark> {
     })
 }
 
-fn find<'a>(marks: &'a [Mark], kind: Kind, wanted: impl Fn(&Mark) -> bool) -> &'a Mark {
+fn find(marks: &[Mark], kind: Kind, wanted: impl Fn(&Mark) -> bool) -> &Mark {
     marks
         .iter()
         .find(|mark| mark.kind == kind && wanted(mark))

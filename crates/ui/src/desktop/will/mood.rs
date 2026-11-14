@@ -261,7 +261,7 @@ impl Mind {
 
     /// The mood that wins now; tracks the app signals it reads.
     pub(super) fn mood(&self, app: &App) -> Mood {
-        let _ = self.version.get();
+        _ = self.version.get();
         let quiet = app.model.with(|model| model.prefs.will_quiet.clone());
         let (busy, waiting) = app.model.with(|model| {
             (

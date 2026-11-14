@@ -31,7 +31,7 @@ fn screen_until(runtime: Pump, app: &App, wanted: impl Fn(&[String]) -> bool) ->
         if wanted(&screen) || Instant::now() > deadline {
             return screen;
         }
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::park_timeout(Duration::from_millis(20));
     }
 }
 
@@ -197,7 +197,7 @@ fn every_new_terminal_is_told_the_size_of_its_pane() {
                 .list
                 .peek()
                 .last()
-                .map(|term| std::rc::Rc::clone(term))
+                .map(std::rc::Rc::clone)
                 .expect("terminal");
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
@@ -216,7 +216,7 @@ fn every_new_terminal_is_told_the_size_of_its_pane() {
                 if answer.is_some() || Instant::now() > deadline {
                     return answer;
                 }
-                std::thread::sleep(Duration::from_millis(20));
+                std::thread::park_timeout(Duration::from_millis(20));
             }
         },
     );
@@ -280,7 +280,7 @@ fn exit_row(code: &str) -> Vec<String> {
             && Instant::now() < deadline
         {
             runtime.borrow_mut().pump();
-            std::thread::sleep(Duration::from_millis(20));
+            std::thread::park_timeout(Duration::from_millis(20));
         }
     })));
     steps(|app| app.window.sidebar.set(true), keys, |_| ()).texts

@@ -58,7 +58,12 @@ impl Conn {
             Launch::Http { url, headers, auth } => Client::attach(
                 Box::new(Http::new(
                     url,
-                    headers,
+                    &match &server.helper {
+                        Some(helper) => {
+                            super::helper::headers(helper, &server.name, url, headers).await?
+                        }
+                        None => headers.clone(),
+                    },
                     server.wait,
                     auth.clone()
                         .map(|spec| {

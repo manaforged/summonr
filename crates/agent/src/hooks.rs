@@ -1,7 +1,5 @@
-use crate::process::{Cap, Env, Process, Spec, Tail};
 use serde_json::Value;
 use std::path::Path;
-use tokio::io::AsyncWriteExt;
 
 mod judge;
 
@@ -26,47 +24,19 @@ pub(crate) fn with_plugins(mut hooks: Hooks, plugins: &[crate::plugins::Plugin])
 }
 
 async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome, String> {
-    let program = summonr_core::shell::program().map_err(|error| error.to_string())?;
-    let spec = Spec {
-        cwd: Some(workspace.to_path_buf()),
-        base: Env::Clean,
-        ..Spec::new(
-            program,
-            summonr_core::shell::arguments(&hook.command, workspace),
-        )
-    }
-    .envs(crate::plugins::hook_env(workspace, hook.root.as_deref()))
-    .envs(summonr_core::dirs::summonr_home().map(|home| (summonr_core::dirs::HOME_ENV, home)));
-    let Process {
-        mut child,
-        mut stdin,
-        stdout,
-        stderr,
-        group,
-    } = crate::process::start(spec)
+    let spec = crate::process::shell(&hook.command, workspace)
+        .map_err(|error| error.to_string())?
+        .envs(crate::plugins::hook_env(workspace, hook.root.as_deref()))
+        .envs(summonr_core::dirs::summonr_home().map(|home| (summonr_core::dirs::HOME_ENV, home)));
+    let process = crate::process::start(spec)
         .map_err(|error| format!("hook `{}` did not start: {error}", hook.command))?;
-    let text = body.to_string();
-    let max = crate::limits::limits().hook_output_max_bytes;
-    let mut stdout = Tail::spawn(Some(stdout), Cap::Head(max));
-    let mut stderr = Tail::spawn(stderr, Cap::Head(max));
-    let work = async move {
-        drop(stdin.write_all(text.as_bytes()).await);
-        drop(stdin);
-        let status = child.wait().await?;
-        drop(stdout.settle().await);
-        drop(stderr.settle().await);
-        Ok::<_, std::io::Error>(Outcome {
-            code: status.code(),
-            stdout: stdout.text().trim().to_string(),
-            stderr: stderr.text().trim().to_string(),
-        })
-    };
     let limit = hook
         .timeout
         .unwrap_or_else(|| crate::limits::limits().job_wait());
-    let finished = crate::limits::within(limit, format!("hook `{}`", hook.command), work).await;
-    drop(group);
-    finished
+    let max = crate::limits::limits().hook_output_max_bytes;
+    let what = format!("hook `{}`", hook.command);
+    crate::process::finish(process, body.to_string().as_bytes(), max, limit, what)
+        .await
         .map_err(|error| error.to_string())?
         .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
 }

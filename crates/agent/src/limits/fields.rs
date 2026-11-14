@@ -110,6 +110,8 @@ table! {
     mcp_progress_stretch: u32,
     mcp_cancel_write_secs: u64 => mcp_cancel_write(Duration::from_secs),
     mcp_close_grace_ms: u64 => mcp_close_grace(Duration::from_millis),
+    mcp_timeout_floor_ms: u64 => mcp_timeout_floor(Duration::from_millis),
+    mcp_headers_helper_secs: u64 => mcp_headers_helper(Duration::from_secs),
     image_side_px: u32,
     image_bytes: usize,
     mcp_log_max_bytes: u64,

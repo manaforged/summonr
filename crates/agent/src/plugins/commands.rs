@@ -86,13 +86,16 @@ fn folders(workspace: &Path) -> Vec<Plugin> {
             PROJECT.to_string(),
             summonr_core::dirs::workspace(workspace),
         ),
-        Plugin::at(PROJECT.to_string(), workspace.join(".claude")),
+        Plugin::at(PROJECT.to_string(), summonr_core::dirs::claude(workspace)),
     ];
     if let Ok(home) = summonr_core::dirs::summonr_home() {
         folders.push(Plugin::at(USER.to_string(), home));
     }
     if let Some(home) = summonr_core::dirs::user_home() {
-        folders.push(Plugin::at(USER.to_string(), home.join(".claude")));
+        folders.push(Plugin::at(
+            USER.to_string(),
+            summonr_core::dirs::claude(&home),
+        ));
     }
     folders
 }

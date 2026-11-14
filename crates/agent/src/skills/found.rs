@@ -213,14 +213,20 @@ fn roots(workspace: &Path) -> Vec<Root> {
         .into_iter()
         .collect();
     if let Some(home) = summonr_core::dirs::user_home() {
-        roots.push(local(home.join(".claude/skills"), FLAT));
+        roots.push(local(
+            summonr_core::dirs::claude(&home).join("skills"),
+            FLAT,
+        ));
         roots.push(local(home.join(".agents/skills"), FLAT));
     }
     roots.push(local(
         summonr_core::dirs::workspace(workspace).join("skills"),
         DEPTH,
     ));
-    roots.push(local(workspace.join(".claude/skills"), FLAT));
+    roots.push(local(
+        summonr_core::dirs::claude(workspace).join("skills"),
+        FLAT,
+    ));
     for plugin in crate::plugins::enabled() {
         roots.extend(plugin_roots(&plugin));
     }

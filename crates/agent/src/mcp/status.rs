@@ -93,19 +93,27 @@ pub fn status(workspace: &Path, board: Option<&Board>) -> Result<Vec<ServerStatu
         .iter()
         .map(|server| row(server, hub.as_deref(), &live))
         .collect();
-    rows.extend(found.waiting.into_iter().map(|name| ServerStatus {
+    let unstarted = |name: String, state: McpState, detail: String| ServerStatus {
         kind: ServerKind::Mcp,
-        detail: Some(format!(
-            "set `enabled = true` under [mcp.{name}] in {file} to run it"
-        )),
+        detail: Some(detail),
         name,
         transport: None,
-        state: McpState::Waiting,
+        state,
         tools: Vec::new(),
         schema_bytes: 0,
         launch: None,
         rss_kb: None,
+    };
+    rows.extend(found.waiting.into_iter().map(|name| {
+        let detail = format!("set `enabled = true` under [mcp.{name}] in {file} to run it");
+        unstarted(name, McpState::Waiting, detail)
     }));
+    rows.extend(
+        found
+            .skipped
+            .into_iter()
+            .map(|(name, reason)| unstarted(name, McpState::Failed, reason)),
+    );
     rows.extend(
         live.iter()
             .filter(|server| server.kind == ServerKind::Lsp)

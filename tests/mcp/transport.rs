@@ -26,6 +26,47 @@ pub(crate) fn a_call_with_no_reply_is_cancelled_at_the_timeout() {
     assert_eq!(cancelled[0]["params"]["requestId"], call);
 }
 
+pub(crate) fn a_claude_timeout_in_milliseconds_cancels_a_call() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("fixture1__hang", json!({})),
+        Step::Text("ok"),
+    ]);
+    let secs = crate::support::slow(3);
+    let timeout = format!("timeout = {}", secs * 1000);
+    session.run(&model, &session.server("fixture1", &timeout), &[]);
+    assert!(
+        model.tool_results()[0].contains(&format!("no reply in {secs}s")),
+        "{:?}",
+        model.tool_results()
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn a_headers_helper_header_replaces_the_static_one() {
+    let session = Session::new();
+    let remote = Remote::start(Mode::Expire);
+    let model = Model::start(vec![
+        Step::Call("remote__echo", json!({})),
+        Step::Text("ok"),
+    ]);
+    let extra = r#"headers = { X-Probe = "static" }
+headers_helper = '''printf '{"X-Probe": "from-%s"}' "$CLAUDE_CODE_MCP_SERVER_NAME" '''
+"#;
+    session.run(&model, &remote.config("remote", extra), &[]);
+    assert!(
+        model.tool_results()[0].contains("remote x"),
+        "{:?}",
+        model.tool_results()
+    );
+    let probes = remote.probes();
+    assert!(!probes.is_empty(), "no request carried X-Probe");
+    assert!(
+        probes.iter().all(|probe| probe == "from-remote"),
+        "{probes:?}"
+    );
+}
+
 pub(crate) fn peer_mail_waits_for_a_pending_mcp_call() {
     let session = Session::new();
     let model = Model::start(vec![

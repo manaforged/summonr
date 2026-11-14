@@ -1,10 +1,11 @@
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::{Duration, Instant};
 
+use tokio::io::AsyncWriteExt as _;
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
 
 use crate::tools::command::ProcessGroup;
@@ -332,4 +333,57 @@ pub(crate) fn start(spec: Spec) -> Result<Process> {
         stderr,
         group,
     })
+}
+
+/// A shell running `script` in `cwd` with a clean environment.
+pub(crate) fn shell(script: &str, cwd: &Path) -> Result<Spec> {
+    Ok(Spec {
+        cwd: Some(cwd.to_path_buf()),
+        base: Env::Clean,
+        ..Spec::new(
+            summonr_core::shell::program()?,
+            summonr_core::shell::arguments(script, cwd),
+        )
+    })
+}
+
+/// The exit code and trimmed output of a finished process.
+pub(crate) struct Ran {
+    pub(crate) code: Option<i32>,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
+}
+
+/// Feeds `input` to a started process and waits up to `limit`, keeping `max` bytes of each stream.
+pub(crate) async fn finish(
+    process: Process,
+    input: &[u8],
+    max: usize,
+    limit: Duration,
+    what: String,
+) -> Result<std::io::Result<Ran>> {
+    let Process {
+        mut child,
+        mut stdin,
+        stdout,
+        stderr,
+        group,
+    } = process;
+    let mut stdout = Tail::spawn(Some(stdout), Cap::Head(max));
+    let mut stderr = Tail::spawn(stderr, Cap::Head(max));
+    let work = async move {
+        drop(stdin.write_all(input).await);
+        drop(stdin);
+        let status = child.wait().await?;
+        drop(stdout.settle().await);
+        drop(stderr.settle().await);
+        Ok::<_, std::io::Error>(Ran {
+            code: status.code(),
+            stdout: stdout.text().trim().to_string(),
+            stderr: stderr.text().trim().to_string(),
+        })
+    };
+    let finished = crate::limits::within(limit, what, work).await;
+    drop(group);
+    finished
 }

@@ -6,6 +6,7 @@ use super::link::Link;
 use super::offer::usage;
 use super::output::output;
 use super::{Hub, McpUpdate};
+use crate::command::PromptHead;
 use crate::provider::{Source, UserInput};
 use summonr_core::error::{Error, Result};
 
@@ -62,12 +63,13 @@ impl Hub {
     fn prompt_of(&self, text: &str) -> Option<(&Arc<Link>, String, String)> {
         let text = text.trim_start();
         let (head, rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
-        let (server, name) = head.strip_prefix('/')?.split_once(':')?;
-        Some((
-            self.link(server)?,
-            name.to_string(),
-            rest.trim().to_string(),
-        ))
+        let (link, name) = match crate::command::prompt_head(head)? {
+            PromptHead::Named { server, prompt } => (self.link(server)?, prompt),
+            PromptHead::Joined(joined) => self.links.iter().find_map(|link| {
+                Some((link, crate::command::joined_prompt(joined, link.name())?))
+            })?,
+        };
+        Some((link, name.to_string(), rest.trim().to_string()))
     }
 
     fn resource_of<'a>(&self, word: &'a str) -> Option<(&Arc<Link>, &'a str)> {
@@ -78,8 +80,7 @@ impl Hub {
 }
 
 pub(crate) fn wanted(text: &str) -> bool {
-    let head = text.split_whitespace().next().unwrap_or_default();
-    (head.starts_with('/') && head.contains(':'))
+    crate::command::server_prompt(text)
         || text
             .split_whitespace()
             .any(|word| word.starts_with('@') && word.contains(':'))

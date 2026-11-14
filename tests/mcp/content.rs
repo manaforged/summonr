@@ -117,6 +117,20 @@ pub(crate) fn a_server_prompt_becomes_the_user_message() {
     );
 }
 
+pub(crate) fn a_server_prompt_runs_from_its_mcp_spelling() {
+    let session = Session::new();
+    let model = Model::start(vec![Step::Text("ok")]);
+    let sent = asked(
+        &session,
+        &model,
+        "/mcp__fixture1__review \"fn main() {}\" rust",
+    );
+    assert!(
+        sent.contains("Review this rust code carefully: fn main() {}"),
+        "{sent}"
+    );
+}
+
 pub(crate) fn a_prompt_without_its_required_argument_is_refused() {
     let session = Session::new();
     let model = Model::start(vec![Step::Text("ok")]);

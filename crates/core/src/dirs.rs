@@ -14,6 +14,15 @@ pub fn workspace(root: &Path) -> PathBuf {
     root.join(STATE)
 }
 
+/// The name of Claude Code's config folder, in the home directory and in a project.
+pub const CLAUDE: &str = ".claude";
+
+/// The `.claude` folder inside `root`, a home directory or a project.
+#[must_use]
+pub fn claude(root: &Path) -> PathBuf {
+    root.join(CLAUDE)
+}
+
 /// The user's home directory from `HOME`, then `USERPROFILE`.
 pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")

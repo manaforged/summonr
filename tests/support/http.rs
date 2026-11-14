@@ -23,6 +23,7 @@ struct State {
     generation: u32,
     current: Option<String>,
     answered: Vec<Value>,
+    probes: Vec<String>,
 }
 
 impl Remote {
@@ -44,6 +45,10 @@ impl Remote {
         self.state.lock().unwrap().answered.clone()
     }
 
+    pub(crate) fn probes(&self) -> Vec<String> {
+        self.state.lock().unwrap().probes.clone()
+    }
+
     pub(crate) fn config(&self, name: &str, extra: &str) -> String {
         format!(
             "[mcp.{name}]\nurl = \"http://127.0.0.1:{}/mcp\"\n{extra}\n",
@@ -56,6 +61,7 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut length = 0;
     let mut session = None;
+    let mut probe = None;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).unwrap_or(0) == 0 {
@@ -68,6 +74,9 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
         if let Some(value) = lower.strip_prefix("mcp-session-id:") {
             session = Some(value.trim().to_string());
         }
+        if lower.starts_with("x-probe:") {
+            probe = Some(line["x-probe:".len()..].trim().to_string());
+        }
         if line == "\r\n" {
             break;
         }
@@ -78,6 +87,7 @@ fn serve(stream: TcpStream, mode: Mode, state: &Mutex<State>) {
     let id = request["id"].clone();
     let mut stream = stream;
     let mut state = state.lock().unwrap();
+    state.probes.extend(probe);
     if request.get("method").is_none() && request.get("result").is_some() {
         state.answered.push(id);
         reply(&mut stream, "202 Accepted", &[], "");

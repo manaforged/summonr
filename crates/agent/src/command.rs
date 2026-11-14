@@ -7,6 +7,9 @@ use serde::de::value::{Error, StrDeserializer};
 
 use Argument::{Bare, Text, Value};
 
+const PROMPT_PREFIX: &str = "mcp__";
+const PROMPT_SEPARATOR: &str = "__";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SlashCommand {
@@ -191,8 +194,42 @@ pub fn parse_command(line: &str) -> Option<SlashCommand> {
 pub(crate) fn server_prompt(line: &str) -> bool {
     line.split_whitespace()
         .next()
-        .and_then(|head| head.strip_prefix('/'))
-        .is_some_and(|name| name.contains(':'))
+        .is_some_and(|head| prompt_head(head).is_some())
+}
+
+/// How a typed command head names a server prompt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PromptHead<'a> {
+    Named { server: &'a str, prompt: &'a str },
+    Joined(&'a str),
+}
+
+/// Reads `/server:prompt`, or `/mcp__server__prompt` with the server and prompt still joined.
+#[must_use]
+pub(crate) fn prompt_head(head: &str) -> Option<PromptHead<'_>> {
+    let name = head.strip_prefix('/')?;
+    if let Some(joined) = name.strip_prefix(PROMPT_PREFIX) {
+        return joined
+            .contains(PROMPT_SEPARATOR)
+            .then_some(PromptHead::Joined(joined));
+    }
+    let (server, prompt) = name.split_once(':')?;
+    Some(PromptHead::Named { server, prompt })
+}
+
+/// The `/mcp__server__prompt` spelling of a server name: characters outside `A-Z`, `a-z`, `0-9`, `_`, `-` become `_`.
+#[must_use]
+pub(crate) fn prompt_server(server: &str) -> String {
+    summonr_core::text::clean_name(server, "_-", '_', usize::MAX)
+}
+
+/// The prompt that `joined` names after `server`'s spelling and the separator.
+#[must_use]
+pub(crate) fn joined_prompt<'a>(joined: &'a str, server: &str) -> Option<&'a str> {
+    joined
+        .strip_prefix(prompt_server(server).as_str())?
+        .strip_prefix(PROMPT_SEPARATOR)
+        .filter(|prompt| !prompt.is_empty())
 }
 
 pub fn alias(line: &str) -> Option<String> {

@@ -14,6 +14,7 @@ mod defer;
 mod expand;
 
 mod handshake;
+mod helper;
 pub(crate) mod http;
 mod journal;
 mod link;
@@ -21,6 +22,7 @@ mod manage;
 mod offer;
 mod output;
 mod probe;
+mod scope;
 mod status;
 mod tool;
 
@@ -94,6 +96,7 @@ impl Hub {
                 config::Found {
                     servers: Vec::new(),
                     waiting: Vec::new(),
+                    skipped: Vec::new(),
                 },
                 Some(format!("mcp config: {error}")),
             ),
@@ -121,6 +124,10 @@ impl Hub {
                     hub.failures.push((name, error));
                 }
             }
+        }
+        for (name, reason) in found.skipped {
+            hub.notes.push(format!("mcp {name}: skipped: {reason}"));
+            hub.failures.push((name, reason));
         }
         hub.notes.extend(failed);
         if !found.waiting.is_empty() {

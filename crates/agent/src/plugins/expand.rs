@@ -12,11 +12,19 @@ const SKILL_DIR: &str = "CLAUDE_SKILL_DIR";
 const SESSION: &str = "CLAUDE_SESSION_ID";
 pub(crate) const USER_CONFIG: &str = "${user_config.";
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Unset {
+    #[default]
+    Empty,
+    Kept,
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Vars<'a> {
     pub(crate) plugin: Option<&'a Plugin>,
     pub(crate) workspace: Option<&'a Path>,
     pub(crate) user_config: Option<&'a BTreeMap<String, String>>,
+    pub(crate) unset: Unset,
 }
 
 fn placeholder(name: &str) -> String {
@@ -46,10 +54,20 @@ pub(crate) fn expand(text: &str, vars: &Vars<'_>) -> String {
     let Some(user_config) = vars.user_config else {
         return text;
     };
-    let text = scan(&text, USER_CONFIG, |name| user_config.get(name).cloned());
+    let text = scan(&text, USER_CONFIG, |name| {
+        Some(user_config.get(name).cloned().unwrap_or_default())
+    });
     scan(&text, "${", |inner| {
-        let (name, fallback) = inner.split_once(":-").unwrap_or((inner, ""));
-        Some(std::env::var(name).unwrap_or_else(|_unset| fallback.to_string()))
+        let (name, fallback) = inner
+            .split_once(":-")
+            .map_or((inner, None), |(name, fallback)| (name, Some(fallback)));
+        std::env::var(name)
+            .ok()
+            .or_else(|| fallback.map(str::to_string))
+            .or_else(|| match vars.unset {
+                Unset::Empty => Some(String::new()),
+                Unset::Kept => None,
+            })
     })
 }
 
@@ -64,7 +82,7 @@ pub(crate) fn content(
     let vars = Vars {
         plugin,
         workspace: Some(workspace),
-        user_config: None,
+        ..Vars::default()
     };
     let mut text = expand(text, &vars);
     if let Some(dir) = skill {

@@ -1,13 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
-use serde_json::Value;
-
-use crate::config;
-use crate::plugins::read_parsed;
+use super::scope::{Origin, Scope, Sourced};
+use crate::plugins::{USER_CONFIG, Unset, Vars};
 use summonr_core::error::{Error, Result};
 use summonr_core::secret::Secret;
+use summonr_types::mcp::Transport;
 
 pub(crate) use summonr_types::mcp::Entry;
 
@@ -26,6 +24,12 @@ pub enum Launch {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Helper {
+    pub command: String,
+    pub origin: Origin,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Server {
     pub name: String,
     pub launch: Launch,
@@ -33,9 +37,16 @@ pub(crate) struct Server {
     pub allow: Option<std::collections::BTreeSet<String>>,
     pub idle: Option<Duration>,
     pub wait: Duration,
+    pub helper: Option<Helper>,
 }
 
-fn server(entry: Entry, name: String, workspace: &Path) -> Result<Option<Server>> {
+enum Built {
+    Ready(Box<Server>),
+    Bare,
+    Skipped(String),
+}
+
+fn server(mut entry: Entry, name: String, origin: Origin, workspace: &Path) -> Result<Built> {
     for (key, value) in [
         ("timeout_secs", entry.timeout_secs),
         ("idle_secs", entry.idle_secs),
@@ -45,6 +56,9 @@ fn server(entry: Entry, name: String, workspace: &Path) -> Result<Option<Server>
                 "mcp {name} {key} must be at least 1"
             )));
         }
+    }
+    if let Some(reason) = refused(&entry, origin.scope) {
+        return Ok(Built::Skipped(reason));
     }
     let root = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
     let key = format!(
@@ -56,32 +70,82 @@ fn server(entry: Entry, name: String, workspace: &Path) -> Result<Option<Server>
         )
     );
     let allow = entry.tools.clone().map(|tools| tools.into_iter().collect());
+    let limits = crate::limits::limits();
     let idle = (entry.keep_alive != Some(true)).then(|| {
         entry
             .idle_secs
-            .map_or(crate::limits::limits().mcp_idle(), Duration::from_secs)
+            .map_or(limits.mcp_idle(), Duration::from_secs)
     });
     let wait = entry
         .timeout_secs
-        .map_or(crate::limits::limits().mcp_call(), Duration::from_secs);
-    Ok(launch(entry).map(|launch| Server {
+        .map(Duration::from_secs)
+        .or_else(|| {
+            entry
+                .timeout
+                .map(Duration::from_millis)
+                .filter(|wait| *wait >= limits.mcp_timeout_floor())
+        })
+        .unwrap_or_else(|| limits.mcp_call());
+    let helper = entry
+        .headers_helper
+        .take()
+        .map(|command| Helper { command, origin });
+    let Some(launch) = launch(entry) else {
+        return Ok(Built::Bare);
+    };
+    let helper = match launch {
+        Launch::Http { .. } => helper,
+        Launch::Stdio { .. } => None,
+    };
+    Ok(Built::Ready(Box::new(Server {
         launch,
         name,
         key,
         allow,
         idle,
         wait,
-    }))
+        helper,
+    })))
+}
+
+fn refused(entry: &Entry, scope: Scope) -> Option<String> {
+    match entry.transport {
+        Some(Transport::Ws) => {
+            return Some("type \"ws\" is not supported; use \"http\"".to_string());
+        }
+        Some(Transport::Sdk) => {
+            return Some(
+                "type \"sdk\" names a server only an SDK host application can register".to_string(),
+            );
+        }
+        Some(Transport::Stdio | Transport::Http | Transport::Sse) | None => {}
+    }
+    match scope {
+        Scope::Plugin
+            if entry
+                .headers_helper
+                .as_deref()
+                .is_some_and(|helper| helper.contains(USER_CONFIG)) =>
+        {
+            Some("headersHelper cannot use ${user_config.KEY}; put it in headers".to_string())
+        }
+        Scope::Plugin | Scope::Local | Scope::Project | Scope::User => None,
+    }
 }
 
 fn launch(entry: Entry) -> Option<Launch> {
     let user_config = entry.user_config;
-    let vars = crate::plugins::Vars {
+    let vars = Vars {
         user_config: Some(&user_config),
-        ..Default::default()
+        unset: Unset::Kept,
+        ..Vars::default()
     };
     let fill = |text: &str| crate::plugins::expand(text, &vars);
-    if let Some(url) = entry.url {
+    let remote = match entry.transport {
+        Some(Transport::Stdio) => false,
+        Some(Transport::Http | Transport::Sse | Transport::Ws | Transport::Sdk) | None => true,
+    };
+    if remote && let Some(url) = entry.url {
         let mut headers: Vec<(String, String)> = entry
             .headers
             .iter()
@@ -125,160 +189,27 @@ fn launch(entry: Entry) -> Option<Launch> {
 pub(crate) struct Found {
     pub servers: Vec<Server>,
     pub waiting: Vec<String>,
+    pub skipped: Vec<(String, String)>,
 }
 
 pub(crate) fn servers(workspace: &Path) -> Result<Found> {
-    let (layers, waiting) = layers(workspace)?;
-    let mut entries: BTreeMap<String, Entry> = BTreeMap::new();
-    for layer in layers {
-        for (name, entry) in layer {
-            match entries.get_mut(&name) {
-                Some(base) => base.overlay(entry),
-                None => {
-                    entries.insert(name, entry);
-                }
-            }
-        }
-    }
-    let mut servers = Vec::new();
-    for (name, entry) in entries {
+    let super::scope::Resolved { entries, waiting } = super::scope::resolve(workspace)?;
+    let mut found = Found {
+        servers: Vec::new(),
+        waiting,
+        skipped: Vec::new(),
+    };
+    for (name, Sourced { entry, origin }) in entries {
         if entry.enabled == Some(false) {
             continue;
         }
-        if let Some(server) = server(entry, name, workspace)? {
-            servers.push(server);
+        match server(entry, name.clone(), origin, workspace)? {
+            Built::Ready(server) => found.servers.push(*server),
+            Built::Bare => {}
+            Built::Skipped(reason) => found.skipped.push((name, reason)),
         }
     }
-    Ok(Found { servers, waiting })
-}
-
-type Layers = (Vec<BTreeMap<String, Entry>>, Vec<String>);
-
-fn layers(workspace: &Path) -> Result<Layers> {
-    let home = summonr_core::dirs::home_dir();
-    let mut layers = Vec::new();
-    let mut approved = BTreeSet::new();
-    let mut all = false;
-    let file = config::file()?;
-    let user = file.mcp.clone();
-    let import_peers = file.import_mcp == Some(true);
-    approved.extend(
-        user.iter()
-            .filter(|(_, entry)| entry.enabled == Some(true))
-            .map(|(name, _)| name.clone()),
-    );
-    if import_peers && let Some(home) = &home {
-        let codex = read_parsed(&home.join(".codex/config.toml"), |text: &str| {
-            toml::from_str::<toml::Value>(text)
-        })?;
-        layers.push(toml_map(
-            codex.as_ref().and_then(|file| file.get("mcp_servers")),
-        ));
-        let claude = read_parsed(&home.join(".claude.json"), |text: &str| {
-            serde_json::from_str::<Value>(text)
-        })?;
-        layers.push(json_map(
-            claude.as_ref().and_then(|file| file.get("mcpServers")),
-        ));
-        let project = claude
-            .as_ref()
-            .and_then(|file| file.get("projects")?.get(workspace.to_str()?));
-        layers.push(json_map(project.and_then(|entry| entry.get("mcpServers"))));
-        all = project
-            .and_then(|entry| entry.get("enableAllProjectMcpServers"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        approved.extend(
-            project
-                .and_then(|entry| entry.get("enabledMcpjsonServers"))
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_string),
-        );
-    }
-    let local = read_parsed(&workspace.join(".mcp.json"), |text: &str| {
-        serde_json::from_str::<Value>(text)
-    })?;
-    let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
-    shared.extend(config::workspace(workspace)?.mcp.clone());
-    let waiting = shared
-        .keys()
-        .filter(|name| {
-            !all && !approved.contains(*name)
-                && !user
-                    .get(*name)
-                    .is_some_and(|entry| entry.command.is_some() || entry.url.is_some())
-        })
-        .cloned()
-        .collect();
-    shared.retain(|name, _entry| all || approved.contains(name));
-    layers.push(shared);
-    let (plugins, legacy) = plugin_layer(workspace);
-    layers.push(plugins);
-    layers.push(renamed(user, &legacy));
-    Ok((layers, waiting))
-}
-
-fn plugin_layer(workspace: &Path) -> (BTreeMap<String, Entry>, BTreeMap<String, String>) {
-    let mut layer = BTreeMap::new();
-    let mut legacy = BTreeMap::new();
-    for plugin in crate::plugins::enabled() {
-        let map = plugin.mcp();
-        legacy.extend(
-            map.keys()
-                .map(|server| (plugin.legacy_mcp_name(server), plugin.mcp_name(server))),
-        );
-        let named = |server: &str| plugin.mcp_name(server);
-        layer.extend(plugin.servers(map, named, workspace, |entry: &mut Entry| {
-            entry
-                .command
-                .iter_mut()
-                .chain(&mut entry.url)
-                .chain(&mut entry.args)
-                .chain(entry.env.values_mut())
-                .collect()
-        }));
-    }
-    (layer, legacy)
-}
-
-fn renamed(
-    layer: BTreeMap<String, Entry>,
-    legacy: &BTreeMap<String, String>,
-) -> BTreeMap<String, Entry> {
-    let mut out: BTreeMap<String, Entry> = BTreeMap::new();
-    for (name, entry) in layer {
-        let name = legacy.get(&name).cloned().unwrap_or(name);
-        match out.get_mut(&name) {
-            Some(base) => base.overlay(entry),
-            None => {
-                out.insert(name, entry);
-            }
-        }
-    }
-    out
-}
-
-fn json_map(value: Option<&Value>) -> BTreeMap<String, Entry> {
-    value
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, entry)| {
-            Some((name.clone(), serde_json::from_value(entry.clone()).ok()?))
-        })
-        .collect()
-}
-
-fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
-    value
-        .and_then(toml::Value::as_table)
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, entry)| Some((name.clone(), entry.clone().try_into().ok()?)))
-        .collect()
+    Ok(found)
 }
 
 pub(crate) fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {

@@ -211,3 +211,38 @@ fn mcp_servers_merge_in_order_and_take_the_documented_name() {
     assert_eq!(plugin.mcp_name("my.server"), "plugin_demo_my_server");
     assert_eq!(plugin.legacy_mcp_name("db"), "demo-db");
 }
+
+#[test]
+fn a_claude_entry_reads_its_type_helper_timeout_and_endpoint() {
+    let parse = |text: &str| serde_json::from_str::<summonr_types::mcp::Entry>(text).unwrap();
+    let entry = parse(
+        r#"{"type": "streamable-http", "url": "HTTPS://Mcp.Example.com:443/mcp/", "headersHelper": "print-headers", "timeout": 5000}"#,
+    );
+    assert_eq!(entry.transport, Some(summonr_types::mcp::Transport::Http));
+    assert_eq!(entry.headers_helper.as_deref(), Some("print-headers"));
+    assert_eq!(entry.timeout, Some(5000));
+    let same = parse(r#"{"type": "http", "url": "https://mcp.example.com/mcp"}"#);
+    assert_eq!(entry.endpoint(), same.endpoint());
+    let other = parse(r#"{"type": "http", "url": "https://mcp.example.com:8443/mcp"}"#);
+    assert_ne!(entry.endpoint(), other.endpoint());
+    serde_json::from_str::<summonr_types::mcp::Entry>(r#"{"type": "carrier-pigeon"}"#)
+        .expect_err("an unknown transport type is refused");
+}
+
+#[test]
+fn an_unset_variable_without_a_default_stays_as_written_for_mcp() {
+    let none = BTreeMap::new();
+    let text =
+        "${SUMMONR_PROBE_NEVER_SET}|${SUMMONR_PROBE_NEVER_SET:-fallback}|${user_config.missing}";
+    let kept = Vars {
+        user_config: Some(&none),
+        unset: Unset::Kept,
+        ..Vars::default()
+    };
+    assert_eq!(expand(text, &kept), "${SUMMONR_PROBE_NEVER_SET}|fallback|");
+    let empty = Vars {
+        user_config: Some(&none),
+        ..Vars::default()
+    };
+    assert_eq!(expand(text, &empty), "|fallback|");
+}

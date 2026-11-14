@@ -217,6 +217,10 @@ A foreign agent picks an id and reads `summonr mail inbox <id>`; anyone can writ
 
 `inbox <id> --clear` prints the mail and empties that inbox; it refuses the inbox of a live summonr session, because that session keeps its own read position. A lock file next to each inbox makes a send, a read, and a clear wait for each other, so no message is lost.
 
+## Project instructions
+
+In a trusted workspace, summonr reads your instruction files into the system prompt at session start: `AGENTS.md`, Claude Code's `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, and `.claude/rules/*.md`, from the workspace and the folders above it, plus your user files such as `~/.claude/CLAUDE.md` and `~/.claude/rules/`. `@path` imports other files into them. A rule with `paths` in its front matter does not load at session start. The [reference](reference.md) lists every file, the order, and the import rules. `--no-trust` skips all of them. Edits apply to new sessions.
+
 ## Memory
 
 With `memory = true` under `[modules]`, summonr remembers across sessions through two Markdown files that load into every trusted session. The module is off by default.

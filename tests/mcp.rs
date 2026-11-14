@@ -77,6 +77,7 @@ fn main() {
         tools::tools_disabled_modules_are_hidden_and_refuse_calls,
         torn::a_session_resumes_with_any_state_file_torn,
         content::a_server_prompt_becomes_the_user_message,
+        content::a_server_prompt_runs_from_its_mcp_spelling,
         content::a_prompt_without_its_required_argument_is_refused,
         content::a_server_resource_is_attached_to_the_prompt,
         content::a_changed_prompt_list_is_fetched_again,
@@ -180,6 +181,10 @@ fn main() {
         policy::an_unapproved_project_server_is_named,
         policy::a_tuning_table_keeps_a_project_server_waiting,
         policy::a_zero_timeout_is_refused,
+        policy::a_local_claude_server_replaces_the_project_one_whole,
+        policy::a_websocket_server_is_skipped_and_named,
+        #[cfg(unix)]
+        policy::an_unset_variable_without_a_default_reaches_the_server_as_written,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_relocated_summonr_home_stays_protected_from_read_and_search,
         #[cfg(unix)]
@@ -199,6 +204,9 @@ fn main() {
         protocol::an_aborted_call_is_cancelled,
         protocol::a_cancel_sent_at_exit_reaches_a_slow_server,
         transport::a_call_with_no_reply_is_cancelled_at_the_timeout,
+        transport::a_claude_timeout_in_milliseconds_cancels_a_call,
+        #[cfg(unix)]
+        transport::a_headers_helper_header_replaces_the_static_one,
         transport::peer_mail_waits_for_a_pending_mcp_call,
         transport::a_timed_out_reply_does_not_break_the_next_call,
         transport::a_request_the_server_does_not_read_times_out,

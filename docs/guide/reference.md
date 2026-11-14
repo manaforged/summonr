@@ -115,7 +115,7 @@ An unknown key in `.summonr/check.toml` or `.summonr/contract.toml`, or a `.summ
 | `-p`, `--print` | Run one prompt and exit. A bare prompt after the options opens the interface with that prompt as the first turn when stdin and stdout are a terminal, and runs once and exits otherwise. |
 | `-c`, `--continue` | Resume the last session in this directory. |
 | `--fork` | Copy the resumed session (`-c`, `--session`) and continue the copy. Not with `--goal` or `--steps`. |
-| `--trust` | Read workspace `SYSTEM.md`, `AGENTS.md`, and `CLAUDE.md`. On by default. |
+| `--trust` | Read workspace `SYSTEM.md`, `AGENTS.md`, the `CLAUDE.md` files, and `.claude/rules/`. On by default. |
 | `--no-trust` | Ignore those workspace files. |
 | `--no-verify` | Skip the `.summonr/check.toml` gate. |
 | `--no-splash` | Skip the startup banner. |
@@ -302,6 +302,8 @@ cache_ttl = "5m"
 | `mcp_progress_stretch` | `4` | Progress can extend an MCP call up to this multiple of its timeout. |
 | `mcp_cancel_write_secs` | `1` | Time to write an MCP cancel. |
 | `mcp_close_grace_ms` | `500` | After closing a stdio MCP server's input, how long summonr waits for it to exit before it stops the process. |
+| `mcp_timeout_floor_ms` | `1000` | A server's `timeout` (milliseconds) below this is ignored. |
+| `mcp_headers_helper_secs` | `10` | Time a server's `headers_helper` gets to print its headers. |
 | `image_side_px` | `2000` | Longest side of an image sent to the model; a larger image is scaled down. |
 | `image_bytes` | `5000000` | Largest image sent to the model; a larger one is re-encoded to fit. |
 | `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
@@ -937,7 +939,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 | --- | --- | --- |
 | Command | `<name>.md` under `.summonr/commands/`, `.claude/commands/`, `~/.summonr/commands/`, or `~/.claude/commands/` | `/<name> args`, or `/project:<name>` and `/user:<name>` when a plugin command has the same name. The body is the prompt; `$ARGUMENTS` is everything after the name, `$0`, `$1`, ... and `$ARGUMENTS[N]` are its words counted from 0, and arguments no placeholder takes are appended as `ARGUMENTS: <args>`. A project file wins over a user file with the same name. |
 | Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/`; a plugin skill is `/<plugin>:<name>` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
-| MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
+| MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt`, `/mcp__server__prompt`, and `@server:uri` expand server prompts and resources into the user message. Claude Code scopes resolve local, then project, then user, then plugin, whole entry. |
 | Hook | `[hooks]` `session_start`, `user_prompt`, `pre_tool`, `permission_request`, `post_tool`, `post_tool_failure`, `notification`, `subagent_start`, `subagent_stop`, `pre_compact`, `compact`, `stop`, `stop_failure`, `session_end` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call, `user_prompt` a prompt, `permission_request` may answer an approval, and `stop` and `subagent_stop` may keep the turn going (stdin is JSON). |
 | Plugin | `summonr plugin install PATH` (Claude Code layout) | Its skills, MCP tools (`plugin_<plugin>_<server>__tool`), hooks, and `bin/` |
 | CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy and the danger prompt apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
@@ -946,7 +948,9 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`. A one-shot `-p` prompt never advertises `todo`.
 
-When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once. A line in one of these files that starts with `@` names another file relative to it, and its text joins the prompt in place; each file loads once, and a missing include stays as the literal line.
+When the workspace is trusted, summonr injects these files in this order. User context: `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, each `.md` file under `~/.claude/rules/`, and `~/.config/devin/AGENTS.md`. Project context: for each folder above the workspace, from the filesystem root down, its `CLAUDE.md`, `.claude/CLAUDE.md`, and `CLAUDE.local.md`; then at the workspace root `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, each `.md` file under `.claude/rules/`, and `CLAUDE.local.md`. Rules are read recursively in name order, through symlinks, with their front matter removed. A rule whose front matter sets `paths` does not load at session start. A file that resolves to one already loaded is skipped, so a `CLAUDE.md` that links to or imports `AGENTS.md` sends it once, and a section repeated across files is sent once.
+
+`@path` in one of these files imports another file: at the start of a line or after a space, outside code spans and fenced code blocks. A relative path resolves against the file that holds the import, `~/` against the home directory, and `\ ` is a space in the path; a quoted path is not imported. An import on a line of its own replaces that line; any other import keeps the line and adds the file's text after it. Imports nest four levels deep. Each file loads once, and a missing import stays as literal text.
 
 `~/.summonr/SYSTEM.md` replaces the built-in preamble when that file is nonempty. `<workspace>/SYSTEM.md` is appended after it, and only when the workspace is trusted. `SUMMONR_SYSTEM_PROMPT` still replaces the whole prompt.
 

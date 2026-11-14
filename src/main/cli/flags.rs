@@ -75,7 +75,7 @@ pub(super) const FLAGS: Table<Args> = Table {
             args.trust = false;
             Ok(())
         })
-        .help("", "ignore workspace SYSTEM.md, AGENTS.md, CLAUDE.md"),
+        .help("", "ignore SYSTEM.md, AGENTS.md, CLAUDE.md files and rules"),
         Flag::switch(&["--trust"], |args| on(&mut args.trust))
             .help("", "on by default; the last of --trust and --no-trust wins"),
         Flag::switch(&["--here"], |args| on(&mut args.here))

@@ -95,6 +95,7 @@ pub(crate) struct Options<'a> {
     pub(crate) images: bool,
     pub(crate) interrupt: Option<(&'a Path, &'a str)>,
     pub(crate) prompt: Option<&'a str>,
+    pub(crate) root: &'a str,
 }
 
 impl Session {
@@ -163,7 +164,7 @@ impl Session {
         );
         std::fs::write(
             self.home.path().join("config.toml"),
-            format!("{endpoint}{config}"),
+            format!("{}{endpoint}{config}", options.root),
         )
         .unwrap();
         let stdout = self.file("stdout");

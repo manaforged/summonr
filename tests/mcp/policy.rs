@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::support::{Model, Session, Step, advertised, calls};
+use crate::support::{Model, Options, Session, Step, advertised, calls};
 
 pub(crate) fn strict_mode_denies_a_listed_tool_and_runs_an_allowed_one() {
     let session = Session::new();
@@ -113,6 +113,76 @@ pub(crate) fn a_zero_timeout_is_refused() {
         outcome.stdout.contains("timeout_secs must be at least 1"),
         "{}",
         outcome.stdout
+    );
+}
+
+pub(crate) fn a_local_claude_server_replaces_the_project_one_whole() {
+    let session = Session::new();
+    std::fs::write(
+        session.work.path().join(".mcp.json"),
+        json!({"mcpServers": {"fixture1": {"command": "/nonexistent/project-server"}}}).to_string(),
+    )
+    .unwrap();
+    let local = json!({"mcpServers": {"fixture1": {
+        "command": crate::support::fixture(),
+        "env": {"MCP_FIXTURE_SERVE": "1", "MCP_FIXTURE_LOG": session.file("fixture1.log")}
+    }}});
+    let work = session.work.path().to_path_buf();
+    let projects: serde_json::Map<String, serde_json::Value> =
+        [std::fs::canonicalize(&work).unwrap(), work]
+            .iter()
+            .map(|path| (path.display().to_string(), local.clone()))
+            .collect();
+    std::fs::write(
+        session.home.path().join(".claude.json"),
+        json!({"projects": projects}).to_string(),
+    )
+    .unwrap();
+    let model = Model::start(vec![
+        Step::Call("fixture1__echo", json!({"text": "x"})),
+        Step::Text("ok"),
+    ]);
+    let options = Options {
+        root: "import_mcp = true\n",
+        ..Options::default()
+    };
+    session.run_with(&model, "[mcp.fixture1]\nenabled = true\n", &[], &options);
+    let received = session.received("fixture1");
+    assert_eq!(
+        calls(&received, "tools/call").len(),
+        1,
+        "{:?}",
+        model.tool_results()
+    );
+}
+
+pub(crate) fn a_websocket_server_is_skipped_and_named() {
+    let session = Session::new();
+    let config = "[mcp.socket]\ntype = \"ws\"\nurl = \"wss://mcp.example.invalid/socket\"\n";
+    let outcome = session.run(&Model::start(vec![Step::Text("ok")]), config, &["--json"]);
+    assert!(
+        outcome.stdout.contains("mcp socket: skipped: type"),
+        "{}",
+        outcome.stdout
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn an_unset_variable_without_a_default_reaches_the_server_as_written() {
+    let session = Session::new();
+    let config = format!(
+        "[mcp.wrap]\ncommand = \"sh\"\nargs = [\"-c\", 'printf %s \"$TOKEN\" > \"$OUT\"; exec \"$REAL\"']\nenv = {{ TOKEN = '${{SUMMONR_PROBE_NEVER_SET}}|${{SUMMONR_PROBE_NEVER_SET:-fallback}}', OUT = '{}', REAL = '{}', MCP_FIXTURE_SERVE = '1' }}\n",
+        session.file("token.txt").display(),
+        crate::support::fixture().display(),
+    );
+    let model = Model::start(vec![
+        Step::Call("wrap__echo", json!({"text": "x"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, &config, &[]);
+    assert_eq!(
+        crate::support::read(&session.file("token.txt")),
+        "${SUMMONR_PROBE_NEVER_SET}|fallback"
     );
 }
 

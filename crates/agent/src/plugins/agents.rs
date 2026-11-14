@@ -5,7 +5,6 @@ use crate::skills;
 use summonr_core::text::Frontmatter;
 
 const DIR: &str = "agents";
-const CLAUDE_DIR: &str = ".claude/agents";
 const HEADER: &str =
     "Agents (pass one as `agent` to the task tool; the child follows its instructions):";
 
@@ -59,9 +58,15 @@ impl Agent {
 
 #[must_use]
 pub(crate) fn agents(workspace: &Path) -> Vec<Agent> {
-    let mut found = of_dir(&workspace.join(CLAUDE_DIR), &Origin::Project);
+    let mut found = of_dir(
+        &summonr_core::dirs::claude(workspace).join(DIR),
+        &Origin::Project,
+    );
     if let Some(home) = summonr_core::dirs::user_home() {
-        found.extend(of_dir(&home.join(CLAUDE_DIR), &Origin::User));
+        found.extend(of_dir(
+            &summonr_core::dirs::claude(&home).join(DIR),
+            &Origin::User,
+        ));
     }
     found.extend(
         enabled()

@@ -1,8 +1,17 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use summonr_core::dirs::summonr_home;
+use summonr_core::dirs::{claude, summonr_home};
+
+mod imports;
+mod rules;
+
+const USER_TAG: &str = "user_context";
+const PROJECT_TAG: &str = "project_context";
+const AGENTS_MD: &str = "AGENTS.md";
+const CLAUDE_MD: &str = "CLAUDE.md";
+const LOCAL_MD: &str = "CLAUDE.local.md";
 
 const IMAGE_SECTION: (&str, &str) = ("<image_input>", "</image_input>");
 const IMAGE_ON: &str = "<image_input>\nThe model accepts image input.\n</image_input>";
@@ -44,7 +53,8 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     }
     if trust {
         push_file(&mut parts, &workspace.join("SYSTEM.md"));
-        instructions(&mut parts, workspace);
+        let user_home = summonr_core::dirs::user_home();
+        instructions(&mut parts, workspace, user_home.as_deref());
         if let Some(user_home) = summonr_core::dirs::home_dir() {
             let state = crate::memory::repo_files(&user_home, workspace);
             parts.extend(crate::memory::sections(&state, workspace));
@@ -139,58 +149,78 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     parts.join("\n\n")
 }
 
-fn instructions(parts: &mut Vec<String>, workspace: &Path) {
-    let mut seen = HashSet::new();
-    let mut sections = HashSet::new();
-    let home = summonr_core::dirs::home_dir();
-    let user = home.iter().flat_map(|home| {
-        [
-            ".agents/AGENTS.md",
-            ".claude/CLAUDE.md",
-            ".config/devin/AGENTS.md",
-        ]
-        .map(|rel| (home.as_path(), rel, "user_context"))
-    });
-    let project = ["AGENTS.md", "CLAUDE.md"].map(|rel| (workspace, rel, "project_context"));
-    for (dir, rel, tag) in user.chain(project) {
-        let path = dir.join(rel);
-        if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
-            continue;
-        }
-        if let Some(text) = expanded(&path, &mut seen)
-            && let Some(text) = dedup_sections(&text, &mut sections)
+fn instructions(parts: &mut Vec<String>, workspace: &Path, home: Option<&Path>) {
+    let mut load = Load {
+        parts,
+        sections: HashSet::new(),
+        files: imports::Loader::new(home),
+    };
+    if let Some(home) = home {
+        load.file(home, &home.join(".agents/AGENTS.md"), USER_TAG);
+        load.file(home, &claude(home).join(CLAUDE_MD), USER_TAG);
+        load.rules(home, home, USER_TAG);
+        load.file(home, &home.join(".config/devin/AGENTS.md"), USER_TAG);
+    }
+    let root = std::path::absolute(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let mut above: Vec<&Path> = root.ancestors().skip(1).collect();
+    above.reverse();
+    for dir in above {
+        load.claude_files(workspace, dir);
+        load.file(workspace, &dir.join(LOCAL_MD), PROJECT_TAG);
+    }
+    load.file(workspace, &workspace.join(AGENTS_MD), PROJECT_TAG);
+    load.claude_files(workspace, workspace);
+    load.rules(workspace, workspace, PROJECT_TAG);
+    load.file(workspace, &workspace.join(LOCAL_MD), PROJECT_TAG);
+}
+
+struct Load<'a> {
+    parts: &'a mut Vec<String>,
+    sections: HashSet<u64>,
+    files: imports::Loader<'a>,
+}
+
+impl Load<'_> {
+    fn file(&mut self, base: &Path, path: &Path, tag: &str) {
+        if self.files.claim(path)
+            && let Some(text) = self.files.expand(path)
         {
-            parts.push(format!("<{tag} path=\"{rel}\">\n{text}\n</{tag}>"));
+            self.push(base, path, tag, &text);
+        }
+    }
+
+    fn claude_files(&mut self, base: &Path, dir: &Path) {
+        self.file(base, &dir.join(CLAUDE_MD), PROJECT_TAG);
+        self.file(base, &claude(dir).join(CLAUDE_MD), PROJECT_TAG);
+    }
+
+    fn rules(&mut self, base: &Path, root: &Path, tag: &str) {
+        for (path, body) in rules::launch(root) {
+            if self.files.claim(&path) && !body.trim().is_empty() {
+                self.push(base, &path, tag, &body);
+            }
+        }
+    }
+
+    fn push(&mut self, base: &Path, path: &Path, tag: &str, text: &str) {
+        if let Some(text) = dedup_sections(text, &mut self.sections) {
+            let label = label(path, base);
+            self.parts
+                .push(format!("<{tag} path=\"{label}\">\n{text}\n</{tag}>"));
         }
     }
 }
 
-fn expanded(path: &Path, seen: &mut HashSet<PathBuf>) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let mut lines = Vec::new();
-    for line in text.lines() {
-        let Some(target) = include_target(line) else {
-            lines.push(line.to_string());
-            continue;
-        };
-        let dir = path.parent().unwrap_or(path).to_path_buf();
-        let target = dir.join(target);
-        if !seen.insert(target.canonicalize().unwrap_or_else(|_| target.clone())) {
-            continue;
-        }
-        match expanded(&target, seen) {
-            Some(text) => lines.push(text),
-            None => lines.push(line.to_string()),
-        }
-    }
-    let text = lines.join("\n");
-    (!text.trim().is_empty()).then_some(text)
-}
-
-fn include_target(line: &str) -> Option<&str> {
-    let rest = line.trim_start().strip_prefix('@')?;
-    let token = rest.split_whitespace().next()?;
-    (!token.is_empty()).then_some(token)
+fn label(path: &Path, base: &Path) -> String {
+    path.strip_prefix(base).map_or_else(
+        |_| path.display().to_string(),
+        |rel| {
+            rel.components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/")
+        },
+    )
 }
 
 fn push_file(parts: &mut Vec<String>, path: &Path) -> bool {

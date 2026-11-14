@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use crate::jobs::Owner;
-use crate::process::{Env, Io, Spec};
+use crate::process::{Io, Spec};
 use summonr_core::error::{Error, Result};
 
 use super::ToolOutput;
@@ -99,16 +99,7 @@ pub(super) fn spawn_command(
     )
 }
 
-pub(super) fn shell(script: &str, cwd: &Path) -> Result<Spec> {
-    Ok(Spec {
-        cwd: Some(cwd.to_path_buf()),
-        base: Env::Clean,
-        ..Spec::new(
-            summonr_core::shell::program()?,
-            summonr_core::shell::arguments(script, cwd),
-        )
-    })
-}
+pub(super) use crate::process::shell;
 
 pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
     let StartedCommand {

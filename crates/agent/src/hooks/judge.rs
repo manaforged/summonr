@@ -3,11 +3,7 @@ use serde_json::Value;
 
 use super::{Dialect, HookEvent};
 
-pub(super) struct Outcome {
-    pub(super) code: Option<i32>,
-    pub(super) stdout: String,
-    pub(super) stderr: String,
-}
+pub(super) use crate::process::Ran as Outcome;
 
 #[derive(Default)]
 pub(crate) struct Verdict {

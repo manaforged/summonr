@@ -39,7 +39,7 @@ pub(super) const FLAGS: Table<Args> = Table {
         Flag::switch(&["-p", "--print"], Args::print).help("", "run one prompt and exit"),
         Flag::switch(&["--json"], |args| on(&mut args.json)).help(
             "",
-            "print JSON (with -p, session export, session diff, worktree list, endpoint usage, mcp, classify, cron list, plugin marketplace list)",
+            "print JSON (with -p, session list, session export, session diff, worktree list, endpoint usage, mcp, classify, cron list, plugin marketplace list)",
         ),
         Flag::switch(&["-c", "--continue"], |args| on(&mut args.resume))
             .help("", "resume the last session here"),

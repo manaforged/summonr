@@ -129,6 +129,7 @@ fn an_agent_in_a_worktree_lists_under_its_branch() {
         agent: None,
         topic: None,
         modified: None,
+        format: summonr_agent::session::FORMAT,
     };
     let seen = steps(
         open_in(shop.tree.clone(), vec![(chat, false)]),

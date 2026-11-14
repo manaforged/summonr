@@ -29,6 +29,7 @@ fn thread(
         agent: agent.map(str::to_owned),
         topic: topic.map(str::to_owned),
         modified: SystemTime::now().checked_sub(Duration::from_secs(60)),
+        format: summonr_agent::session::FORMAT,
     };
     (info, true)
 }

@@ -1,7 +1,7 @@
 
 Sessions:
   session resume [ID|NAME]    resume a session; bare resumes the last one here
-  session list                list sessions
+  session list                list sessions (--json)
   session search TEXT         search past sessions
   session export [ID|NAME]    markdown, --digest for classify, or --json for complete audit records
   session profile [ID|NAME]   time and tokens of a session (--all [--last N])

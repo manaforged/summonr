@@ -20,6 +20,7 @@ fn info(home: &std::path::Path) -> SessionInfo {
         parent: None,
         depth: 0,
         interactive: true,
+        format: crate::session::FORMAT,
         agent: None,
         topic: None,
         modified: None,

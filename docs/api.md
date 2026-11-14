@@ -15,7 +15,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees; with a `[metric]` table, keep a turn only when its number beats the best, revert it otherwise, and stop at the target or a budget |
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
 | `summonr -c`, `summonr --session ID`, `summonr session resume [ID\|NAME]` | Resume the last session here, or a session by short id, id prefix, or name |
-| `summonr session list` | List sessions, tab-separated: id, name, directory, preview |
+| `summonr session list [--json]` | List sessions, tab-separated: id, name, directory, preview. With `--json`, an array of session records, newest first: `id`, `name`, `directory`, `model`, `preview`, and `format`, the session journal format. A session written before formats were recorded reports `format` 1. Commands that open a session refuse one whose `format` is newer than the build reads, and name the file, its format, and the supported format |
 | `summonr session search TEXT` | Search past sessions, newest first: id, start time, directory, matching line; at most 50 lines; exit 1 and `no matches` on stderr when none |
 | `summonr session export [ID\|NAME]` | Print a session as Markdown |
 | `summonr session profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS (shared pages excluded, so lower than RSS) and the peak resident set on Linux |
@@ -137,7 +137,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `aborted` | `code` (`time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`), `reason` (free text) |
 | `merged` | `branch`, `base`, `files` |
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
-| `approval` | `detail`, optional `persist`, and `dialog`, the number an answer must carry |
+| `approval` | `detail`, optional `id` (the tool call that asks), optional `persist`, and `dialog`, the number an answer must carry |
 | `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends; `dialog`, the number an answer must carry |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after the check ran; it counts toward `checks_failed` |
 | `receipt` | `receipt` |

@@ -27,6 +27,7 @@ mod prune;
 pub(crate) mod sidecar;
 mod usage;
 
+pub use crate::durable::log::FORMAT;
 pub use catalog::{all, remove, set_name};
 pub use catalog::{info, last_for, list, resolve_id, short};
 pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
@@ -53,6 +54,8 @@ pub struct SessionInfo {
     pub topic: Option<String>,
     /// When the session journal last changed.
     pub modified: Option<std::time::SystemTime>,
+    /// The journal format the session was written in.
+    pub format: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -70,6 +73,8 @@ pub(crate) struct Summary {
     topic: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     open_bytes: Option<u64>,
+    #[serde(default = "log::unversioned")]
+    format: u32,
 }
 
 impl Summary {
@@ -83,8 +88,10 @@ impl Summary {
                     parent,
                     depth,
                     interactive,
+                    format,
                     ..
                 } => {
+                    summary.format = *format;
                     summary.interactive = *interactive;
                     summary.cwd = Some(workspace.display().to_string());
                     summary.model = Some(model.clone());
@@ -148,6 +155,7 @@ impl Summary {
             agent: self.agent,
             topic: self.topic,
             modified,
+            format: self.format,
         }
     }
 }

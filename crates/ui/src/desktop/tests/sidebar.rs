@@ -20,6 +20,7 @@ fn chat(id: &str, preview: &str, age: Duration) -> (SessionInfo, bool) {
             agent: None,
             topic: None,
             modified: SystemTime::now().checked_sub(age),
+            format: summonr_agent::session::FORMAT,
         },
         true,
     )

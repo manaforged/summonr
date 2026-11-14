@@ -121,7 +121,7 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
         Verb::Mcp(command) => done(mcp(command, args.json).await),
         Verb::SessionList => done(match args.grep.as_deref() {
             Some(pattern) => grep_sessions(pattern),
-            None => print_sessions(),
+            None => print_sessions(args.json),
         }),
         Verb::Export => done(export_session_cmd(args)),
         Verb::Profile => done(profile(args)),

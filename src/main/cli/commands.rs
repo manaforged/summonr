@@ -207,7 +207,7 @@ const CORE: [Command; 19] = [
         name: "session list",
         most: Some(0),
         run: |args, _| verb(args, Verb::SessionList),
-        help: "session list                list sessions",
+        help: "session list                list sessions (--json)",
     },
     Command {
         name: "session search",

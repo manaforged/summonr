@@ -209,6 +209,7 @@ fn journal(home: &Path, id: &str) {
             depth: 0,
             revision: Some("fixture-build".to_string()),
             interactive: false,
+            format: log::FORMAT,
         },
         Durability::Synced,
     )

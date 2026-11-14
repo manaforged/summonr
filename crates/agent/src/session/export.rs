@@ -10,6 +10,7 @@ const ARG_WIDTH: usize = 100;
 
 /// Stream complete journal and mail-audit records without dropping provider fields.
 pub fn export_json(path: &Path, output: &mut impl std::io::Write) -> Result<()> {
+    log::readable(path)?;
     let id = log::parse_path(path)
         .ok_or_else(|| crate::Error::Config("session path has no id".to_string()))?
         .to_string();
@@ -72,6 +73,7 @@ fn audit_records(
 }
 
 pub fn export(path: &Path) -> Result<String> {
+    log::readable(path)?;
     let mut out = String::new();
     for line in log::records(path, 0) {
         match line? {

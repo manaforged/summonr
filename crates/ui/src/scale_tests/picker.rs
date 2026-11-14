@@ -20,6 +20,7 @@ fn session(id: &str, parent: Option<&str>) -> summonr_agent::session::SessionInf
         agent: None,
         topic: None,
         modified: None,
+        format: summonr_agent::session::FORMAT,
     }
 }
 

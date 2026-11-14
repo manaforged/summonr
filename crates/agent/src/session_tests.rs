@@ -314,3 +314,74 @@ fn usage_skips_turns_that_used_no_tokens() {
     assert_eq!(rows.iter().map(|row| row.turns).sum::<u64>(), 1);
     assert_eq!(rows.iter().map(|row| row.output).sum::<u64>(), 7);
 }
+
+fn journal_with(home: &Path, format: Option<u32>) -> crate::durable::id::SessionId {
+    let id: crate::durable::id::SessionId = "000000000000000018d2297ad34281e1"
+        .parse()
+        .expect("fixture session id");
+    let path = log::session_path(home, id);
+    std::fs::create_dir_all(path.parent().expect("session directory"))
+        .expect("create session directory");
+    let format = format.map_or_else(String::new, |format| format!(",\"format\":{format}"));
+    std::fs::write(
+        &path,
+        format!(
+            "{{\"kind\":\"session\",\"id\":\"{id}\",\"model\":\"m\",\"system\":\"\",\"workspace\":\"/work\"{format}}}\n"
+        ),
+    )
+    .expect("write session journal");
+    id
+}
+
+#[test]
+fn a_new_session_lists_the_format_it_wrote() {
+    let home = tempfile::tempdir().expect("session home");
+    let id = crate::durable::driver::SessionDriver::open(home.path(), home.path(), "m", "s", None)
+        .expect("open session")
+        .id()
+        .to_string();
+    let listed = catalog::sessions_in(home.path()).expect("list sessions");
+    let info = listed
+        .iter()
+        .find(|info| info.id == id)
+        .expect("new session listed");
+    assert_eq!(info.format, FORMAT);
+    let journal = std::fs::read_to_string(&info.path).expect("read journal");
+    let head: serde_json::Value =
+        serde_json::from_str(journal.lines().next().expect("session header")).expect("header json");
+    assert_eq!(head["format"], FORMAT);
+}
+
+#[test]
+fn a_session_written_before_formats_opens_as_the_first_format() {
+    let home = tempfile::tempdir().expect("session home");
+    let id = journal_with(home.path(), None);
+    crate::durable::driver::SessionDriver::resume(home.path(), id, home.path())
+        .expect("resume unversioned session");
+    let info = info(log::session_path(home.path(), id));
+    assert_eq!(info.format, log::unversioned());
+}
+
+#[test]
+fn a_session_in_a_newer_format_is_refused_by_name() {
+    let home = tempfile::tempdir().expect("session home");
+    let newer = FORMAT + 1;
+    let id = journal_with(home.path(), Some(newer));
+    let path = log::session_path(home.path(), id);
+    let Err(error) = crate::durable::driver::SessionDriver::resume(home.path(), id, home.path())
+    else {
+        panic!("a newer session format opened");
+    };
+    let message = error.to_string();
+    assert!(message.contains(&path.display().to_string()), "{message}");
+    assert!(
+        message.contains(&format!("session format {newer}")),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("reads format {FORMAT} and older")),
+        "{message}"
+    );
+    let export = export(&path).expect_err("export refuses a newer format");
+    assert_eq!(export.to_string(), message);
+}

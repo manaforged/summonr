@@ -25,6 +25,7 @@ fn topic(app: &super::super::App) {
         agent: None,
         topic: None,
         modified: SystemTime::now().checked_sub(Duration::from_secs(60)),
+        format: summonr_agent::session::FORMAT,
     };
     app.update(Msg::Fact(Fact::Sessions(Ok(vec![(info, true)]))));
     app.update(Msg::Fact(Fact::Session(TOPIC.to_owned())));

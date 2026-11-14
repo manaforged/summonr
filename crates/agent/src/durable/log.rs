@@ -13,6 +13,9 @@ use summonr_types::{Continuation, Image, Message, Role, ToolCall};
 const FILE: &str = "session.jsonl";
 const WORK: &str = "work.json";
 const DIR: &str = "sessions";
+const UNVERSIONED: u32 = 1;
+/// The session journal format this build writes and the newest it reads.
+pub const FORMAT: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Usage {
@@ -75,6 +78,8 @@ pub enum Line {
         revision: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         interactive: bool,
+        #[serde(default = "unversioned")]
+        format: u32,
     },
     Agent {
         route: String,
@@ -176,6 +181,24 @@ pub enum Line {
         #[serde(default, skip_serializing_if = "Option::is_none", alias = "rss_kb")]
         footprint_kb: Option<u64>,
     },
+}
+
+pub(crate) fn unversioned() -> u32 {
+    UNVERSIONED
+}
+
+/// Fails when the journal at `path` was written in a format newer than [`FORMAT`].
+pub(crate) fn readable(path: &Path) -> summonr_core::error::Result<()> {
+    let Some(Ok(Line::Session { format, .. })) = records::<Line>(path, 0).next() else {
+        return Ok(());
+    };
+    if format <= FORMAT {
+        return Ok(());
+    }
+    Err(summonr_core::error::Error::Config(format!(
+        "{} uses session format {format}, but this summonr reads format {FORMAT} and older; update summonr to open it",
+        path.display()
+    )))
 }
 
 fn is_zero(value: &u8) -> bool {

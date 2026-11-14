@@ -36,6 +36,7 @@ impl SessionDriver {
             depth,
             revision: Some(crate::revision().to_string()),
             interactive: depth == 0 && crate::session::interactive(),
+            format: log::FORMAT,
         })?;
         Ok(driver)
     }
@@ -43,6 +44,7 @@ impl SessionDriver {
     pub(crate) fn resume(home: &Path, id: SessionId, workspace: &Path) -> Result<Self> {
         let caller = workspace;
         let path = log::session_path(home, id);
+        log::readable(&path)?;
         let mut state = State::default();
         log::records(&path, 0)
             .try_for_each(|line| line.map(|line| state.apply(line)))
@@ -158,6 +160,7 @@ impl SessionDriver {
                 depth,
                 revision: Some(crate::revision().to_string()),
                 interactive: false,
+                format: log::FORMAT,
             },
             store::Durability::Renamed,
         )

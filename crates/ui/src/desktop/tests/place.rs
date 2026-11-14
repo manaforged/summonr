@@ -87,6 +87,7 @@ fn chat(id: &str, cwd: &str, preview: &str) -> (SessionInfo, bool) {
             agent: None,
             topic: None,
             modified: None,
+            format: summonr_agent::session::FORMAT,
         },
         false,
     )

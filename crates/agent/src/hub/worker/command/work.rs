@@ -76,6 +76,32 @@ impl Worker {
         }
     }
 
+    pub(in crate::hub::worker) async fn swarm(&mut self, argument: &str) -> bool {
+        match argument.trim() {
+            "" => {
+                self.fail("/swarm takes a task, or `board` to show the board");
+                true
+            }
+            "board" => {
+                match self.loop_.board_listing() {
+                    Ok(text) => self.system(&text),
+                    Err(error) => self.fail(&error.to_string()),
+                }
+                true
+            }
+            task => match self.loop_.enable_swarm() {
+                Ok(()) => {
+                    self.turn(UserInput::from(crate::command::swarm_prompt(task)))
+                        .await
+                }
+                Err(error) => {
+                    self.fail(&error.to_string());
+                    true
+                }
+            },
+        }
+    }
+
     pub(in crate::hub::worker) async fn goal(&mut self, objective: &str) -> bool {
         if objective.is_empty() {
             return self.goal_status();

@@ -106,17 +106,15 @@ impl<P: Provider> Loop<P> {
             Policy::builtin(),
             None,
         )?;
-        child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
+        child.tools = self.child_tools(tools.as_deref(), &workspace, &child)?;
         child.set_subagent(args.agent.as_deref().unwrap_or(args.access.name()));
         if let Some(set) = self.tools.skill_set().cloned() {
             child.choose_skills(set)?;
         }
-        if args.access == Access::Implement {
-            child.mcp = self
-                .mcp
-                .as_ref()
-                .map(|hub| Arc::new(hub.for_child(&workspace)));
-        }
+        child.mcp = self
+            .mcp
+            .as_ref()
+            .map(|hub| Arc::new(hub.for_child(&workspace)));
         child.mail_module = self.mail_module;
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;
@@ -138,6 +136,7 @@ impl<P: Provider> Loop<P> {
             child.set_name(name)?;
         }
         child.roster();
+        child.share_board(self.board_root());
 
         let record = ChildRecord {
             version: 1,
@@ -152,7 +151,7 @@ impl<P: Provider> Loop<P> {
             access: args.access,
             background: args.background,
             call: Some(args.call.clone()),
-            base: start_tree(args.access, &self.workspace, &child.session_id()),
+            base: lead_tree(&self.workspace, &child.session_id()),
             state: ChildState::Running,
         };
         self.session.start_child(record.clone())?;
@@ -196,17 +195,13 @@ impl<P: Provider> Loop<P> {
 
     fn child_tools(
         &self,
-        access: Access,
         tools: Option<&[String]>,
         workspace: &Path,
         child: &Self,
     ) -> Result<crate::tools::ToolRegistry> {
         let mut registry = self.tools.child_at(workspace, &child.session_id())?;
-        if access == Access::Research || self.tools.is_read_only() {
+        if self.tools.is_read_only() {
             registry.contain_read_only();
-        }
-        if access == Access::Research {
-            registry.allow_shell();
         }
         if let Some(tools) = tools {
             registry.restrict_to(tools);

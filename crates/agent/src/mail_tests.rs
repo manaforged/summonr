@@ -42,6 +42,7 @@ fn clear_refuses_the_inbox_of_a_live_session() {
         kind: default_kind(),
         text: "hello".to_string(),
         one_way: false,
+        board: false,
     };
     append(dir.path(), &["s1".to_string()], &mail).unwrap();
     let error = take_inbox(dir.path(), "s1").unwrap_err();
@@ -249,6 +250,7 @@ fn a_partial_inbox_line_is_not_pending_until_its_newline_arrives() {
         kind: default_kind(),
         text: "hello".to_string(),
         one_way: false,
+        board: false,
     };
     let line = serde_json::to_string(&mail).unwrap();
     let (head, tail) = line.split_at(line.len() / 2);

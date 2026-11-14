@@ -342,11 +342,7 @@ pub(super) fn mention(draft: &str, caret: usize) -> Option<(usize, &str)> {
 
 pub(super) fn peers(text: &str, model: &Model) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
-    for word in text
-        .split_whitespace()
-        .filter_map(|word| word.strip_prefix('@'))
-    {
-        let word = word.trim_end_matches([',', '.', ':', ';', '!', '?']);
+    for word in summonr_agent::mail::mentions(text) {
         if model.peers.iter().any(|agent| agent.answers_to(word))
             && !names.iter().any(|name| name == word)
         {

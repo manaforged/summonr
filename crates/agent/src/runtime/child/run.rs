@@ -46,12 +46,8 @@ impl<P: Provider> Run<P> {
         if self.stay {
             self.mail_loop(&sender, &id).await;
         }
-        let access = self.record.access;
         let usage = self.reported_usage(usage);
-        let paths = match access {
-            Access::Implement => self.child.session.touched(),
-            Access::Research => Vec::new(),
-        };
+        let paths = self.child.session.touched();
         Done {
             record: self.record,
             tree: self.guard.disarm(),
@@ -95,7 +91,7 @@ impl<P: Provider> Run<P> {
         sender: &UnboundedSender<Event>,
         id: &str,
     ) -> Usage {
-        let (state, usage) = self.outcome_state(outcome, self.record.access);
+        let (state, usage) = self.outcome_state(outcome);
         let event = match &state {
             ChildState::Completed(result) => Some(Event::Note {
                 text: result.text.clone(),
@@ -118,11 +114,7 @@ impl<P: Provider> Run<P> {
         usage
     }
 
-    fn outcome_state(
-        &mut self,
-        outcome: Option<Result<Turn>>,
-        access: Access,
-    ) -> (ChildState, Usage) {
+    fn outcome_state(&mut self, outcome: Option<Result<Turn>>) -> (ChildState, Usage) {
         match outcome {
             Some(Ok(turn)) => {
                 let state = if turn.aborted {
@@ -131,7 +123,6 @@ impl<P: Provider> Run<P> {
                         turn.rounds,
                         turn.usage.clone(),
                         Some(&turn.text),
-                        access,
                     ))
                 } else {
                     ChildState::Completed(self.child.result(
@@ -139,7 +130,6 @@ impl<P: Provider> Run<P> {
                         turn.rounds,
                         turn.usage.clone(),
                         None,
-                        access,
                     ))
                 };
                 (state, turn.usage)
@@ -150,18 +140,17 @@ impl<P: Provider> Run<P> {
                     0,
                     Usage::default(),
                     Some(&error.to_string()),
-                    access,
                 )),
                 Usage::default(),
             ),
             None => (
-                ChildState::Aborted(self.deadline_result(access)),
+                ChildState::Aborted(self.deadline_result()),
                 Usage::default(),
             ),
         }
     }
 
-    fn deadline_result(&mut self, access: Access) -> ChildResult {
+    fn deadline_result(&mut self) -> ChildResult {
         let reason = self.deadline.map_or_else(
             || "child deadline reached".to_string(),
             |deadline| format!("child deadline reached after {}s", deadline.as_secs()),
@@ -171,7 +160,7 @@ impl<P: Provider> Run<P> {
             Err(error) => format!("{reason}; cannot close child turn: {error}"),
         };
         self.child
-            .result("", 0, Usage::default(), Some(&diagnostic), access)
+            .result("", 0, Usage::default(), Some(&diagnostic))
     }
 
     fn reported_usage(&mut self, mut usage: Usage) -> Usage {
@@ -199,8 +188,13 @@ pub(crate) async fn next_mail<P: Provider>(child: &mut Loop<P>) -> String {
         if let Some(mailbox) = child.mailbox.as_mut()
             && let Ok(notes) = mailbox.poll()
         {
-            let text = notes
-                .into_iter()
+            child.inbox.extend(notes);
+        }
+        let (front, back) = child.inbox.as_slices();
+        if child.mail_wakes(front) || child.mail_wakes(back) {
+            let text = child
+                .inbox
+                .drain(..)
                 .map(|note| crate::mail::envelope(&note))
                 .collect::<Vec<_>>()
                 .join("\n\n");

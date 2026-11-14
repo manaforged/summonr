@@ -165,7 +165,9 @@ impl Worker {
         if mail.is_empty() {
             return;
         }
-        self.queue_mail();
+        if self.loop_.mail_wakes(&mail) {
+            self.queue_mail();
+        }
         let monitor = mail.iter().any(crate::mail::Mail::is_monitor);
         if monitor && !self.mail_held {
             self.pending_mail = true;

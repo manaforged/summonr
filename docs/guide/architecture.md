@@ -111,7 +111,7 @@ A new surface is a new host in `summonr-ui`. A new kind of agent is a new worker
 
 Each `implement` child gets a child checkout in `<repo>-children/<id>`. The checkout shares the parent's `target/`, `node_modules`, and any path listed in `.summonr/linked` or `.agents/linked`. The parent applies each finished child's edits on its own. Generated files (`__pycache__`, `*.pyc`, and the pytest, mypy, and ruff caches) never land.
 
-Children started together do not see each other's edits. When two children change the same lines, that child's checkout stays on disk and the others still land. A research child stays on the parent workspace. Each child uses the parent's file, shell, and language-server tools; background commands stay with the parent. The parent runs verification after they finish. Pass `--worktree` on the session to isolate the whole run in a git worktree.
+Children started together do not see each other's edits. When two children change the same lines, that child's checkout stays on disk and the others still land. A research child stays on the parent workspace and has the same tools. Each child uses the parent's file, shell, and language-server tools; background commands stay with the parent. The parent runs verification after they finish. Pass `--worktree` on the session to isolate the whole run in a git worktree.
 
 A background child (`task` with `background`) runs as a Tokio task while the parent keeps working. `Loop::spawned` holds its handle; child events arrive through `Loop::mailbox` and drain before every round, on every poll, and on the interface tick. `task` with `child` polls or kills it.
 

@@ -99,8 +99,6 @@ Auto mode asks before it grants a write outside the writable roots, then retries
 
 Under `--strict`, irreversible commands never run, and neither do force pushes, `sudo`, pipes into a shell, history rewrites, or writes to protected paths. Matches on your own `[policy] deny` list are refused without a prompt. With `write` globs in `policy.toml`, shell commands do not run; file tools still use the globs.
 
-In a research child, `edit` and `write` are unavailable. A foreground `run_command` is allowed. A background command is not.
-
 ## Policy files
 
 User policy is `~/.summonr/policy.toml`. Repository policy is `.summonr/policy.toml`. A repository policy can narrow your permissions but never widen them, and child sessions inherit the restrictions.

@@ -88,7 +88,6 @@ impl<P: Provider> Loop<P> {
             ),
             crate::mail::Tool::Board => board(
                 self.mailbox.as_mut().ok_or_else(missing)?,
-                &self.workspace,
                 &args,
                 text,
                 read_only,
@@ -190,6 +189,62 @@ impl<P: Provider> Loop<P> {
         Ok(self.inbox.drain(..).collect())
     }
 
+    /// The workspace whose board this session reads.
+    pub(crate) fn board_root(&self) -> &Path {
+        self.mailbox
+            .as_ref()
+            .map_or(&self.workspace, crate::mail::Mailbox::board_root)
+    }
+
+    /// Puts this session on the board at `root`.
+    pub(crate) fn share_board(&mut self, root: &Path) {
+        let (model, workspace) = (self.model.clone(), self.workspace.clone());
+        if let Some(mailbox) = &mut self.mailbox {
+            mailbox.share_board(root, &model, &workspace);
+        }
+    }
+
+    /// Whether any of `mail` should start a turn in this session.
+    pub(crate) fn mail_wakes(&self, mail: &[crate::mail::Mail]) -> bool {
+        self.mailbox
+            .as_ref()
+            .is_some_and(|mailbox| mail.iter().any(|item| mailbox.wakes(item)))
+    }
+
+    /// Gives this session the mail tools so it can lead a swarm; fails when its tool list is already fixed without them.
+    pub(crate) fn enable_swarm(&mut self) -> Result<()> {
+        if self.mailbox.is_none() {
+            return Err(Error::Config(
+                "/swarm needs the mail roster, and SUMMONR_MAIL is off".to_string(),
+            ));
+        }
+        if !self.task_available() {
+            return Err(Error::Config(
+                "/swarm needs the task module and a model that can run child agents".to_string(),
+            ));
+        }
+        if crate::mail::tools(self.mail_module) {
+            return Ok(());
+        }
+        if self.catalog_frozen() {
+            return Err(Error::Config(
+                "this session's tools are fixed and have no board; start a session with /new and run /swarm first".to_string(),
+            ));
+        }
+        self.mail_module = true;
+        self.schema = None;
+        Ok(())
+    }
+
+    /// The board's claims and newest posts, as `board list` shows them.
+    pub(crate) fn board_listing(&self) -> Result<String> {
+        let mailbox = self
+            .mailbox
+            .as_ref()
+            .ok_or_else(|| Error::Tool("this session is not on the mail roster".to_string()))?;
+        board_list(mailbox)
+    }
+
     pub(crate) fn peers(&self) -> Vec<crate::mail::Agent> {
         match &self.mailbox {
             Some(mailbox) => mailbox.agents(),
@@ -238,7 +293,6 @@ fn send(
 
 fn board(
     mailbox: &mut crate::mail::Mailbox,
-    workspace: &Path,
     args: &serde_json::Value,
     text: &str,
     read_only: bool,
@@ -248,15 +302,30 @@ fn board(
         .and_then(serde_json::Value::as_str)
         .unwrap_or("list");
     match action {
-        "set" => board_set(mailbox, workspace, args, text, read_only),
-        "get" => board_get(mailbox, workspace, args),
-        _ => board_list(mailbox, workspace),
+        "post" => board_post(mailbox, text, read_only),
+        "set" => board_set(mailbox, args, text, read_only),
+        "get" => board_get(mailbox, args),
+        _ => board_list(mailbox),
     }
+}
+
+fn board_post(mailbox: &crate::mail::Mailbox, text: &str, read_only: bool) -> Result<String> {
+    if read_only {
+        return Err(Error::Tool(
+            "board post is disabled in a read-only session".to_string(),
+        ));
+    }
+    if text.is_empty() {
+        return Err(Error::Tool("board post requires value".to_string()));
+    }
+    let (sent, id) = mailbox.say(text)?;
+    Ok(format!(
+        "posted message {id} to {sent} agent(s) on this board"
+    ))
 }
 
 fn board_set(
     mailbox: &mut crate::mail::Mailbox,
-    workspace: &Path,
     args: &serde_json::Value,
     text: &str,
     read_only: bool,
@@ -270,24 +339,23 @@ fn board_set(
         .get("key")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| Error::Tool("board set requires key".to_string()))?;
-    mailbox.post(workspace, key, text)?;
+    mailbox.post(key, text)?;
     Ok(format!("posted {key}"))
 }
 
-fn board_get(
-    mailbox: &crate::mail::Mailbox,
-    workspace: &Path,
-    args: &serde_json::Value,
-) -> Result<String> {
+fn board_get(mailbox: &crate::mail::Mailbox, args: &serde_json::Value) -> Result<String> {
     let key = args
         .get("key")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| Error::Tool("board get requires key".to_string()))?;
-    Ok(crate::mail::board_entry(&mailbox.board(workspace)?, key))
+    Ok(crate::mail::board_entry(&mailbox.board()?, key))
 }
 
-fn board_list(mailbox: &crate::mail::Mailbox, workspace: &Path) -> Result<String> {
-    Ok(crate::mail::board_text(&mailbox.board(workspace)?))
+fn board_list(mailbox: &crate::mail::Mailbox) -> Result<String> {
+    Ok(crate::mail::board_text(
+        &mailbox.board()?,
+        &mailbox.posts()?,
+    ))
 }
 
 pub(crate) struct Advertised {

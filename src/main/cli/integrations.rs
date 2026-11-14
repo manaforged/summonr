@@ -150,10 +150,17 @@ fn board(args: &mut Args, input: &mut Input) -> Result<()> {
             }
             Mail::BoardSet { key, text }
         }
+        Some("post") => {
+            let text = input.by_ref().collect::<Vec<_>>().join(" ");
+            if text.is_empty() {
+                return Err(misuse("mail", "`summonr mail board post` needs TEXT"));
+            }
+            Mail::BoardPost(text)
+        }
         Some(other) => {
             return Err(misuse(
                 "mail",
-                &format!("`summonr mail board` takes list, get, or set; got `{other}`"),
+                &format!("`summonr mail board` takes list, get, set, or post; got `{other}`"),
             ));
         }
     };

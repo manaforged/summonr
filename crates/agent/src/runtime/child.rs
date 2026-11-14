@@ -122,7 +122,7 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child. Omit endpoint and model to inherit the provider and model, or select a configured endpoint and optional model for this child only. model requires endpoint; never change global defaults to select a child. The child keeps its transcript. Mail to its name reaches it at its next step and never interrupts a running tool. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. clear true dismisses the child's UI card without stopping it or deleting its history; combine with kill true to stop and dismiss. Same tools, MCP included, except task and ask. background true returns an id and you are told when it finishes; pass child only to read its state on request. A named child runs in the background, stays available for mail, and edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research is always read-only and gets no MCP tools.",
+        "Delegate one assignment to a child. Omit endpoint and model to inherit the provider and model, or select a configured endpoint and optional model for this child only. model requires endpoint; never change global defaults to select a child. The child keeps its transcript. Mail to its name reaches it at its next step and never interrupts a running tool. A child tool call does not start a parent turn. The parent turn ending does not stop it. kill true does. clear true dismisses the child's UI card without stopping it or deleting its history; combine with kill true to stop and dismiss. Same tools, MCP included, except task and ask. background true returns an id and you are told when it finishes; pass child only to read its state on request. A named child runs in the background, stays available for mail, and edits this checkout. An unnamed implement child gets an isolated checkout in a Git repository; completed edits are reconciled and conflicts keep that checkout. Pass workspace isolated or shared to force one. Do not start a summonr process. research works in this checkout with the same tools and reports what it finds.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -166,13 +166,6 @@ impl<P: Provider> Loop<P> {
         self.spawned
             .values()
             .any(|spawned| spawned.reserved_tokens > 0 && !spawned.state.borrow().terminal())
-    }
-}
-
-pub(super) fn start_tree(access: Access, workspace: &Path, child: &str) -> String {
-    match access {
-        Access::Implement => lead_tree(workspace, child),
-        Access::Research => String::new(),
     }
 }
 

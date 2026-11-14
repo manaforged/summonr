@@ -87,12 +87,8 @@ impl<P: Provider> Loop<P> {
         rounds: usize,
         usage: Usage,
         diagnostic: Option<&str>,
-        access: Access,
     ) -> ChildResult {
-        let paths = match access {
-            Access::Implement => self.session.touched(),
-            Access::Research => Vec::new(),
-        };
+        let paths = self.session.touched();
         let total = paths.len();
         ChildResult {
             text: text.to_string(),

@@ -4,7 +4,7 @@ use super::*;
 use summonr_core::error::{Error, ErrorKind, Result};
 
 /// The `summonr mail --help` text.
-pub const USAGE: &str = "usage:\n  summonr mail                  who is on this machine\n  summonr mail agents [--json]  same roster; --json prints each session's state, tool, detail, parent and since\n  summonr mail send [--json] [--reply-to ID] <name|id|all> <text>\n  summonr mail inbox <id> [--clear]\n  summonr mail board [get <key>|set <key> <text>]\n\nAny agent CLI can use these: mail is files under ~/.summonr/mail, no server.";
+pub const USAGE: &str = "usage:\n  summonr mail                  who is on this machine\n  summonr mail agents [--json]  same roster; --json prints each session's state, tool, detail, parent and since\n  summonr mail send [--json] [--reply-to ID] <name|id|all> <text>\n  summonr mail inbox <id> [--clear]\n  summonr mail board [get <key>|set <key> <text>|post <text>]\n\nAny agent CLI can use these: mail is files under ~/.summonr/mail, no server.";
 
 /// One `summonr mail` command.
 #[derive(Clone, Debug)]
@@ -38,11 +38,14 @@ pub enum Command {
         /// The entry text.
         text: String,
     },
+    /// `mail board post TEXT`: a message to every agent on this workspace's board.
+    BoardPost(String),
 }
 
 /// Runs one `summonr mail` command; `json` prints the roster or the send receipt as JSON.
 pub fn run(command: &Command, json: bool, cwd: &Path) -> Result<i32> {
-    println!("{}", answer(&dir()?, cwd, command, json)?);
+    let cwd = dunce::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    println!("{}", answer(&dir()?, &cwd, command, json)?);
     Ok(0)
 }
 
@@ -54,16 +57,32 @@ fn answer(dir: &Path, cwd: &Path, command: &Command, json: bool) -> Result<Strin
         Command::Send { to, text, reply_to } => send(dir, to, text, reply_to.as_deref(), json),
         Command::Inbox { id, clear: false } => read_inbox(dir, id).map(|mail| inbox_text(&mail)),
         Command::Inbox { id, clear: true } => take_inbox(dir, id).map(|mail| inbox_text(&mail)),
-        Command::Board => read_board(dir, cwd).map(|board| board_text(&board)),
+        Command::Board => Ok(board_text(&read_board(dir, cwd)?, &read_feed(dir, cwd)?)),
         Command::BoardGet(key) => read_board(dir, cwd).map(|board| board_entry(&board, key)),
         Command::BoardSet { key, text } => {
             post_board(dir, cwd, "cli", key, text).map(|()| format!("posted {key}"))
         }
+        Command::BoardPost(text) => say(dir, cwd, text),
     }
 }
 
+fn say(dir: &Path, cwd: &Path, text: &str) -> Result<String> {
+    let mail = Mail {
+        board: true,
+        ..sender_mail(&live(dir), &cli_sender(), text, None)
+    };
+    let (delivered, id) = say_in(dir, cwd, mail)?;
+    Ok(format!(
+        "posted message {id} to {delivered} agent(s) on this board"
+    ))
+}
+
+fn cli_sender() -> String {
+    std::env::var(crate::session::SESSION_ENV).unwrap_or_else(|_| "cli".to_string())
+}
+
 fn send(dir: &Path, to: &str, text: &str, reply_to: Option<&str>, json: bool) -> Result<String> {
-    let from = std::env::var(crate::session::SESSION_ENV).unwrap_or_else(|_| "cli".to_string());
+    let from = cli_sender();
     let (delivered, id) = deliver_in(dir, &from, &[to.to_string()], text, reply_to)?;
     if json {
         serde_json::to_string(&serde_json::json!({"id": id, "delivered": delivered}))

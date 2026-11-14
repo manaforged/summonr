@@ -85,6 +85,7 @@ table! {
     presence_secs: u64 => presence(Duration::from_secs),
     presence_tool_ms: u64 => presence_tool(Duration::from_millis),
     mail_per_round: usize,
+    board_posts: usize,
     verify_timeout_secs: u64 => verify_timeout(Duration::from_secs),
     probe_secs: u64 => probe(Duration::from_secs),
     auth_secs: u64 => auth(Duration::from_secs),

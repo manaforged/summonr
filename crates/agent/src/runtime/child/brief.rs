@@ -29,7 +29,9 @@ pub(super) fn instruction(access: Access, isolated: bool) -> &'static str {
         (Access::Implement, false) => {
             "Edit only your assigned paths in this shared workspace; other lanes may be writing here. Edits are immediately visible and are not reconciled or rolled back by the harness. Do not commit. Background commands stay with the parent."
         }
-        (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
+        (Access::Research, _) => {
+            "This assignment is research: investigate and report what you find. Change the workspace only where the assignment asks. Do not commit."
+        }
     }
 }
 

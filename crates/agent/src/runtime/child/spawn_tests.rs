@@ -107,7 +107,7 @@ async fn a_child_gets_its_brief_and_its_own_tools() {
     assert_eq!(run.child.system_prompt, parent.system_prompt);
     let child_tools = tool_names(&mut run.child);
     assert!(
-        !child_tools.contains(&"browser".to_string()),
+        child_tools.contains(&"browser".to_string()),
         "{child_tools:?}"
     );
     assert!(!child_tools.iter().any(|name| name.starts_with("task")));

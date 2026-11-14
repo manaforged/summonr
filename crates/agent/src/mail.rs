@@ -12,8 +12,8 @@ use summonr_core::error::{Error, Result};
 mod message;
 mod presence;
 
-pub use message::KIND;
 use message::default_kind;
+pub use message::{KIND, mentions};
 pub(crate) use message::{Mail, envelope};
 pub use presence::Presence;
 
@@ -52,6 +52,7 @@ pub(crate) struct Mailbox {
     name: String,
     kind: String,
     dir: PathBuf,
+    board: PathBuf,
     cursor: u64,
     mark: Vec<u8>,
     last_beat: u64,
@@ -81,27 +82,6 @@ pub(crate) fn inbox_text(mail: &[Mail]) -> String {
     mail.iter().map(envelope).collect::<Vec<_>>().join("\n")
 }
 
-pub(crate) fn board_text(board: &[(String, String, String)]) -> String {
-    if board.is_empty() {
-        return "the board is empty".to_string();
-    }
-    board
-        .iter()
-        .map(|(key, value, from)| format!("{key} = {value} (from {from})"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-pub(crate) fn board_entry(board: &[(String, String, String)], key: &str) -> String {
-    board
-        .iter()
-        .find(|(posted, _, _)| posted == key)
-        .map_or_else(
-            || format!("no post for {key}"),
-            |(key, value, from)| format!("{key} = {value} (from {from})"),
-        )
-}
-
 pub(crate) fn deliver(from: &str, to: &[String], text: &str) -> Result<usize> {
     deliver_in(&dir()?, from, to, text, None).map(|(count, _)| count)
 }
@@ -114,15 +94,19 @@ fn deliver_in(
     reply_to: Option<&str>,
 ) -> Result<(usize, String)> {
     let agents = live(dir);
+    sender_mail(&agents, from, text, reply_to).deliver(dir, &agents, to)
+}
+
+/// Mail from `from` as the roster knows it; a sender off the roster is one-way.
+fn sender_mail(agents: &[Agent], from: &str, text: &str, reply_to: Option<&str>) -> Mail {
     let from = clean_id(from);
     let sender = agents.iter().find(|agent| agent.id == from);
     let name = sender.map_or_else(|| from.clone(), |agent| agent.label().to_string());
     let kind = sender.map_or_else(default_kind, |agent| agent.kind.clone());
-    let mail = Mail {
+    Mail {
         one_way: sender.is_none(),
         ..Mail::new(&from, &name, &kind, text, reply_to)
-    };
-    mail.deliver(dir, &agents, to)
+    }
 }
 
 impl Mailbox {
@@ -153,6 +137,7 @@ impl Mailbox {
             name,
             kind: kind.to_string(),
             dir: dir.to_path_buf(),
+            board: cwd.to_path_buf(),
             cursor,
             mark,
             last_beat: 0,
@@ -193,6 +178,7 @@ impl Mailbox {
             kind: self.kind.clone(),
             model: model.to_string(),
             cwd: cwd.display().to_string(),
+            board: self.board.display().to_string(),
             pid: std::process::id(),
             status,
             last_seen: now(),
@@ -298,14 +284,6 @@ impl Mailbox {
         )
     }
 
-    pub(crate) fn board(&self, cwd: &Path) -> Result<Vec<(String, String, String)>> {
-        read_board(&self.dir, cwd)
-    }
-
-    pub(crate) fn post(&self, cwd: &Path, key: &str, value: &str) -> Result<()> {
-        post_board(&self.dir, cwd, &self.id, key, value)
-    }
-
     pub(crate) fn leave(&self) {
         drop(std::fs::remove_file(self.record_path()));
     }
@@ -331,13 +309,16 @@ impl Drop for Mailbox {
     }
 }
 
+mod board;
 pub mod cli;
 pub(crate) mod files;
 pub(crate) mod roster;
 mod sweep;
 pub(crate) mod tools;
 
-use files::{append, inbox_path};
+use board::say_in;
+pub(crate) use board::{board_entry, board_text};
+use files::{append, append_feed, inbox_path, read_feed};
 pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
 pub(crate) use roster::roster;
 pub use roster::{Agent, live};

@@ -83,5 +83,18 @@ fn a_long_step_run_mounts_only_the_visible_terminal_window() {
             !a11y.contains("step-cmd-000"),
             "offscreen step rows stayed mounted:\n{a11y}"
         );
+        app.update(Msg::Fact(Fact::Files(vec!["README.md".to_owned()])));
+        app.toggle_pane(crate::pane::Pane::Files);
+        let grid = screen
+            .frame(&mut host, [], (100, 24))
+            .expect("frame")
+            .text();
+        let a11y = host.accessibility_text();
+        assert!(grid.contains("README.md"), "{grid}");
+        assert!(grid.contains("step-cmd-059"), "{grid}");
+        assert!(
+            !a11y.contains("step-cmd-000"),
+            "pane toggle remounted offscreen transcript rows:\n{a11y}"
+        );
     });
 }

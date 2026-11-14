@@ -14,11 +14,25 @@ use super::footer;
 use super::panels;
 use super::{App, Model, canvas};
 use sigil::prelude::Widget;
-use summonr_agent::prefs::Prefs;
+use summonr_agent::prefs::{DiffLayout, ToolOutput, Visibility};
 
-pub(crate) fn layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> NodeBuilder {
-    let width = canvas::inner_cols(usize::from(cols));
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct RowPrefs {
+    tools: ToolOutput,
+    diff_layout: DiffLayout,
+    reasoning: Visibility,
+    receipts: Visibility,
+    spacing: u8,
+    split_wide: bool,
+}
+
+pub(crate) fn layer(app: App, editor: impl Fn(App) -> NodeBuilder + 'static) -> NodeBuilder {
+    let width_app = app.clone();
+    let width = derived(move || canvas::inner_cols(usize::from(width_app.chat_cols())));
     let transcript_app = app.clone();
+    let status_app = app.clone();
+    let bands_app = app.clone();
+    let comp_app = app.clone();
     sigil::prelude::column()
         .fill_width()
         .fill_height()
@@ -48,11 +62,21 @@ pub(crate) fn layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> Nod
                 },
             )
         })))
-        .child(pin(canvas::gutter(panels::status_bar(app.clone(), width))))
-        .child(pin(canvas::gutter(panels::bands(app.clone(), width))))
-        .child(pin(composer::widget(app.clone(), width, editor)))
+        .child(pin(move || {
+            canvas::gutter(panels::status_bar(status_app.clone(), width.get()))
+        }))
+        .child(pin(move || {
+            canvas::gutter(panels::bands(bands_app.clone(), width.get()))
+        }))
+        .child(pin(move || {
+            let _rows = comp_app.viewport.get().1;
+            let edit = editor(comp_app.clone());
+            composer::widget(comp_app.clone(), width.get(), edit)
+        }))
         .child(container().fill_width().grow(1.0))
-        .child(pin(canvas::gutter(footer::footer_bar(app, width))))
+        .child(pin(move || {
+            canvas::gutter(footer::footer_bar(app.clone(), width.get()))
+        }))
 }
 
 fn fit(app: App) -> NodeBuilder {
@@ -77,8 +101,11 @@ fn fit(app: App) -> NodeBuilder {
         .drive(sigil::animation::Property::Height, height)
 }
 
-fn pin(child: NodeBuilder) -> NodeBuilder {
-    container().fill_width().shrink(0.0).child(child)
+fn pin(build: impl Fn() -> NodeBuilder + 'static) -> NodeBuilder {
+    container()
+        .fill_width()
+        .shrink(0.0)
+        .children_reactive(move || vec![build()])
 }
 
 pub(crate) fn inline_layer(app: App, cols: u16, editor: impl IntoNode + 'static) -> NodeBuilder {
@@ -98,7 +125,7 @@ fn window_row(
     app: App,
     index: usize,
     spacing: (f32, f32),
-    prefs: Signal<Prefs>,
+    prefs: Signal<RowPrefs>,
     table: Signal<Rc<[entry::Slot]>>,
 ) -> NodeBuilder {
     let probe = app.clone();
@@ -126,7 +153,7 @@ fn terminal_row(
     app: App,
     index: usize,
     spacing: (f32, f32),
-    prefs: Signal<Prefs>,
+    prefs: Signal<RowPrefs>,
 ) -> NodeBuilder {
     let probe = app.clone();
     let current = derived(move || probe.model.with(|model| terminal_revision(model, index)));
@@ -266,7 +293,18 @@ pub(crate) fn transcript(
     let jump = follow(&app);
     let settle = app.settle;
     let empty_now = sigil::reactive::derived(move || keys.get().is_empty());
-    let prefs = derived(move || model.with(|model| model.prefs.clone()));
+    let fit_app = app.clone();
+    let prefs = derived(move || {
+        let split_wide = entry::Fit::chat(&fit_app) == entry::Fit::Wide;
+        model.with(|model| RowPrefs {
+            tools: model.prefs.tools,
+            diff_layout: model.prefs.diff_layout,
+            reasoning: model.prefs.reasoning,
+            receipts: model.prefs.receipts,
+            spacing: model.prefs.spacing,
+            split_wide: model.prefs.diff_layout == DiffLayout::Split && split_wide,
+        })
+    });
     fragment().children_reactive(move || {
         if empty_now.get() {
             return vec![

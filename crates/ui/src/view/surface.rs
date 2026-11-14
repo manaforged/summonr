@@ -8,34 +8,41 @@ use sigil::reactive::untrack;
 use sigil::widgets::TextEditBuilder;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let (cols, _rows) = app.viewport.get();
-    let layout = app.layout.get();
-    let (chat_cols, side_cols) = if app.inline {
-        (cols, 0)
-    } else {
-        layout.split(cols)
-    };
-    let surface = chat_surface(app.clone(), chat_cols);
-    let row = sigil::prelude::row()
+    if app.inline {
+        return container()
+            .fill_width()
+            .min_width(0.0)
+            .min_height(0.0)
+            .children_reactive(move || {
+                let (cols, _) = app.viewport.get();
+                vec![inline_surface(app.clone(), cols)]
+            });
+    }
+    sigil::prelude::row()
         .align_items(sigil::prelude::AlignItems::Stretch)
         .fill_width()
         .fill_height()
         .gap(Space::None)
         .background(canvas::palette().base)
-        .child(surface);
-    match layout.secondary {
-        Some(pane) if side_cols > 0 => row.child(side(app, pane, side_cols)),
-        Some(_) | None => row,
-    }
+        .child(chat_surface(app.clone()))
+        .child(side(app))
 }
 
-fn side(app: App, pane: Pane, cols: u16) -> NodeBuilder {
+fn side(app: App) -> NodeBuilder {
     container()
         .fill_height()
         .shrink(0.0)
         .min_width(0.0)
         .min_height(0.0)
-        .children_reactive(move || vec![panes::body(&app, pane, cols)])
+        .children_reactive(move || {
+            let (cols, _) = app.viewport.get();
+            let layout = app.layout.get();
+            let (_, side_cols) = layout.split(cols);
+            match layout.secondary {
+                Some(pane) if side_cols > 0 => vec![panes::body(&app, pane, side_cols)],
+                Some(_) | None => Vec::new(),
+            }
+        })
 }
 
 pub(crate) fn editor(app: &App, editing: bool) -> TextEditBuilder {
@@ -74,15 +81,27 @@ pub(super) fn terminal_editor(app: App) -> impl FnOnce() -> NodeBuilder {
     }
 }
 
-fn chat_surface(app: App, cols: u16) -> NodeBuilder {
+fn inline_surface(app: App, cols: u16) -> NodeBuilder {
     let editor = terminal_editor(app.clone());
-    let surface = if app.inline {
-        chat::inline_layer(app, cols, editor)
-    } else if app.view_edit.get() {
-        chat::layer(app, cols, container())
-    } else {
-        chat::layer(app, cols, editor)
-    };
+    sigil::prelude::column()
+        .gap(sigil::prelude::Space::None)
+        .fill_width()
+        .fill_height()
+        .grow(1.0)
+        .min_width(0.0)
+        .min_height(0.0)
+        .background(canvas::palette().base)
+        .child(chat::inline_layer(app, cols, editor))
+}
+
+fn chat_surface(app: App) -> NodeBuilder {
+    let surface = chat::layer(app, |app| {
+        if app.view_edit.get() {
+            container()
+        } else {
+            terminal_editor(app)()
+        }
+    });
     sigil::prelude::column()
         .gap(sigil::prelude::Space::None)
         .fill_width()

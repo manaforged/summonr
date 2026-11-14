@@ -194,15 +194,12 @@ fn steer(
     workspace: &std::path::Path,
 ) {
     let notes = crate::hunks::drain(workspace);
-    let mut queue = steering.lock().unwrap_or_else(PoisonError::into_inner);
-    queue.extend(inputs.into_iter().map(|mut input| {
+    let inputs = inputs.into_iter().map(|mut input| {
         input.source.get_or_insert_with(|| crate::provider::Source {
             text: input.text.clone(),
             images: input.images.len(),
         });
         input
-    }));
-    queue.extend(notes.map(UserInput::from));
-    drop(queue);
-    steering.notify();
+    });
+    steering.push(inputs.chain(notes.map(UserInput::from)));
 }

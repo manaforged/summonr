@@ -152,6 +152,10 @@ fn guarded_command() -> Vec<Step> {
 
 fn pick(editor: &mut Editor, kind: &str) {
     let request = editor.until("session/request_permission", asked);
+    choose(editor, &request, kind);
+}
+
+fn choose(editor: &mut Editor, request: &Value, kind: &str) {
     let option = request["params"]["options"]
         .as_array()
         .into_iter()
@@ -323,6 +327,56 @@ fn a_request_during_a_prompt_is_busy_not_auth_required() {
     );
     editor.send(&json!({"jsonrpc": "2.0", "id": request["id"], "result": {"outcome": {"outcome": "cancelled"}}}));
     assert_eq!(reply(&mut editor)["result"]["stopReason"], "end_turn");
+}
+
+#[test]
+fn set_config_option_during_a_prompt_answers_the_full_list() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(guarded_command());
+    let mut editor = Editor::open(home.path(), &model);
+    let session = editor.session(home.path());
+    editor.prompt(&session, "push it");
+    let request = editor.until("session/request_permission", asked);
+    let set = json!({"sessionId": session, "configId": "effort", "value": "high"});
+    let answer = editor.call(4, "session/set_config_option", set);
+    let options = &answer["result"]["configOptions"];
+    assert_eq!(options[0]["id"], "effort", "{answer}");
+    assert_eq!(options[0]["currentValue"], "high", "{answer}");
+    editor.send(&json!({"jsonrpc": "2.0", "id": request["id"], "result": {"outcome": {"outcome": "cancelled"}}}));
+    assert_eq!(reply(&mut editor)["result"]["stopReason"], "end_turn");
+}
+
+#[test]
+fn a_steer_during_a_prompt_reaches_the_next_model_request() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(guarded_command());
+    let mut editor = Editor::open(home.path(), &model);
+    let session = editor.session(home.path());
+    editor.prompt(&session, "push it");
+    let request = editor.until("session/request_permission", asked);
+    let steer =
+        json!({"sessionId": session, "prompt": [{"type": "text", "text": "also mind the tabs"}]});
+    let answer = editor.call(4, "_summonr.dev/steer", steer);
+    assert_eq!(answer["result"], json!({}), "{answer}");
+    choose(&mut editor, &request, "allow_once");
+    assert_eq!(reply(&mut editor)["result"]["stopReason"], "end_turn");
+    let messages = Value::from(model.after_tools());
+    assert!(
+        messages.to_string().contains("also mind the tabs"),
+        "{messages}"
+    );
+}
+
+#[test]
+fn a_steer_with_no_turn_running_is_invalid_params() {
+    let home = tempfile::tempdir().expect("temp home");
+    let model = Model::start(Vec::new());
+    let mut editor = Editor::open(home.path(), &model);
+    let session = editor.session(home.path());
+    let steer = json!({"sessionId": session, "prompt": [{"type": "text", "text": "hi"}]});
+    let reply = editor.call(4, "_summonr.dev/steer", steer);
+    assert_eq!(reply["error"]["code"], -32602, "{reply}");
+    assert_eq!(reply["error"]["message"], "no turn is running", "{reply}");
 }
 
 #[test]

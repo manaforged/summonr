@@ -64,7 +64,7 @@ impl Model {
         self.requests.lock().unwrap().clone()
     }
 
-    pub(crate) fn tool_results(&self) -> Vec<String> {
+    pub(crate) fn after_tools(&self) -> Vec<Value> {
         let has_results = |messages: &Vec<Value>| messages.iter().any(|m| m["role"] == "tool");
         self.requests()
             .iter()
@@ -73,6 +73,10 @@ impl Model {
             .find(|messages| has_results(messages))
             .cloned()
             .unwrap_or_default()
+    }
+
+    pub(crate) fn tool_results(&self) -> Vec<String> {
+        self.after_tools()
             .iter()
             .filter(|message| message["role"] == "tool")
             .map(|message| message["content"].to_string())

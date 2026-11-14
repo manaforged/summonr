@@ -95,6 +95,13 @@ impl Steering {
         self.changed.notify_one();
     }
 
+    pub(crate) fn push(&self, inputs: impl IntoIterator<Item = UserInput>) {
+        self.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(inputs);
+        self.notify();
+    }
+
     pub(crate) async fn changed(&self) {
         loop {
             let notified = self.changed.notified();

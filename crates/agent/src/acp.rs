@@ -7,7 +7,7 @@ use tokio::io::{AsyncWriteExt, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use crate::endpoint::{self, Endpoint};
-use crate::provider::Client;
+use crate::provider::{Client, Effort, UserInput};
 use crate::rpc::{self, Ask, Frame, Read};
 use crate::runtime::{Loop, Steering};
 use crate::tools::Event;
@@ -103,6 +103,7 @@ where
             Ask::SessionLoad => self.load(&params).await,
             Ask::SessionSetConfigOption => self.configure(&params),
             Ask::SessionPrompt => self.prompt(&params, input).await,
+            Ask::Steer => self.idle(&params),
             Ask::Roots
             | Ask::Elicit
             | Ask::Ping
@@ -127,10 +128,7 @@ where
     }
 
     async fn load(&mut self, params: &Value) -> Reply {
-        let id = params
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let id = session_id(params);
         if self.sessions.contains_key(id) {
             return Err((codes::INVALID, format!("session {id} is already open")));
         }
@@ -182,19 +180,21 @@ where
     }
 
     fn configure(&mut self, params: &Value) -> Reply {
-        let id = params
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let id = session_id(params);
         let Some(seat) = self.sessions.get_mut(id) else {
             return Err(missing(id));
         };
         let effort = config::effort(params)?;
-        seat.agent.choose_effort(effort);
-        if effort.is_none() {
-            seat.agent.set_effort(None);
-        }
+        apply(&mut seat.agent, effort);
         Ok(json!({"configOptions": config::options(seat.agent.effort())}))
+    }
+
+    fn idle(&self, params: &Value) -> Reply {
+        let id = session_id(params);
+        if !self.sessions.contains_key(id) {
+            return Err(missing(id));
+        }
+        Err((codes::INVALID, "no turn is running".to_string()))
     }
 
     fn stream(
@@ -211,24 +211,14 @@ where
     }
 
     async fn prompt(&mut self, params: &Value, input: &mut Input) -> Reply {
-        let session = params
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let text = params
-            .get("prompt")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(block)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let session = session_id(params).to_string();
+        let text = prompt_text(params);
         let out = self.out.clone();
         let Some(Seat { agent, steering }) = self.sessions.get_mut(&session) else {
             return Err(missing(&session));
         };
         let window = agent.context_window();
+        let mut pending = None;
         let outcome = {
             let updates = Updates {
                 out: out.clone(),
@@ -247,13 +237,13 @@ where
                         match rpc::parse(&line) {
                             Ok(Frame::Notification { method, params })
                                 if rpc::ask(&method) == Ask::SessionCancel
-                                    && params.get("sessionId").and_then(Value::as_str) == Some(session.as_str()) =>
+                                    && session_id(&params) == session =>
                             {
                                 break None;
                             }
-                            Ok(Frame::Request { id, .. }) => {
-                                let busy = Err((codes::BUSY, "a prompt is already running".to_string()));
-                                drop(out.send(frame_line(&rpc::answer(&id, busy))));
+                            Ok(Frame::Request { id, method, params }) => {
+                                let reply = during(&session, &method, &params, steering, &mut pending);
+                                drop(out.send(frame_line(&rpc::answer(&id, reply))));
                             }
                             Ok(Frame::Response { id, result, .. }) => permission::answer(steering, &id, result.as_ref()),
                             Ok(Frame::Notification { .. }) | Err(_) => {}
@@ -262,6 +252,9 @@ where
                 }
             }
         };
+        if let Some(effort) = pending {
+            apply(agent, effort);
+        }
         match outcome {
             Some(Ok(turn)) => config::stop(&turn),
             Some(Err(error)) => Err(failure(error)),
@@ -323,6 +316,53 @@ fn failure(error: Error) -> (i64, String) {
 
 fn missing(session: &str) -> (i64, String) {
     (codes::NO_SESSION, format!("unknown session {session}"))
+}
+
+fn during(
+    session: &str,
+    method: &str,
+    params: &Value,
+    steering: &Steering,
+    pending: &mut Option<Option<Effort>>,
+) -> Reply {
+    let mine = session_id(params) == session;
+    match rpc::ask(method) {
+        Ask::SessionSetConfigOption if mine => {
+            let effort = config::effort(params)?;
+            *pending = Some(effort);
+            Ok(json!({"configOptions": config::options(effort)}))
+        }
+        Ask::Steer if mine => {
+            steering.push([UserInput::from(prompt_text(params))]);
+            Ok(json!({}))
+        }
+        _other => Err((codes::BUSY, "a prompt is already running".to_string())),
+    }
+}
+
+fn apply(agent: &mut Loop<Client>, effort: Option<Effort>) {
+    agent.choose_effort(effort);
+    if effort.is_none() {
+        agent.set_effort(None);
+    }
+}
+
+fn session_id(params: &Value) -> &str {
+    params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+fn prompt_text(params: &Value) -> String {
+    params
+        .get("prompt")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(block)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn block(item: &Value) -> Option<String> {

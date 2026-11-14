@@ -170,8 +170,13 @@ git diff | summonr kimi -p
 | `mcp add NAME -- CMD [ARGS]` | Add a stdio server; `--env K=V` sets its environment. `mcp add NAME --url URL` adds an HTTP server; `--header K=V` adds a request header. Both flags repeat. |
 | `mcp remove NAME` | Remove an MCP server from `~/.summonr/config.toml`. |
 | `plugin install PATH` | Install a directory of extras. |
+| `plugin install NAME@MARKETPLACE` | Fetch a plugin that an added marketplace lists, then install it like a directory. |
 | `plugin list` | List installed plugins. |
 | `plugin remove NAME` | Remove an installed plugin. |
+| `plugin marketplace add SOURCE` | Add a Claude Code plugin marketplace: `owner/repo`, `owner/repo#ref` or `owner/repo@ref` on GitHub, a git URL (`#ref` pins a branch or tag), an `https://` link to a `marketplace.json`, or a path (`./`, `../`, `/`, `~/`) to a directory or a `.json` file. |
+| `plugin marketplace list [--json]` | List added marketplaces with their source and plugin count. |
+| `plugin marketplace update [NAME]` | Fetch one marketplace again, or every one. A path is read in place and only checked. |
+| `plugin marketplace remove NAME` | Remove a marketplace and uninstall the plugins installed from it. `rm` also works. |
 | `update` | Replace this binary with the latest release: download the archive for this platform, check its SHA-256 against the release's `.sha256` file, run the new binary once, then swap it in. A build from source prints the `cargo install` command instead. |
 | `doctor [--logs\|--report]` | Report crashed runs; `--logs` lists the run logs; `--report` prints the last crashed or failed run, with the home folder shown as `~`, to paste into an issue. |
 | `acp` | Serve the Agent Client Protocol on stdio. |
@@ -279,6 +284,8 @@ cache_ttl = "5m"
 | `gh_secs` | `30` | Timeout for each `gh` call; a call past it shows as timed out. |
 | `gh_poll_ms` | `20` | How often a running `gh` call is checked. |
 | `update_secs` | `600` | `summonr update` download timeout. |
+| `plugin_fetch_secs` | `120` | Timeout for each git call and download that `summonr plugin marketplace` and `summonr plugin install NAME@MARKETPLACE` make. |
+| `plugin_fetch_poll_ms` | `20` | How often a running plugin fetch is checked. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
 | `search_secs` | `20` | Time one `search` call walks and scans before it returns what it found. |
@@ -322,6 +329,7 @@ cache_ttl = "5m"
 | `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
 | `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |
 | `mcp_found_max` | `8` | Most deferred tools returned per search. |
+| `agent_skills_max` | `32` | Most distinct skills an agent's `skills` field preloads. |
 | `lsp_start_secs` | `30` | Language server start timeout. |
 | `lsp_request_secs` | `30` | Language server request timeout. |
 | `lsp_check_secs` | `5` | Diagnostics wait after an edit. |
@@ -702,11 +710,11 @@ Task card titles use workspace-relative paths, and a card with one child takes t
 
 Implement children get the parent's file, shell, and language-server tools; background commands stay with the parent. The parent verifies after they finish.
 
-A `task` call may name a plugin agent with `agent`; its instructions open the child's first message, and its `tools` list limits what the child may call. The child's row names that agent. Pass `--worktree` on the session to isolate the whole run in a git worktree.
+A `task` call may name an agent with `agent`: a plugin agent, or one from `.claude/agents/` or `~/.claude/agents/` (see [Extending](extending.md)). The skills its `skills` field names and its instructions open the child's first message. Its `tools` and `disallowedTools` lists limit what the child may call, MCP tools included. Its `model` field can pick a Claude model on the lead's endpoint; a `task` `endpoint` wins over it. The child's row names that agent. Pass `--worktree` on the session to isolate the whole run in a git worktree.
 
 With `workspace: "shared"`, an `implement` child edits the parent checkout directly. Assign disjoint paths: edits are visible immediately and the harness does not reconcile or roll them back. No child checkout is created. The default `workspace: "isolated"` retains checkout isolation and completion reconciliation.
 
-A `research` child gets the same tools as an implement child. It always works in the parent workspace, never an isolated checkout; its brief tells it to investigate and report, and to change the workspace only where the assignment asks. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task` gets a refusal. Children call `web` when `search` is on, use the lead's MCP servers, and keep the mail tools when the lead has them, so they can post to the lead's board. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A `research` child gets the same tools as an implement child. It always works in the parent workspace, never an isolated checkout; its brief tells it to investigate and report, and to change the workspace only where the assignment asks. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, unless its agent limits the tools or picks a model, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task` gets a refusal. Children call `web` when `search` is on, use the lead's MCP servers, and keep the mail tools when the lead has them, so they can post to the lead's board. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 `task` with `background: true` starts the child and returns its id at once. `task` with `child: ID` reports its state, elapsed time, and last action while it runs, and its full result once it finishes; `kill: true` stops it. A turn does not end while a background child runs: summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it. **Clear** on a background status row dismisses that row for the current view without stopping the child. Its completion report and session log stay available. `task` with `child: ID` and `clear: true` performs the same dismissal through the native tool; combine `kill: true` and `clear: true` to stop and dismiss. An unknown child id returns an error without hiding another card. New children still appear.
 
@@ -958,10 +966,10 @@ The built-in modules are the binary (modules above). What you add lives in files
 | Skill | `SKILL.md` under `~/.summonr/skills/<name>/`, `.summonr/skills/<name>/`, Claude Code's `~/.claude/skills/<name>/` and `.claude/skills/<name>/`, or `~/.agents/skills/<name>/`; a plugin skill is `/<plugin>:<name>` | `/skills` lists them; `/NAME [arguments]` invokes one; the model uses the `skill` tool. Both run the body's `!` blocks and attach its `@path` files the way a command does. Slash completion refreshes on opening; no copying or sync option is needed. Built-ins and plugin commands win name collisions. |
 | MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt`, `/mcp__server__prompt`, and `@server:uri` expand server prompts and resources into the user message. Claude Code scopes resolve local, then project, then user, then plugin, whole entry. |
 | Hook | `[hooks]` `session_start`, `user_prompt`, `pre_tool`, `permission_request`, `post_tool`, `post_tool_failure`, `notification`, `subagent_start`, `subagent_stop`, `pre_compact`, `compact`, `stop`, `stop_failure`, `session_end` (a command, a table, or a list) | Not a tool. `pre_tool` may block a call, `user_prompt` a prompt, `permission_request` may answer an approval, and `stop` and `subagent_stop` may keep the turn going (stdin is JSON). |
-| Plugin | `summonr plugin install PATH` (Claude Code layout) | Its skills, MCP tools (`plugin_<plugin>_<server>__tool`), hooks, and `bin/` |
+| Plugin | `summonr plugin install PATH` (Claude Code layout), or `NAME@MARKETPLACE` from an added marketplace | Its skills, MCP tools (`plugin_<plugin>_<server>__tool`), hooks, and `bin/` |
 | CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy and the danger prompt apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
 
-`summonr plugin install PATH` copies a plugin directory to `~/.summonr/plugins/<name>/`. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr plugin list` prints one line per plugin: its name, on or off, and what it adds (skills, MCP servers, commands, agents, language servers, hooks, `bin`). There is no marketplace and no in-process loader.
+`summonr plugin install PATH` copies a plugin directory to `~/.summonr/plugins/<name>/`. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr plugin list` prints one line per plugin: its name, on or off, and what it adds (skills, MCP servers, commands, agents, language servers, hooks, `bin`). `summonr plugin install NAME@MARKETPLACE` installs from a Claude Code marketplace added with `summonr plugin marketplace add`; see [Extending summonr](extending.md#install-from-a-marketplace). There is no in-process loader.
 
 After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`. A one-shot `-p` prompt never advertises `todo`.
 

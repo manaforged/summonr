@@ -34,6 +34,7 @@ pub(super) enum Verb {
     Modules,
     PluginInstall,
     PluginRemove,
+    Marketplace(summonr_agent::plugins::market::Command),
     Update,
     Acp,
     Mail(summonr_agent::mail::cli::Command),

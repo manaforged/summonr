@@ -7,7 +7,7 @@ use serde::de::value::{Error, StrDeserializer};
 
 use Argument::{Bare, Text, Value};
 
-const PROMPT_PREFIX: &str = "mcp__";
+const PROMPT_PREFIX: &str = summonr_types::mcp::CLAUDE_PREFIX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]

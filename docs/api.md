@@ -31,6 +31,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr workflow list` | List configured workflows |
 | `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
 | `summonr plugin install PATH`, `summonr plugin list`, `summonr plugin remove NAME` | Install a plugin directory, list plugins, or remove one |
+| `summonr plugin install NAME@MARKETPLACE`, `summonr plugin marketplace add SOURCE`, `summonr plugin marketplace list [--json]`, `summonr plugin marketplace update [NAME]`, `summonr plugin marketplace remove NAME` | Install a plugin from a Claude Code marketplace; add, list, fetch again, or remove a marketplace |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr update` | Replace the installed binary with the latest release after a SHA-256 check; exit 0 when updated or already current |
 | `summonr tool run NAME [JSON]` | Run one tool in the current directory and print its result; a module tool needs its module on. Exit 0 on success, 1 on a tool error |

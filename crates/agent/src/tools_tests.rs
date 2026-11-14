@@ -218,7 +218,10 @@ async fn an_agent_tool_list_denies_tools_outside_it_by_claude_or_summonr_name() 
     std::fs::write(dir.path().join("note.txt"), "hello\n").unwrap();
     let mut tools =
         ToolRegistry::with_policy_and_search(dir.path(), Policy::builtin(), None).unwrap();
-    tools.restrict_to(&["Read".to_string(), "Grep".to_string()]);
+    tools.set_scope(crate::policy::Scope::new(
+        Some(&["Read".to_string(), "Grep".to_string()]),
+        None,
+    ));
     let offered: Vec<String> = tools
         .definitions()
         .into_iter()

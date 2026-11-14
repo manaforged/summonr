@@ -383,4 +383,8 @@ impl Provider for Client {
     fn supports_children(&self) -> bool {
         true
     }
+
+    fn endpoint_name(&self) -> Option<&str> {
+        (!self.name.is_empty()).then_some(self.name.as_str())
+    }
 }

@@ -261,14 +261,19 @@ impl ToolRegistry {
         format_directory(path, &dir, base)
     }
 
-    pub(super) async fn skill(&self, args: &Value) -> Result<ToolOutput> {
+    /// Skill `name` rendered as the skill tool returns it, with its `!` blocks run under this registry's trust.
+    pub(crate) async fn render_skill(&self, name: &str) -> Result<crate::provider::UserInput> {
         let body = crate::skills::load(
             &self.workspace,
             self.skill_set.as_ref(),
-            object_string(args, "name")?,
+            name,
             self.session_id().as_deref(),
         )?;
-        let input = self.inject(&body).await?;
+        self.inject(&body).await
+    }
+
+    pub(super) async fn skill(&self, args: &Value) -> Result<ToolOutput> {
+        let input = self.render_skill(object_string(args, "name")?).await?;
         Ok(ToolOutput {
             images: input.images,
             ..ToolOutput::ok(input.text)

@@ -10,6 +10,8 @@ pub(super) struct Run<P: Provider> {
     pub(super) started: Instant,
     pub(super) state: watch::Sender<ChildState>,
     pub(super) stay: bool,
+    pub(super) skills: Vec<String>,
+    pub(super) notes: Vec<String>,
 }
 
 pub(super) struct Guard {
@@ -41,9 +43,14 @@ impl<P: Provider> Run<P> {
                 event: Box::new(event.clone()),
             }));
         };
+        self.preload().await;
         let outcome = self.drive(emit).await;
         let usage = self.report(outcome, &sender, &id);
+        for note in std::mem::take(&mut self.notes) {
+            self.record.add_note(&note);
+        }
         if self.stay {
+            self.state.send_replace(self.record.state.clone());
             self.mail_loop(&sender, &id).await;
         }
         let usage = self.reported_usage(usage);
@@ -57,6 +64,21 @@ impl<P: Provider> Run<P> {
             settled: false,
             millis: super::elapsed_millis(self.started),
         }
+    }
+
+    pub(super) async fn preload(&mut self) {
+        let mut text = String::new();
+        for name in std::mem::take(&mut self.skills) {
+            match self.child.tools.render_skill(&name).await {
+                Ok(input) => {
+                    text.push_str(&format!("Preloaded skill `{name}`:\n{}\n\n", input.text))
+                }
+                Err(error) => self
+                    .notes
+                    .push(format!("agent skill `{name}` not preloaded: {error}")),
+            }
+        }
+        self.assignment.insert_str(0, &text);
     }
 
     async fn drive(&mut self, emit: impl FnMut(&Event)) -> Option<Result<Turn>> {

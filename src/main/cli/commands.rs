@@ -1,4 +1,7 @@
-use super::flags::{Run, verb};
+use summonr_agent::plugins::market::Command as Market;
+use summonr_agent::{Error, Result};
+
+use super::flags::{Input, Run, misuse, verb};
 use super::{Args, Verb, exit_help};
 
 pub(super) struct Command {
@@ -57,6 +60,7 @@ pub(super) const SECTIONS: [(&str, &[&str]); 4] = [
             "plugin install",
             "plugin list",
             "plugin remove",
+            "plugin marketplace",
             "update",
             "doctor",
         ],
@@ -198,7 +202,7 @@ pub(super) fn subcommands() -> impl Iterator<Item = &'static Command> + Clone {
     GROUPS.into_iter().flatten()
 }
 
-const CORE: [Command; 18] = [
+const CORE: [Command; 19] = [
     Command {
         name: "session list",
         most: Some(0),
@@ -302,7 +306,7 @@ const CORE: [Command; 18] = [
         name: "plugin install",
         most: Some(1),
         run: |args, _| verb(args, Verb::PluginInstall),
-        help: "plugin install PATH         install a directory of extras",
+        help: "plugin install PATH         install a directory of extras\nplugin install NAME@MARKET  install a plugin from an added marketplace",
     },
     Command {
         name: "plugin list",
@@ -319,4 +323,25 @@ const CORE: [Command; 18] = [
         run: |args, _| verb(args, Verb::PluginRemove),
         help: "plugin remove NAME          remove an installed plugin",
     },
+    Command {
+        name: "plugin marketplace",
+        most: Some(0),
+        run: marketplace,
+        help: "plugin marketplace add SRC  add a plugin catalog: owner/repo[#ref], a git URL, a URL, or a path\nplugin marketplace list     list added marketplaces (--json)\nplugin marketplace update   fetch every marketplace again, or the one named\nplugin marketplace remove N remove a marketplace and the plugins installed from it",
+    },
 ];
+
+fn marketplace(args: &mut Args, input: &mut Input) -> Result<()> {
+    let takes = "`summonr plugin marketplace` takes add, list, remove, or update";
+    let command = match input.next_if(|word| !word.starts_with('-')).as_deref() {
+        Some("add") => {
+            Market::Add(args.word(input, "SOURCE: owner/repo, a git URL, a URL, or a path")?)
+        }
+        Some("list") => Market::List,
+        Some("remove" | "rm") => Market::Remove(args.word(input, "NAME")?),
+        Some("update") => Market::Update(input.next_if(|word| !word.starts_with('-'))),
+        Some(other) => return Err(misuse("plugin", &format!("{takes}; got `{other}`"))),
+        None => return Err(Error::Setup(takes.to_string())),
+    };
+    verb(args, Verb::Marketplace(command))
+}

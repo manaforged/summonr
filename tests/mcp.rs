@@ -128,6 +128,9 @@ fn main() {
         plugin_install::plugin_user_env_replaces_the_server_env,
         #[cfg(unix)]
         plugin_install::plugin_non_command_hook_is_skipped_and_does_not_run,
+        plugin_install::a_marketplace_is_added_listed_installed_from_and_removed,
+        #[cfg(unix)]
+        plugin_install::a_git_source_installs_with_the_entry_merged_into_its_manifest,
         #[cfg(unix)]
         plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
         #[cfg(unix)]

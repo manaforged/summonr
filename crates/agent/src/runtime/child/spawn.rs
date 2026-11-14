@@ -1,4 +1,4 @@
-use super::brief::{agent_brief, instruction, rebase_paths};
+use super::brief::agent_of;
 use super::*;
 use crate::durable::driver::Parent;
 
@@ -72,7 +72,9 @@ impl<P: Provider> Loop<P> {
         tree: Option<Tree>,
     ) -> Result<Run<P>> {
         let role = crate::workflow::Role::Implement;
-        let endpoint = args.endpoint()?;
+        let agent = agent_of(args.agent.as_deref(), &self.workspace)?;
+        let mut notes = Vec::new();
+        let endpoint = self.agent_endpoint(&args, agent.as_ref(), &mut notes)?;
         let provider = self
             .selection(role)
             .0
@@ -96,7 +98,7 @@ impl<P: Provider> Loop<P> {
             &self.system_prompt,
             Some(Parent::Task(self.session.id())),
         )?;
-        let (opener, tools) = self.child_opener(&args, tree.as_ref(), &workspace)?;
+        let opener = self.child_opener(&args, agent.as_ref(), tree.as_ref(), &workspace);
         let mut child = Self::with_parts(
             provider,
             model.clone(),
@@ -106,7 +108,7 @@ impl<P: Provider> Loop<P> {
             Policy::builtin(),
             None,
         )?;
-        child.tools = self.child_tools(tools.as_deref(), &workspace, &child)?;
+        child.tools = self.child_tools(agent.as_ref(), &workspace, &child)?;
         child.set_subagent(args.agent.as_deref().unwrap_or(args.access.name()));
         if let Some(set) = self.tools.skill_set().cloned() {
             child.choose_skills(set)?;
@@ -166,47 +168,9 @@ impl<P: Provider> Loop<P> {
             started: Instant::now(),
             state: watch::Sender::new(ChildState::Running),
             stay: false,
+            skills: agent.map(|agent| agent.skills).unwrap_or_default(),
+            notes,
         })
-    }
-
-    fn child_opener(
-        &self,
-        args: &Args,
-        tree: Option<&Tree>,
-        workspace: &Path,
-    ) -> Result<(String, Option<Vec<String>>)> {
-        let instruction = instruction(args.access, tree.is_some());
-        let (brief, tools) = agent_brief(args.agent.as_deref(), &self.workspace)?;
-        let assignment = tree.map_or_else(
-            || args.assignment.clone(),
-            |tree| rebase_paths(&args.assignment, &self.workspace, &tree.path),
-        );
-        let stay = if args.name.is_some() {
-            " Finish the assigned task, then stay. Mail to your name is the next turn."
-        } else {
-            " Finish only the assigned task."
-        };
-        let opener = format!(
-            "Harness: child.{stay} {instruction} Your working directory is {}.\n\n{brief}{assignment}",
-            workspace.display()
-        );
-        Ok((opener, tools))
-    }
-
-    fn child_tools(
-        &self,
-        tools: Option<&[String]>,
-        workspace: &Path,
-        child: &Self,
-    ) -> Result<crate::tools::ToolRegistry> {
-        let mut registry = self.tools.child_at(workspace, &child.session_id())?;
-        if self.tools.is_read_only() {
-            registry.contain_read_only();
-        }
-        if let Some(tools) = tools {
-            registry.restrict_to(tools);
-        }
-        Ok(registry)
     }
 
     pub(super) fn task_reconcile(&self, done: &mut [(Access, Result<Done>)]) {
@@ -358,17 +322,10 @@ fn release_unfinished(done: &mut Done) {
         done.tree = None;
         return;
     }
-    let note = format!(
+    done.record.add_note(&format!(
         "the delta at {} holds changes and was kept",
         tree.path.display()
-    );
-    let Some(result) = done.record.state.result_mut() else {
-        return;
-    };
-    result.diagnostic = Some(match result.diagnostic.take() {
-        Some(existing) => format!("{existing}; {note}"),
-        None => note,
-    });
+    ));
 }
 
 impl ChildRecord {

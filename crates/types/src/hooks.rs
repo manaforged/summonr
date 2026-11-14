@@ -267,7 +267,7 @@ fn seconds(value: f64) -> Option<Duration> {
 
 fn mcp_name(tool: &str) -> String {
     if tool.contains("__") {
-        format!("mcp__{tool}")
+        format!("{}{tool}", crate::mcp::CLAUDE_PREFIX)
     } else {
         tool.to_string()
     }

@@ -15,7 +15,7 @@ pub(crate) mod stream;
 pub(crate) mod think;
 pub(crate) mod wire;
 pub(crate) use wire::boundary;
-pub(crate) use wire::traits::traits;
+pub(crate) use wire::traits::{Vendor, traits};
 
 use crate::endpoint::Wire;
 pub(crate) use summonr_auth::Auth;
@@ -58,6 +58,11 @@ pub trait Provider: Send + Sync + 'static {
 
     fn supports_children(&self) -> bool {
         false
+    }
+
+    /// The name of the configured endpoint this provider sends to.
+    fn endpoint_name(&self) -> Option<&str> {
+        None
     }
 }
 

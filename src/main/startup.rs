@@ -132,6 +132,11 @@ async fn run_verb(args: &Args, log: Option<&diagnostics::Log>, verb: &Verb) -> R
                 .map(|switches| println!("{}", switches.table())),
         ),
         Verb::PluginRemove => uninstall(args),
+        Verb::Marketplace(command) => done(
+            summonr_agent::plugins::market::run(command, args.json)
+                .await
+                .map(|text| println!("{text}")),
+        ),
         Verb::Update => update().await,
         Verb::PluginInstall => add(args).await,
         Verb::Worktrees => done(manage_worktrees(args)),
@@ -231,10 +236,15 @@ async fn add(args: &Args) -> Result<i32> {
     }
     let Some(path) = args.prompt.first() else {
         return Err(summonr_agent::Error::Config(
-            "summonr plugin install PATH  (or plugin list)".to_string(),
+            "summonr plugin install PATH|NAME@MARKETPLACE  (or plugin list)".to_string(),
         ));
     };
-    let installed = summonr_agent::Plugin::install(std::path::Path::new(path))?;
+    let local = std::path::Path::new(path);
+    let installed = if !local.exists() && path.contains('@') {
+        summonr_agent::Marketplace::install(path)?
+    } else {
+        summonr_agent::Plugin::install(local)?
+    };
     println!("{}", installed.report());
     for line in installed.check_servers(&workspace()?).await? {
         println!("{line}");

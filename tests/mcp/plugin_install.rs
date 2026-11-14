@@ -261,3 +261,102 @@ pub(crate) fn plugin_install_counts_only_language_servers_that_load() {
         "{text}"
     );
 }
+
+fn marketplace(session: &Session, plugins: serde_json::Value) -> String {
+    let root = session.files.path().join("market");
+    let catalog = json!({"name": "shop", "owner": {"name": "Tests"}, "plugins": plugins});
+    write(
+        &root.join(".claude-plugin/marketplace.json"),
+        &catalog.to_string(),
+    );
+    root.display().to_string()
+}
+
+pub(crate) fn a_marketplace_is_added_listed_installed_from_and_removed() {
+    let session = Session::new();
+    let root = marketplace(
+        &session,
+        json!([
+            {"name": "greet", "source": "./plugins/greet"},
+            {"name": "evil", "source": "./../outside"}
+        ]),
+    );
+    skill(&Path::new(&root).join("plugins/greet"), "greet", "Hi.\n");
+    skill(&session.files.path().join("outside"), "evil", "Out.\n");
+    let (ok, text) = session.cli(&["plugin", "marketplace", "add", &root]);
+    assert!(
+        ok && text.contains("added marketplace shop (2 plugins)"),
+        "{text}"
+    );
+    let (ok, text) = session.cli(&["plugin", "marketplace", "list"]);
+    assert!(ok && text.contains("shop\tdirectory\t"), "{text}");
+    let (ok, text) = session.cli(&["plugin", "install", "greet@shop"]);
+    assert!(ok, "{text}");
+    let plugins = session.home.path().join("plugins");
+    assert!(
+        plugins.join("greet/skills/greet/SKILL.md").is_file(),
+        "{text}"
+    );
+    let (ok, text) = session.cli(&["plugin", "install", "evil@shop"]);
+    assert!(!ok && text.contains("Path contains \"..\""), "{text}");
+    assert!(!plugins.join("evil").exists(), "{text}");
+    let (ok, text) = session.cli(&["plugin", "marketplace", "remove", "shop"]);
+    assert!(ok && text.contains("greet"), "{text}");
+    assert!(!plugins.join("greet").exists(), "{text}");
+    assert!(!session.home.path().join("marketplaces/shop").exists());
+    assert!(Path::new(&root).join("plugins/greet").is_dir(), "{text}");
+}
+
+#[cfg(unix)]
+fn git(dir: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t.invalid"])
+        .args(["-c", "commit.gpgsign=false", "-C"])
+        .arg(dir)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+}
+
+#[cfg(unix)]
+pub(crate) fn a_git_source_installs_with_the_entry_merged_into_its_manifest() {
+    let session = Session::new();
+    let repo = session.files.path().join("remote-repo");
+    skill(&repo, "remote", "Hi.\n");
+    write(
+        &repo.join(".claude-plugin/plugin.json"),
+        r#"{"name": "remote", "version": "1"}"#,
+    );
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "--quiet", "-m", "plugin"]);
+    let url = format!("file://{}", repo.display());
+    let source = json!({"source": "url", "url": url});
+    let root = marketplace(
+        &session,
+        json!([
+            {"name": "remote", "source": source, "description": "from git", "version": "2"},
+            {"name": "clash", "source": source, "strict": false, "skills": ["./skills"]},
+            {"name": "linked", "source": "./linked"}
+        ]),
+    );
+    std::os::unix::fs::symlink(session.files.path(), Path::new(&root).join("linked")).unwrap();
+    let (ok, text) = session.cli(&["plugin", "marketplace", "add", &root]);
+    assert!(ok, "{text}");
+    let (ok, text) = session.cli(&["plugin", "install", "remote@shop"]);
+    assert!(ok, "{text}");
+    let installed = session.home.path().join("plugins/remote");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&read(&installed.join(".claude-plugin/plugin.json"))).unwrap();
+    assert_eq!(manifest["description"], "from git", "{manifest}");
+    assert_eq!(manifest["version"], "1", "{manifest}");
+    assert!(installed.join("skills/greet/SKILL.md").is_file());
+    assert!(!installed.join(".git").exists());
+    let (ok, text) = session.cli(&["plugin", "install", "clash@shop"]);
+    assert!(!ok && text.contains("conflicting manifests"), "{text}");
+    let (ok, text) = session.cli(&["plugin", "install", "linked@shop"]);
+    assert!(!ok && text.contains("leaves the marketplace"), "{text}");
+    let (ok, text) = session.cli(&["plugin", "marketplace", "update", "shop"]);
+    assert!(ok && text.contains("updated marketplace shop"), "{text}");
+}

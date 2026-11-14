@@ -218,7 +218,7 @@ fn stage_copy(src: &Path, stage: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
+pub(super) fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
     std::fs::create_dir_all(dest)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;

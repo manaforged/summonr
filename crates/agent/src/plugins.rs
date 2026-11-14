@@ -15,6 +15,7 @@ mod expand;
 mod hooks;
 pub(crate) mod lsp;
 pub mod manage;
+pub mod market;
 
 pub(crate) use expand::{USER_CONFIG, Unset, Vars, expand, hook_env, scan};
 pub(crate) use manage::off::{unknown_off, warn_unknown_off};
@@ -80,17 +81,7 @@ impl Plugin {
     }
 
     fn inside(&self, relative: &str) -> Option<PathBuf> {
-        let relative = relative.strip_prefix("./").unwrap_or(relative);
-        let relative = if relative == "." { "" } else { relative };
-        let escapes = Path::new(relative).is_absolute()
-            || relative.split(['/', '\\']).any(|part| part == "..");
-        (!escapes).then(|| {
-            if relative.is_empty() {
-                self.dir.clone()
-            } else {
-                self.dir.join(relative)
-            }
-        })
+        inside(&self.dir, relative)
     }
 
     /// Each value the manifest declares under `key`, or `None` when the key is absent.
@@ -308,6 +299,21 @@ pub(crate) fn read_parsed<T, E: std::fmt::Display>(
         return Ok(None);
     }
     parse(&text).map(Some).map_err(|error| failed(&error))
+}
+
+/// `relative` under `dir`, with `./` and `.` allowed, or `None` when it is absolute or has `..`.
+pub(super) fn inside(dir: &Path, relative: &str) -> Option<PathBuf> {
+    let relative = relative.strip_prefix("./").unwrap_or(relative);
+    let relative = if relative == "." { "" } else { relative };
+    let escapes =
+        Path::new(relative).is_absolute() || relative.split(['/', '\\']).any(|part| part == "..");
+    (!escapes).then(|| {
+        if relative.is_empty() {
+            dir.to_path_buf()
+        } else {
+            dir.join(relative)
+        }
+    })
 }
 
 pub(super) fn json_file(path: &Path) -> Result<Value> {

@@ -5,6 +5,13 @@ use super::Stat;
 use crate::process::{self, Spec};
 use summonr_core::error::{Error, Result};
 
+const UNATTENDED: [(&str, &str); 4] = [
+    ("GIT_TERMINAL_PROMPT", "0"),
+    ("GIT_CONFIG_COUNT", "1"),
+    ("GIT_CONFIG_KEY_0", "protocol.ext.allow"),
+    ("GIT_CONFIG_VALUE_0", "never"),
+];
+
 pub(super) fn numstat_row(line: &str) -> Option<Stat> {
     let mut parts = line.splitn(3, '\t');
     let added = parts.next()?.trim();
@@ -41,11 +48,34 @@ pub(crate) fn git_output(
     args: &[&str],
     input: Option<&[u8]>,
 ) -> Result<Vec<u8>> {
+    let spec = git_spec(root, args).envs(env.iter().copied());
+    checked(args, process::output(spec, input)?)
+}
+
+/// Runs `git -C root ARGS` with no prompt and no `ext::` transport, as a timeout past `deadline`.
+pub(crate) fn git_within(
+    root: &Path,
+    args: &[&str],
+    deadline: process::Deadline,
+) -> Result<Vec<u8>> {
+    let spec = git_spec(root, args).envs(UNATTENDED);
+    let Some(output) = process::output_within(spec, None, deadline)? else {
+        return Err(Error::Timeout {
+            what: format!("git {}", args.first().unwrap_or(&"")),
+            limit: deadline.after,
+        });
+    };
+    checked(args, output)
+}
+
+fn git_spec(root: &Path, args: &[&str]) -> Spec {
     let argv = [OsStr::new("-C"), root.as_os_str()]
         .into_iter()
         .chain(args.iter().map(OsStr::new));
-    let spec = Spec::new("git", argv).envs(env.iter().copied());
-    let output = process::output(spec, input)?;
+    Spec::new("git", argv)
+}
+
+fn checked(args: &[&str], output: std::process::Output) -> Result<Vec<u8>> {
     let different = args.starts_with(&["diff", "--no-index"])
         && output.status.code() == Some(1)
         && !output.stdout.is_empty();

@@ -8,7 +8,9 @@ mod ask;
 mod danger;
 mod decide;
 mod protected;
+mod scope;
 pub(crate) use protected::{holds_protected, protected_read, workspace_control};
+pub(crate) use scope::Scope;
 mod walk;
 
 use decide::Check;
@@ -32,6 +34,7 @@ pub(crate) struct Policy {
     allow: Vec<Vec<String>>,
     write: Vec<Vec<String>>,
     roots: Vec<PathBuf>,
+    scope: Scope,
 }
 
 pub(crate) use summonr_types::Grant;
@@ -250,6 +253,9 @@ impl Policy {
     }
 
     fn tool_rules(&self, alias: &str, readonly: bool) -> Check {
+        if !self.scope.mcp(alias) {
+            return Err(format!("`{alias}` is not one of this agent's tools"));
+        }
         if self.read_only && !readonly {
             return Err(format!(
                 "`{alias}` can change state and is unavailable in a read-only session"

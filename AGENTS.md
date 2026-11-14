@@ -87,7 +87,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 | A hook | `[hooks]` in `~/.summonr/config.toml`: `session_start`, `user_prompt`, `pre_tool`, `post_tool`, `post_tool_failure`, `pre_compact`, `compact`, `stop`, or `session_end`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A panel | A tab in the desktop's right panel: `summonr panel --help` has the file format, and `summonr panel check NAME` validates it |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |
-| A plugin | `summonr plugin install PATH` for a Claude Code layout directory: skills, commands, agents, MCP servers, hooks, language servers, and `bin/` |
+| A plugin | `summonr plugin install PATH` for a Claude Code layout directory (skills, commands, agents, MCP servers, hooks, language servers, and `bin/`), or `summonr plugin install NAME@MARKETPLACE` after `summonr plugin marketplace add owner/repo` |
 
 [Extending summonr](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/extending.md) has the details. The [reference](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/reference.md) lists every flag, slash command, config key, and environment variable.
 

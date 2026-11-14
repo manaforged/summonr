@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{Plugin, enabled};
 use crate::skills;
@@ -16,6 +16,59 @@ pub(crate) enum Origin {
     Plugin(String),
 }
 
+/// A built-in model family name an agent's `model` field can give.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Alias {
+    Sonnet,
+    Opus,
+    Haiku,
+    Fable,
+}
+
+impl Alias {
+    const ALL: [Self; 4] = [Self::Sonnet, Self::Opus, Self::Haiku, Self::Fable];
+
+    /// The alias as the `model` field spells it.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Sonnet => "sonnet",
+            Self::Opus => "opus",
+            Self::Haiku => "haiku",
+            Self::Fable => "fable",
+        }
+    }
+}
+
+/// The model an agent's `model` field asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Model {
+    Inherit,
+    Alias(Alias),
+    Id(String),
+}
+
+impl Model {
+    fn parse(raw: &str) -> Self {
+        let raw = raw.trim();
+        if raw.eq_ignore_ascii_case("inherit") {
+            return Self::Inherit;
+        }
+        Alias::ALL
+            .into_iter()
+            .find(|alias| alias.name().eq_ignore_ascii_case(raw))
+            .map_or_else(|| Self::Id(raw.to_string()), Self::Alias)
+    }
+
+    /// The model name as the agent file spells it.
+    pub(crate) fn text(&self) -> &str {
+        match self {
+            Self::Inherit => "inherit",
+            Self::Alias(alias) => alias.name(),
+            Self::Id(id) => id,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Agent {
     pub(crate) origin: Origin,
@@ -23,8 +76,9 @@ pub(crate) struct Agent {
     pub(crate) description: String,
     pub(crate) tools: Option<Vec<String>>,
     pub(crate) disallowed: Option<Vec<String>>,
-    pub(crate) model: Option<String>,
+    pub(crate) model: Option<Model>,
     pub(crate) color: Option<String>,
+    pub(crate) skills: Vec<String>,
     pub(crate) instructions: String,
 }
 
@@ -40,28 +94,26 @@ impl Agent {
         matches!(self.origin, Origin::Plugin(_))
     }
 
+    /// The tool scope its `tools` and `disallowedTools` fields give.
+    pub(crate) fn scope(&self) -> crate::policy::Scope {
+        crate::policy::Scope::new(self.tools.as_deref(), self.disallowed.as_deref())
+    }
+
     /// The frontmatter fields this agent sets that a summonr child does not apply.
     pub(crate) fn unapplied(&self) -> Vec<&'static str> {
-        [
-            ("model", self.model.is_some()),
-            ("color", self.color.is_some()),
-            (
-                "disallowedTools",
-                self.disallowed.is_some() && self.tools.is_none(),
-            ),
-        ]
-        .into_iter()
-        .filter_map(|(field, set)| set.then_some(field))
-        .collect()
+        [("color", self.color.is_some())]
+            .into_iter()
+            .filter_map(|(field, set)| set.then_some(field))
+            .collect()
     }
 }
 
 #[must_use]
 pub(crate) fn agents(workspace: &Path) -> Vec<Agent> {
-    let mut found = of_dir(
-        &summonr_core::dirs::claude(workspace).join(DIR),
-        &Origin::Project,
-    );
+    let mut found: Vec<Agent> = project_dirs(workspace)
+        .iter()
+        .flat_map(|dir| of_dir(&dir.join(DIR), &Origin::Project))
+        .collect();
     if let Some(home) = summonr_core::dirs::user_home() {
         found.extend(of_dir(
             &summonr_core::dirs::claude(&home).join(DIR),
@@ -149,6 +201,19 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     Some(out)
 }
 
+fn project_dirs(workspace: &Path) -> Vec<PathBuf> {
+    let top = crate::diff::layout(workspace).map(|layout| layout.top);
+    let start = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let mut dirs = Vec::new();
+    for dir in start.ancestors() {
+        dirs.push(summonr_core::dirs::claude(dir));
+        if top.as_deref().is_none_or(|top| top == dir) {
+            break;
+        }
+    }
+    dirs
+}
+
 pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
     let build = |path: String, front: Frontmatter<'_>| {
         let (folders, stem) = split(&path);
@@ -158,7 +223,8 @@ pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
             plugin.scoped(folders)
         };
         let body = super::expand(front.body.trim(), &plugin.vars(workspace));
-        agent(Origin::Plugin(scope), stem, &front, body)
+        let name = front.get("name").unwrap_or(stem);
+        agent(Origin::Plugin(scope), name, &front, body)
     };
     if plugin.declared(DIR).is_none() {
         return skills::markdown_tree(&plugin.dir.join(DIR), build);
@@ -175,9 +241,10 @@ pub(super) fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
 }
 
 fn of_dir(dir: &Path, origin: &Origin) -> Vec<Agent> {
-    skills::markdown_tree(dir, |path, front| {
-        let (_, stem) = split(&path);
-        agent(origin.clone(), stem, &front, front.body.trim().to_string())
+    skills::markdown_tree(dir, |_, front| {
+        front.get("description")?;
+        let name = front.get("name")?;
+        agent(origin.clone(), name, &front, front.body.trim().to_string())
     })
 }
 
@@ -187,33 +254,27 @@ fn split(path: &str) -> (&str, &str) {
 
 fn agent(
     origin: Origin,
-    stem: &str,
+    name: &str,
     front: &Frontmatter<'_>,
     instructions: String,
 ) -> Option<Agent> {
-    let name = front.get("name").unwrap_or(stem).to_string();
-    let denied = front.list("disallowedTools");
-    skills::valid(&name).then(|| Agent {
+    let mut preload: Vec<String> = Vec::new();
+    for skill in front.list("skills").into_iter().flatten() {
+        if !preload.contains(&skill) && preload.len() < crate::limits::limits().agent_skills_max {
+            preload.push(skill);
+        }
+    }
+    skills::valid(name).then(|| Agent {
         origin,
-        name,
+        name: name.to_string(),
         description: front.get("description").unwrap_or_default().to_string(),
-        tools: front.list("tools").map(|tools| {
-            tools
-                .into_iter()
-                .filter(|tool| !denied.iter().flatten().any(|deny| same_tool(tool, deny)))
-                .collect()
-        }),
-        disallowed: denied,
-        model: front.get("model").map(str::to_string),
+        tools: front.list("tools"),
+        disallowed: front.list("disallowedTools"),
+        model: front.get("model").map(Model::parse),
         color: front.get("color").map(str::to_string),
+        skills: preload,
         instructions,
     })
-}
-
-fn same_tool(tool: &str, deny: &str) -> bool {
-    let deny = deny.split_once('(').map_or(deny, |(head, _)| head).trim();
-    tool == deny
-        || crate::hooks::builtin(tool).is_some_and(|kind| crate::hooks::builtin(deny) == Some(kind))
 }
 
 #[cfg(test)]

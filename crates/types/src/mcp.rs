@@ -1,6 +1,9 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+/// The prefix Claude Code puts before an MCP server name in a tool or prompt name.
+pub const CLAUDE_PREFIX: &str = "mcp__";
+
 const DEFAULT_PORTS: [(&str, &str); 4] = [
     ("https", ":443"),
     ("wss", ":443"),

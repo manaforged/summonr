@@ -212,6 +212,16 @@ impl ChildRecord {
         }
     }
 
+    pub(super) fn add_note(&mut self, note: &str) {
+        let Some(result) = self.state.result_mut() else {
+            return;
+        };
+        result.diagnostic = Some(match result.diagnostic.take() {
+            Some(existing) => format!("{existing}; {note}"),
+            None => note.to_string(),
+        });
+    }
+
     pub(super) fn fail_record(&mut self, diagnostic: &str) {
         let Some(result) = self.state.result_mut() else {
             return;

@@ -113,6 +113,7 @@ pub use endpoint::{
 pub use goal::prompt as goal_prompt;
 pub use jobs::live as live_jobs;
 pub use plugins::manage::Plugin;
+pub use plugins::market::Marketplace;
 pub use prompt::{Sources, system_prompt};
 pub use provider::dollars;
 pub use provider::{Client, Delta, Effort, Usage, UserInput};

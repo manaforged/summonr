@@ -85,9 +85,7 @@ impl ToolRegistry {
     }
 
     fn permits(&self, name: &str) -> bool {
-        self.only
-            .as_ref()
-            .is_none_or(|only| Builtin::live(name).is_some_and(|kind| only.contains(&kind)))
+        Builtin::live(name).is_none_or(|kind| self.policy.scope().builtin(kind))
     }
 
     pub(super) fn enabled(&self, kind: Builtin) -> bool {
@@ -96,7 +94,7 @@ impl ToolRegistry {
 
     pub(super) fn available(&self, kind: Builtin) -> Result<()> {
         let name = kind.name();
-        if self.only.as_ref().is_some_and(|only| !only.contains(&kind)) {
+        if !self.policy.scope().builtin(kind) {
             return Err(Error::Denied(format!(
                 "tool `{name}` is not one of this agent's tools"
             )));

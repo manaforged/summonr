@@ -588,3 +588,136 @@ async fn a_child_runs_with_the_skill_set_of_its_lead() {
     assert!(!tool_names(&mut run.child).contains(&"skill".to_string()));
     assert_eq!(run.child.skills().as_deref(), Some("none"));
 }
+
+fn agent_file(workspace: &std::path::Path, name: &str, fields: &str) {
+    let dir = workspace.join(".claude").join("agents");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{name}.md")),
+        format!("---\nname: {name}\ndescription: {name} agent\n{fields}---\nWork as {name}.\n"),
+    )
+    .unwrap();
+}
+
+fn agent_args(agent: &str) -> super::Args {
+    serde_json::from_value(serde_json::json!({
+        "assignment": "look around",
+        "access": "research",
+        "agent": agent,
+    }))
+    .unwrap()
+}
+
+fn start_agent(parent: &mut Loop<Scripted>, agent: &str) -> super::Run<Scripted> {
+    let budget = parent.task_budget(1).unwrap();
+    parent
+        .task_start_in(agent_args(agent), &budget, None)
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_agent_child_gets_only_the_tools_its_lists_leave() {
+    use crate::tools::Builtin;
+    let (mut parent, dirs) = parent(vec![]);
+    agent_file(dirs[0].path(), "reader", "tools: Read, Grep\n");
+    agent_file(dirs[0].path(), "no-shell", "disallowedTools: Bash\n");
+    agent_file(
+        dirs[0].path(),
+        "nothing",
+        "tools: Read\ndisallowedTools: Read\n",
+    );
+    let mut reader = start_agent(&mut parent, "reader");
+    let names = tool_names(&mut reader.child);
+    assert!(
+        names.contains(&Builtin::Read.name().to_string()),
+        "{names:?}"
+    );
+    for denied in [Builtin::RunCommand, Builtin::Edit, Builtin::Write] {
+        assert!(!names.contains(&denied.name().to_string()), "{names:?}");
+    }
+    let refused = reader
+        .child
+        .tools
+        .execute_for_test(&call(
+            "1",
+            Builtin::RunCommand.name(),
+            &serde_json::json!({"command": "echo hi"}),
+        ))
+        .await
+        .err()
+        .expect("run_command is outside the agent's tools");
+    assert!(
+        refused
+            .to_string()
+            .contains("not one of this agent's tools"),
+        "{refused}"
+    );
+    let mut open = start_agent(&mut parent, "no-shell");
+    let names = tool_names(&mut open.child);
+    assert!(
+        !names.contains(&Builtin::RunCommand.name().to_string()),
+        "{names:?}"
+    );
+    assert!(
+        names.contains(&Builtin::Read.name().to_string()),
+        "{names:?}"
+    );
+    let budget = parent.task_budget(1).unwrap();
+    let empty = parent.task_start_in(agent_args("nothing"), &budget, None);
+    assert!(empty.is_err());
+}
+
+#[tokio::test]
+async fn an_agent_preloads_its_skills_and_notes_the_missing_ones() {
+    let (mut parent, dirs) = parent(vec![]);
+    let skill = dirs[0].path().join(".summonr").join("skills").join("demo");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "# Demo\nUse the demo convention.\n").unwrap();
+    agent_file(dirs[0].path(), "styled", "skills:\n  - demo\n  - absent\n");
+    let mut run = start_agent(&mut parent, "styled");
+    run.preload().await;
+    assert!(
+        run.assignment.starts_with("Preloaded skill `demo`:"),
+        "{}",
+        run.assignment
+    );
+    assert!(
+        run.assignment.contains("Use the demo convention."),
+        "{}",
+        run.assignment
+    );
+    assert!(
+        run.assignment.contains("Harness: child."),
+        "{}",
+        run.assignment
+    );
+    assert_eq!(run.notes.len(), 1, "{:?}", run.notes);
+    assert!(
+        run.notes[0].starts_with("agent skill `absent` not preloaded"),
+        "{:?}",
+        run.notes
+    );
+}
+
+#[tokio::test]
+async fn an_agent_model_alias_off_a_claude_endpoint_inherits_with_a_note() {
+    let (mut parent, dirs) = parent(vec![]);
+    agent_file(dirs[0].path(), "pinned", "model: opus\n");
+    agent_file(dirs[0].path(), "follower", "model: inherit\n");
+    let run = start_agent(&mut parent, "pinned");
+    assert_eq!(run.child.model, "m");
+    assert_eq!(run.notes.len(), 1, "{:?}", run.notes);
+    assert!(
+        run.notes[0].starts_with("agent model `opus` ignored"),
+        "{:?}",
+        run.notes
+    );
+    assert!(
+        run.notes[0].ends_with("the child inherits `m`"),
+        "{:?}",
+        run.notes
+    );
+    let run = start_agent(&mut parent, "follower");
+    assert_eq!(run.child.model, "m");
+    assert!(run.notes.is_empty(), "{:?}", run.notes);
+}

@@ -1,4 +1,6 @@
 use super::*;
+use crate::policy::Scope;
+use summonr_types::catalog::Builtin;
 
 fn agent(origin: Origin, name: &str) -> Agent {
     Agent {
@@ -9,6 +11,7 @@ fn agent(origin: Origin, name: &str) -> Agent {
         disallowed: None,
         model: None,
         color: None,
+        skills: Vec::new(),
         instructions: String::new(),
     }
 }
@@ -80,20 +83,101 @@ fn a_project_subfolder_does_not_change_the_name() {
 }
 
 #[test]
-fn disallowed_tools_leave_the_list_and_unapplied_fields_are_named() {
+fn disallowed_tools_remove_the_whole_tool_and_only_color_is_unapplied() {
     let dir = plugin_dir(&[(
         "agents/fixer.md",
         "---\nname: fixer\ntools: Read, Bash, Edit\ndisallowedTools: Bash(git push *)\nmodel: opus\ncolor: red\n---\nFix.",
     )]);
     let plugin = Plugin::at("demo".to_string(), dir.path().to_owned());
     let [found] = of_plugin(&plugin, dir.path()).try_into().unwrap();
-    assert_eq!(
-        found.tools,
-        Some(vec!["Read".to_string(), "Edit".to_string()])
-    );
-    assert_eq!(found.model.as_deref(), Some("opus"));
+    let scope = found.scope();
+    assert!(scope.builtin(Builtin::Read));
+    assert!(scope.builtin(Builtin::Edit));
+    assert!(!scope.builtin(Builtin::RunCommand));
+    assert!(!scope.builtin(Builtin::Write));
+    assert!(!scope.mcp("github__create_issue"));
+    assert_eq!(found.model, Some(Model::Alias(Alias::Opus)));
     assert_eq!(found.color.as_deref(), Some("red"));
-    assert_eq!(found.unapplied(), ["model", "color"]);
+    assert_eq!(found.unapplied(), ["color"]);
+}
+
+fn list(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| (*item).to_string()).collect()
+}
+
+#[test]
+fn mcp_entries_follow_the_claude_code_naming() {
+    let server = Scope::new(Some(list(&["Read", "mcp__github__*"]).as_slice()), None);
+    assert!(server.mcp("github__create_issue"));
+    assert!(!server.mcp("slack__post"));
+    let exact = Scope::new(Some(list(&["mcp__reports__v2"]).as_slice()), None);
+    assert!(!exact.mcp("reports__v2__run"));
+    let withheld = Scope::new(None, Some(list(&["mcp__github"]).as_slice()));
+    assert!(!withheld.mcp("github__create_issue"));
+    assert!(withheld.mcp("slack__post"));
+    assert!(withheld.builtin(Builtin::Edit));
+    let no_mcp = Scope::new(None, Some(list(&["mcp__*"]).as_slice()));
+    assert!(!no_mcp.mcp("slack__post"));
+    let both = Scope::new(
+        Some(list(&["Read"]).as_slice()),
+        Some(list(&["Read"]).as_slice()),
+    );
+    assert!(!both.resolves());
+}
+
+#[test]
+fn model_aliases_inherit_and_full_ids_parse() {
+    assert_eq!(Model::parse("Sonnet"), Model::Alias(Alias::Sonnet));
+    assert_eq!(Model::parse("haiku"), Model::Alias(Alias::Haiku));
+    assert_eq!(Model::parse("inherit"), Model::Inherit);
+    assert_eq!(
+        Model::parse("claude-opus-5-5"),
+        Model::Id("claude-opus-5-5".to_string())
+    );
+}
+
+#[test]
+fn project_files_without_a_name_or_description_are_skipped() {
+    let dir = plugin_dir(&[
+        ("notes.md", "# Notes about our agents\n"),
+        ("bare.md", "---\nname: bare\n---\nNo description."),
+        (
+            "kept.md",
+            "---\nname: kept\ndescription: kept\nskills: [lint, test, lint]\n---\nKept.",
+        ),
+    ]);
+    let [found] = of_dir(dir.path(), &Origin::Project).try_into().unwrap();
+    assert_eq!(found.name, "kept");
+    assert_eq!(found.skills, ["lint", "test"]);
+}
+
+#[test]
+fn the_closest_project_definition_wins() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join(".git")).unwrap();
+    let inner = root.path().join("app");
+    for (dir, body) in [(root.path(), "Outer."), (inner.as_path(), "Inner.")] {
+        let agents = summonr_core::dirs::claude(dir).join(DIR);
+        std::fs::create_dir_all(&agents).unwrap();
+        std::fs::write(
+            agents.join("reviewer.md"),
+            format!("---\nname: reviewer\ndescription: reviews\n---\n{body}"),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        summonr_core::dirs::claude(root.path())
+            .join(DIR)
+            .join("linter.md"),
+        "---\nname: linter\ndescription: lints\n---\nLint.",
+    )
+    .unwrap();
+    assert_eq!(find("linter", &inner).unwrap().instructions, "Lint.");
+    assert_eq!(find("reviewer", &inner).unwrap().instructions, "Inner.");
+    assert_eq!(
+        find("reviewer", root.path()).unwrap().instructions,
+        "Outer."
+    );
 }
 
 #[test]

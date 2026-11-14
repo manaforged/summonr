@@ -71,7 +71,6 @@ pub(crate) struct ToolRegistry {
     command_yield: tokio::sync::watch::Sender<bool>,
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
-    only: Option<Vec<Builtin>>,
     standalone: bool,
     task_list: bool,
     trust: bool,
@@ -127,7 +126,6 @@ impl ToolRegistry {
             command_yield: tokio::sync::watch::Sender::new(false),
             model_images: false,
             vision: None,
-            only: None,
             standalone: false,
             task_list: true,
             trust: false,
@@ -252,13 +250,8 @@ impl ToolRegistry {
         self.execute_outcome(call).await
     }
 
-    pub(crate) fn restrict_to(&mut self, names: &[String]) {
-        self.only = Some(
-            names
-                .iter()
-                .filter_map(|name| crate::hooks::builtin(name))
-                .collect(),
-        );
+    pub(crate) fn set_scope(&mut self, scope: crate::policy::Scope) {
+        self.policy.set_scope(scope);
     }
 
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {

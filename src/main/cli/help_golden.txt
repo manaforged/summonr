@@ -28,8 +28,13 @@ Setup:
   mcp remove NAME             remove an MCP server from ~/.summonr/config.toml
   panel list|check NAME       list custom panels, or run one and validate its output
   plugin install PATH         install a directory of extras
+  plugin install NAME@MARKET  install a plugin from an added marketplace
   plugin list                 list installed plugins
   plugin remove NAME          remove an installed plugin
+  plugin marketplace add SRC  add a plugin catalog: owner/repo[#ref], a git URL, a URL, or a path
+  plugin marketplace list     list added marketplaces (--json)
+  plugin marketplace update   fetch every marketplace again, or the one named
+  plugin marketplace remove N remove a marketplace and the plugins installed from it
   update                      replace this binary with the latest release
   doctor [--logs|--report]    report crashed runs; --logs lists run logs;
                               --report prints the last crash to paste into an issue

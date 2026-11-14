@@ -16,7 +16,7 @@ pub(crate) use watch::Watch;
 
 pub use child::{Delta, children, delta};
 use git::{git, numstat_row};
-pub(crate) use git::{git_apply, git_env, git_output, git_paths, nul_paths};
+pub(crate) use git::{git_apply, git_env, git_output, git_paths, git_within, nul_paths};
 pub(crate) use layout::{Layout, STATE_DIR, inside_git, layout, state_dir};
 pub(crate) use turn::edited;
 pub use turn::{SESSION_BASE, TurnId, turn_patch, turn_stats, turns};

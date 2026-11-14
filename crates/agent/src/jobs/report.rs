@@ -58,11 +58,12 @@ pub(super) fn report(workspace: &Path, record: &Record, table: Option<&Table>) -
     } else {
         JobState::Dead
     };
-    let quiet = if state == JobState::Running && quiet >= crate::limits::limits().job_quiet_secs {
-        format!(", no new output for {}m", quiet / 60)
-    } else {
-        String::new()
-    };
+    let quiet =
+        if state == JobState::Running && quiet >= crate::limits::limits().job_quiet().as_secs() {
+            format!(", no new output for {}m", quiet / 60)
+        } else {
+            String::new()
+        };
     let preview = if log.is_file() {
         preview(&log, 8 * 1024)?
     } else {

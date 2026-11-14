@@ -52,8 +52,11 @@ pub(crate) fn argv(options: &Options, session: Option<&str>, text: &str) -> Vec<
 
 async fn halt(child: &mut Child, group: Option<ProcessGroup>) -> Result<()> {
     if group.as_ref().is_some_and(ProcessGroup::terminate) {
-        let grace = Duration::from_secs(crate::limits::limits().gateway_stop_secs);
-        if crate::supervise::within(grace, child.wait()).await {
+        let grace = crate::limits::limits().gateway_stop();
+        if crate::limits::within(grace, "the turn's stop", child.wait())
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
     }

@@ -4,10 +4,7 @@ use std::time::{Duration, Instant};
 use leyline::Session;
 use serde_json::Value;
 
-use crate::{
-    DEVICE_EXPIRY, Error, POLL_CEILING, POLL_FLOOR, POLL_STEP, Parts, Prompt, Result, Store,
-    seconds,
-};
+use crate::{Error, Parts, Prompt, Result, Store, TIMED_OUT, WAITS};
 
 use super::pkce::{challenge, random};
 use super::token::{minted, post, settle, told};
@@ -38,13 +35,13 @@ pub(super) async fn login(
     let wait = body
         .get("interval")
         .and_then(Value::as_u64)
-        .map_or(POLL_STEP, seconds)
-        .clamp(POLL_FLOOR, POLL_CEILING);
+        .map_or(WAITS.poll_step, Duration::from_secs)
+        .clamp(WAITS.poll_floor, WAITS.poll_ceiling);
     let stop = Instant::now()
         + body
             .get("expires_in")
             .and_then(Value::as_u64)
-            .map_or(DEVICE_EXPIRY, seconds);
+            .map_or(WAITS.device_expiry, Duration::from_secs);
     let poll = Poll {
         parts,
         http,
@@ -122,7 +119,7 @@ impl Poll<'_> {
             match body.get("error").and_then(Value::as_str) {
                 Some("authorization_pending") => continue,
                 Some("slow_down") => {
-                    wait = (wait + POLL_STEP).min(POLL_CEILING);
+                    wait = (wait + WAITS.poll_step).min(WAITS.poll_ceiling);
                     continue;
                 }
                 Some(other) => {
@@ -136,7 +133,7 @@ impl Poll<'_> {
             let grant = minted(&body)?;
             return settle(self.parts, self.http, shared, grant).await;
         }
-        Err(Error::Denied("the login timed out".to_string()))
+        Err(Error::Denied(TIMED_OUT.to_string()))
     }
 
     fn form(&self) -> Vec<(String, String)> {

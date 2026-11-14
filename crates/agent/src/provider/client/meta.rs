@@ -199,17 +199,12 @@ impl Client {
             Ok(info) if info.keyless() => Cost::Free,
             Ok(_) | Err(_) => Cost::Unknown,
         };
-        let mut models = tokio::time::timeout(
+        let mut models = crate::limits::within(
             crate::limits::limits().model_probe(),
+            "GET /models",
             client.catalog(covered),
         )
-        .await
-        .map_err(|elapsed| {
-            Error::provider(
-                ProviderFailureKind::Transport,
-                format!("GET /models {elapsed}"),
-            )
-        })??;
+        .await??;
         crate::catalog::enrich(&endpoint.name, endpoint.base_url.as_deref(), &mut models);
         crate::catalog::remember(&endpoint.name, models.clone())?;
         Ok(models)
@@ -219,6 +214,9 @@ impl Client {
     pub fn state(error: &Error) -> crate::endpoint::State {
         use crate::endpoint::State;
         use ProviderFailureKind as Kind;
+        if let Error::Timeout { .. } = error {
+            return State::Offline;
+        }
         match error.provider_failure().map(|failure| failure.kind) {
             Some(Kind::Authentication) => State::KeyRejected,
             Some(Kind::MissingKey) => State::NeedsKey,
@@ -268,10 +266,14 @@ impl Client {
         if !local && let Some(limit) = self.recorded(endpoint, model) {
             return Some(limit);
         }
-        let probed = tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
-            .await
-            .ok()
-            .flatten();
+        let probed = crate::limits::within(
+            crate::limits::limits().probe(),
+            "the context probe",
+            self.probe(model),
+        )
+        .await
+        .ok()
+        .flatten();
         if local {
             probed
         } else {

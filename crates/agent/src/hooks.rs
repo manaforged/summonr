@@ -66,16 +66,11 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
             stderr: stderr.text().trim().to_string(),
         })
     };
-    let finished = tokio::time::timeout(crate::limits::limits().job_wait(), work).await;
+    let limit = crate::limits::limits().job_wait();
+    let finished = crate::limits::within(limit, format!("hook `{}`", hook.command), work).await;
     drop(group);
     finished
-        .map_err(|_elapsed| {
-            format!(
-                "hook `{}` ran past {}s",
-                hook.command,
-                crate::limits::limits().job_wait_secs
-            )
-        })?
+        .map_err(|error| error.to_string())?
         .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
 }
 

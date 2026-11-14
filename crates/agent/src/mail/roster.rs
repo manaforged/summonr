@@ -40,7 +40,7 @@ impl Agent {
 }
 
 pub fn live(dir: &Path) -> Vec<Agent> {
-    let sweep = now().saturating_sub(crate::limits::limits().mail_sweep_secs);
+    let sweep = now().saturating_sub(crate::limits::limits().mail_sweep().as_secs());
     let mut roster = Vec::new();
     for entry in summonr_core::walk::children(&dir.join("agents"))
         .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))

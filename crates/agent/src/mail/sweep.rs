@@ -4,7 +4,7 @@ use super::*;
 
 /// Removes the inbox and lock file of a session that is gone, once older than the sweep window; the audit keeps every message.
 pub(crate) fn sweep_inboxes(dir: &Path, now: std::time::SystemTime) -> usize {
-    let window = std::time::Duration::from_secs(crate::limits::limits().mail_sweep_secs);
+    let window = crate::limits::limits().mail_sweep();
     let live: std::collections::HashSet<String> = super::live(dir)
         .into_iter()
         .map(|agent| clean_id(&agent.id))

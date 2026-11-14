@@ -66,7 +66,7 @@ impl ToolRegistry {
     ) -> Result<ToolOutput> {
         let args = serde_json::json!({
             "command": command,
-            "timeout_secs": timeout_secs.unwrap_or(crate::limits::limits().verify_timeout_secs),
+            "timeout_secs": timeout_secs.unwrap_or(crate::limits::limits().verify_timeout().as_secs()),
         });
         self.launch_command(&args, self.policy.is_read_only(), Rewrite::Exact)
             .await
@@ -218,7 +218,7 @@ impl ToolRegistry {
         let status = crate::jobs::wait(
             &self.workspace,
             id,
-            crate::limits::limits().job_wait_secs,
+            crate::limits::limits().job_wait().as_secs(),
             || Ok(()),
         )
         .await?;

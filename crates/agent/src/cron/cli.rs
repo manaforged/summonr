@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
 
 use jiff::Zoned;
 
@@ -79,7 +78,7 @@ fn token(name: &str) -> Result<i32> {
 fn install() -> Result<i32> {
     super::guard()?;
     let exe = std::env::current_exe()?;
-    let every = crate::limits::limits().cron_tick_secs;
+    let every = crate::limits::limits().cron_tick().as_secs();
     let (path, note) = super::install::install(&exe, every)?;
     say(view::installed(&path, note))
 }
@@ -226,7 +225,7 @@ fn remove(name: &str) -> Result<i32> {
     let wait = match stopped {
         Ok(true) => {
             println!("stopped the running run");
-            Wait::Within(|| Duration::from_secs(crate::limits::limits().gateway_stop_secs))
+            Wait::Within(|| crate::limits::limits().gateway_stop())
         }
         Ok(false) => Wait::Never,
         Err(error) => {

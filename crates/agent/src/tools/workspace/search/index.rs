@@ -127,7 +127,7 @@ pub(super) fn refresh(root: &Path, slow: bool) {
     }
     let fresh = covered.as_ref().is_some_and(|index| {
         summonr_core::clock::now().saturating_sub(index.built)
-            < crate::limits::limits().search_index_secs
+            < crate::limits::limits().search_index().as_secs()
     });
     let root = covered.map_or_else(|| root.to_path_buf(), |index| index.root);
     if fresh

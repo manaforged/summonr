@@ -9,12 +9,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use url::Url;
 
-use crate::{Error, Parts, Prompt, Result, Store};
+use crate::{Error, Parts, Prompt, Result, Store, TIMED_OUT, WAITS};
 
 use super::store::stored;
 use super::token::{minted, post, settle};
 
-use crate::LOGIN_WAIT as WAIT;
 const HEAD_CEILING: usize = 8192;
 
 pub(super) async fn login(
@@ -95,9 +94,9 @@ async fn returned(
         return pasted(prompt, state).await;
     };
     prompt.notice("waiting for the browser to come back");
-    tokio::time::timeout(WAIT, caught(listener, state))
+    tokio::time::timeout(WAITS.login, caught(listener, state))
         .await
-        .map_err(|_| Error::Denied("the login timed out".to_string()))?
+        .map_err(|_elapsed| Error::Denied(TIMED_OUT.to_string()))?
 }
 
 struct Callback {

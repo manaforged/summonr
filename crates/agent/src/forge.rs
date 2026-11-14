@@ -350,7 +350,7 @@ fn gh(dir: &Path, args: &[&str]) -> Result<String, Error> {
     let Some(output) = finished else {
         return Err(Error::TimedOut {
             command: named(args),
-            secs: limits.gh_secs,
+            secs: limits.gh().as_secs(),
         });
     };
     if output.status.success() {

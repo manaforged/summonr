@@ -66,13 +66,9 @@ pub(crate) async fn output(
         drop(stderr.settle().await);
         Ok::<_, String>(status)
     };
-    let mut finished = None;
-    crate::supervise::within(limits.panel_timeout(), async {
-        finished = Some(work.await)
-    })
-    .await;
+    let finished = crate::limits::within(limits.panel_timeout(), "the command", work).await;
     drop(group);
-    let status = finished.ok_or_else(|| format!("ran past {}s", limits.panel_timeout_secs))??;
+    let status = finished.map_err(|error| error.to_string())??;
     if !status.success() {
         let reason = stderr.text();
         return Err(match reason.trim() {

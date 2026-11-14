@@ -170,7 +170,7 @@ pub struct Listing {
 impl Listing {
     #[must_use]
     pub fn stale(&self) -> bool {
-        now().saturating_sub(self.fetched) >= crate::limits::limits().models_listing_secs
+        now().saturating_sub(self.fetched) >= crate::limits::limits().models_listing().as_secs()
     }
 }
 

@@ -16,7 +16,7 @@ pub fn prune(keep: Option<&str>) {
             return;
         };
         let retain = store::retention();
-        let period = Duration::from_secs(crate::limits::limits().session_prune_secs);
+        let period = crate::limits::limits().session_prune();
         if due(&home, period, SystemTime::now()) {
             prune_in(&home, retain, keep.as_deref(), SystemTime::now());
             if let Ok(dir) = crate::mail::dir() {

@@ -30,7 +30,8 @@ impl AgentClient {
     pub(in crate::provider) async fn status(&self) -> Result<()> {
         let mut spec = self.auth_command(&["auth", "status", "--json"]);
         spec.stderr = process::Io::Null;
-        let (exit, output) = tokio::time::timeout(crate::limits::limits().probe(), async {
+        let probe = crate::limits::limits().probe();
+        let (exit, output) = crate::limits::within(probe, "Claude Code's sign-in status", async {
             let mut process = process::start(spec)?;
             let mut stdout = Tail::spawn(
                 Some(process.stdout),
@@ -43,13 +44,7 @@ impl AgentClient {
                 .map_err(|error| Error::Tool(error.to_string()))?;
             Ok::<_, Error>((exit, stdout.text()))
         })
-        .await
-        .map_err(|error| {
-            Error::provider(
-                ProviderFailureKind::Transport,
-                format!("Claude Code did not return its sign-in status: {error}"),
-            )
-        })??;
+        .await??;
         match serde_json::from_str::<Status>(&output) {
             Ok(status)
                 if exit.success()

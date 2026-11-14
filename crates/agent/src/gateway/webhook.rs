@@ -1,7 +1,7 @@
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::cron::{runner, store};
 use summonr_core::error::Error;
@@ -173,7 +173,7 @@ fn handle(stream: &mut TcpStream) {
     let start = Instant::now();
     let mut conn = Conn {
         stream,
-        deadline: start + Duration::from_secs(crate::limits::limits().gateway_head_secs),
+        deadline: start + crate::limits::limits().gateway_head(),
     };
     let mut trace = Trace::default();
     let answer = accept(&mut conn, &mut trace, start).unwrap_or_else(Answer::from);
@@ -204,7 +204,7 @@ fn accept(conn: &mut Conn<'_>, trace: &mut Trace, start: Instant) -> Step<Answer
     let path = head.path.split('?').next().unwrap_or_default();
     trace.method = head.method.chars().filter(char::is_ascii_graphic).collect();
     trace.path = path.chars().filter(char::is_ascii_graphic).collect();
-    conn.deadline = start + Duration::from_secs(crate::limits::limits().gateway_read_secs);
+    conn.deadline = start + crate::limits::limits().gateway_read();
     let name = decide(&head.method, path, head.auth.as_deref(), store::token)?;
     if head.chunked {
         return Err(Status::LengthRequired);

@@ -25,8 +25,8 @@ impl Wait {
         match explicit {
             Some(seconds) if detach => Self::Detach(seconds),
             Some(seconds) => Self::Kill(seconds),
-            None if detach => Self::Detach(crate::limits::limits().command_wait_secs),
-            None => Self::Kill(crate::limits::limits().command_kill_secs),
+            None if detach => Self::Detach(crate::limits::limits().command_wait().as_secs()),
+            None => Self::Kill(crate::limits::limits().command_kill().as_secs()),
         }
     }
 
@@ -94,10 +94,11 @@ impl ToolRegistry {
             biased;
             () = async {
                 drop(yielded.wait_for(|yielded| *yielded).await);
-                tokio::time::sleep(crate::limits::seconds(crate::limits::limits().tool_yield_secs)).await;
+                tokio::time::sleep(crate::limits::limits().tool_yield()).await;
             }, if matches!(wait, Wait::Detach(_)) => None,
-            waited = tokio::time::timeout(
-                crate::limits::seconds(wait.seconds()),
+            waited = crate::limits::within(
+                std::time::Duration::from_secs(wait.seconds()),
+                "the command",
                 wait_shell(&mut started.child),
             ) => Some(waited),
         };

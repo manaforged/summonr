@@ -231,7 +231,7 @@ fn coverage(report: &Report) -> String {
     if report.stopped {
         out.push_str(&format!(
             "; stopped after {}s before the walk finished, so results cover only the files searched: narrow path, name, or depth for the rest",
-            crate::limits::limits().search_secs
+            crate::limits::limits().search().as_secs()
         ));
     }
     out

@@ -11,16 +11,25 @@ pub use oauth::{Grant, Spec, TokenStyle};
 
 pub const AGENT: &str = concat!("summonr/", env!("CARGO_PKG_VERSION"));
 
-const SKEW: Duration = Duration::from_secs(60);
-const LOGIN_WAIT: Duration = Duration::from_secs(300);
-const POLL_FLOOR: Duration = Duration::from_secs(1);
-const POLL_CEILING: Duration = Duration::from_secs(30);
-const POLL_STEP: Duration = Duration::from_secs(5);
-const DEVICE_EXPIRY: Duration = Duration::from_secs(900);
-
-const fn seconds(value: u64) -> Duration {
-    Duration::from_secs(value)
+struct Waits {
+    skew: Duration,
+    login: Duration,
+    poll_floor: Duration,
+    poll_ceiling: Duration,
+    poll_step: Duration,
+    device_expiry: Duration,
 }
+
+const WAITS: Waits = Waits {
+    skew: Duration::from_secs(60),
+    login: Duration::from_secs(300),
+    poll_floor: Duration::from_secs(1),
+    poll_ceiling: Duration::from_secs(30),
+    poll_step: Duration::from_secs(5),
+    device_expiry: Duration::from_secs(900),
+};
+
+const TIMED_OUT: &str = "the login timed out";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -136,7 +145,7 @@ pub(crate) struct Issued {
 impl Issued {
     pub(crate) fn fresh(&self) -> bool {
         self.expires
-            .is_none_or(|at| at.saturating_duration_since(Instant::now()) > SKEW)
+            .is_none_or(|at| at.saturating_duration_since(Instant::now()) > WAITS.skew)
     }
 }
 

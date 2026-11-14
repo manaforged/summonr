@@ -166,11 +166,9 @@ impl Bot {
             return Err(Error::Config(MALFORMED.to_string()));
         }
         let limits = crate::limits::limits();
-        let wait = Duration::from_secs(
-            limits
-                .gateway_poll_secs
-                .saturating_add(limits.connect_secs.max(1)),
-        );
+        let wait = limits
+            .gateway_poll()
+            .saturating_add(limits.connect().max(Duration::from_secs(1)));
         Ok(Self {
             http: crate::credentials::session(
                 summonr_auth::builder(wait, limits.connect()),
@@ -248,7 +246,7 @@ impl Bot {
     }
 
     pub(crate) async fn updates(&self, offset: i64) -> Result<Poll> {
-        let wait = crate::limits::limits().gateway_poll_secs;
+        let wait = crate::limits::limits().gateway_poll().as_secs();
         let request = self.http.get(self.url(Method::GetUpdates)).query([
             ("offset", offset.to_string()),
             ("timeout", wait.to_string()),

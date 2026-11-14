@@ -48,13 +48,14 @@ impl<P: Provider> Loop<P> {
         let _blocked = self.herdr.blocked(status);
         self.push_event(events, emit, open(dialog))?;
         let interrupts = self.input_interrupts();
+        let grant_wait = crate::limits::limits().grant_wait();
         let input = tokio::select! {
             biased;
             result = self.input_wait(), if interrupts => {
                 result?;
                 None
             }
-            result = tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next()) => result.ok(),
+            result = crate::limits::within(grant_wait, "the dialog", shared.next()) => result.ok(),
         };
         Ok((dialog, input))
     }

@@ -67,10 +67,10 @@ impl<P: Provider> Run<P> {
         let Some(deadline) = self.deadline else {
             return Some(self.child.turn_with(self.assignment.as_str(), emit).await);
         };
-        let mut outcome = None;
         let turn = Box::pin(self.child.turn_with(self.assignment.as_str(), emit));
-        crate::supervise::within(deadline, async { outcome = Some(turn.await) }).await;
-        outcome
+        crate::limits::within(deadline, "the child turn", turn)
+            .await
+            .ok()
     }
 
     async fn mail_loop(&mut self, sender: &UnboundedSender<Event>, id: &str) {

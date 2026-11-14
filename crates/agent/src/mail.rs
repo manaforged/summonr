@@ -242,7 +242,9 @@ impl Mailbox {
     }
 
     pub(crate) fn heartbeat(&mut self, model: &str, cwd: &Path, status: Presence) {
-        if now() < self.last_beat + crate::limits::limits().presence_secs && status == self.status {
+        if now() < self.last_beat + crate::limits::limits().presence().as_secs()
+            && status == self.status
+        {
             return;
         }
         self.write_record(model, cwd, status);

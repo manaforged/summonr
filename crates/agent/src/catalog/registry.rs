@@ -129,7 +129,7 @@ pub async fn refresh_registry() -> Result<()> {
         .ok()
         .filter(|cache| cache.schema == REGISTRY_SCHEMA)
         .map_or_else(Registry::default, |cache| (*cache).clone());
-    if now().saturating_sub(cache.fetched) < crate::limits::limits().models_catalog_secs {
+    if now().saturating_sub(cache.fetched) < crate::limits::limits().models_catalog().as_secs() {
         return Ok(());
     }
     let saved = fetch_registry(&cache.etag).await?.unwrap_or(Registry {

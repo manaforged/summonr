@@ -140,8 +140,8 @@ impl Fill {
         match self {
             Self::ReadLineLimit => count(limits.read_line_limit),
             Self::ReadPageKib => count(super::budget::SHAPED_BUDGET / 1024),
-            Self::CommandWaitSecs => limits.command_wait_secs,
-            Self::SearchSecs => limits.search_secs,
+            Self::CommandWaitSecs => limits.command_wait().as_secs(),
+            Self::SearchSecs => limits.search().as_secs(),
             Self::SearchContextMax => count(super::workspace::search::CONTEXT_MAX),
             Self::SearchDefault => count(super::workspace::search::GREP_DEFAULT),
             Self::SearchMax => count(super::workspace::search::GREP_MAX),

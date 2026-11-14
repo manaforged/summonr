@@ -39,7 +39,7 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
         Some(0) => Err(Error::Config(
             "endpoint idle_timeout_secs must be at least 1".to_string(),
         )),
-        Some(seconds) => Ok(Some(crate::limits::seconds(seconds))),
+        Some(seconds) => Ok(Some(Duration::from_secs(seconds))),
         None => Ok(Some(crate::limits::limits().stream_idle())),
     }
 }

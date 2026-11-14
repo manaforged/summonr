@@ -35,7 +35,8 @@ pub(crate) fn zoned(secs: i64, tz: &TimeZone) -> Option<Zoned> {
 pub(crate) fn due(job: &Job, last_slot: Option<i64>, now: i64) -> Result<Due> {
     let (plan, tz) = plan(job)?;
     let since = last_slot.unwrap_or(job.created);
-    let catchup = i64::try_from(crate::limits::limits().cron_catchup_secs).unwrap_or(i64::MAX);
+    let catchup =
+        i64::try_from(crate::limits::limits().cron_catchup().as_secs()).unwrap_or(i64::MAX);
     let floor = now.saturating_sub(catchup);
     if let Some(slot) = latest(&plan, &tz, since.max(floor), now) {
         return Ok(Due::Run(slot));
@@ -133,7 +134,7 @@ fn launch(name: &str, slot: i64, started: i64, payload: Option<&Path>) -> Result
 }
 
 pub(crate) fn cooldown(job: &Job, now: i64) -> Option<u64> {
-    let gap = i64::try_from(crate::limits::limits().gateway_fire_secs).unwrap_or(i64::MAX);
+    let gap = i64::try_from(crate::limits::limits().gateway_fire().as_secs()).unwrap_or(i64::MAX);
     let last = job
         .runs
         .iter()
@@ -353,7 +354,7 @@ fn argv(job: &Job, payload: Option<&Path>) -> Vec<String> {
         session: None,
         max_secs: Some(
             job.max_secs
-                .unwrap_or(crate::limits::limits().cron_budget_secs),
+                .unwrap_or(crate::limits::limits().cron_budget().as_secs()),
         ),
         max_tokens: job.max_tokens,
         worktree: job.worktree,

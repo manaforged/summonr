@@ -288,18 +288,12 @@ impl ToolRegistry {
         let mut conn = match state.take() {
             Some(conn) => conn,
             None => {
-                let conn = tokio::time::timeout(
+                let conn = crate::limits::within(
                     crate::limits::limits().lsp_start(),
+                    format!("{} startup", launch.argv[0]),
                     Conn::spawn(&self.workspace, &launch),
                 )
-                .await
-                .map_err(|_elapsed| {
-                    Error::Tool(format!(
-                        "{} did not start within {} s",
-                        launch.argv[0],
-                        crate::limits::limits().lsp_start_secs
-                    ))
-                })??;
+                .await??;
                 let name = launch.root.as_ref().map_or_else(
                     || launch.key.clone(),
                     |root| format!("{}:{}", launch.key, root.display()),

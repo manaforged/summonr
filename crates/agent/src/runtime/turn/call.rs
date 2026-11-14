@@ -45,7 +45,11 @@ impl<P: Provider> Loop<P> {
             || crate::provider::ToolsJson::encode(request.tools).len(),
             crate::provider::ToolsJson::len,
         );
-        let chars = request_chars(&request, tool_bytes, self.selection(role).0.keeps_reasoning());
+        let chars = request_chars(
+            &request,
+            tool_bytes,
+            self.selection(role).0.keeps_reasoning(),
+        );
         let exposure = super::super::exposure(&request, chars);
         CallPlan {
             adjusted_system,
@@ -114,7 +118,11 @@ impl<P: Provider> Loop<P> {
         self.record_call_reply(role, attempt, options.retry, plan, started, message)
     }
 
-    fn open_call_round(&mut self, role: workflow::Role, plan: &CallPlan) -> Result<Option<Attempt>> {
+    fn open_call_round(
+        &mut self,
+        role: workflow::Role,
+        plan: &CallPlan,
+    ) -> Result<Option<Attempt>> {
         if !self.session.turn_open() {
             return Ok(None);
         }
@@ -256,7 +264,10 @@ fn assemble_request<'a>(
     request
 }
 
-fn adjust_request_system(request: &mut CompletionRequest<'_>, images: bool) -> (Option<String>, bool) {
+fn adjust_request_system(
+    request: &mut CompletionRequest<'_>,
+    images: bool,
+) -> (Option<String>, bool) {
     let source = request.system_prompt.as_deref().or_else(|| {
         request
             .messages

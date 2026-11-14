@@ -1,13 +1,24 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-mod durations;
+use summonr_core::error::{Error, Result};
+
 mod fields;
 
 pub(crate) use fields::{Limits, Overrides};
 
-pub(crate) const fn seconds(value: u64) -> Duration {
-    Duration::from_secs(value)
+/// Runs `work` for at most `limit`, then fails with `Error::Timeout` naming `what`.
+pub(crate) async fn within<T>(
+    limit: Duration,
+    what: impl Into<String>,
+    work: impl Future<Output = T>,
+) -> Result<T> {
+    tokio::time::timeout(limit, work)
+        .await
+        .map_err(|_elapsed| Error::Timeout {
+            what: what.into(),
+            limit,
+        })
 }
 
 impl Limits {
@@ -35,17 +46,26 @@ impl Limits {
             })
     }
 
-    pub(crate) fn budget_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
+    pub(crate) fn retry_wait(
+        &self,
+        retry_after: Option<u64>,
+        retries: u32,
+        asked: Asked,
+    ) -> Duration {
         let backoff = self.retry_policy(Reach::Remote).delay(retries);
-        retry_after.map_or(backoff, |secs| Duration::from_secs(secs).max(backoff))
+        match (retry_after.map(Duration::from_secs), asked) {
+            (None, _) => backoff,
+            (Some(wait), Asked::Capped) => wait.min(self.retry_after_max()),
+            (Some(wait), Asked::Whole) => wait.max(backoff),
+        }
     }
+}
 
-    pub(crate) fn retry_wait(&self, retry_after: Option<u64>, retries: u32) -> Duration {
-        retry_after.map_or_else(
-            || self.retry_policy(Reach::Remote).delay(retries),
-            |secs| Duration::from_secs(secs).min(self.retry_after_max()),
-        )
-    }
+/// How a retry honors the server's Retry-After.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Asked {
+    Capped,
+    Whole,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

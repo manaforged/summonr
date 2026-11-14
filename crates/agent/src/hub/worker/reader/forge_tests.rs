@@ -174,7 +174,7 @@ async fn a_gh_call_past_its_limit_is_a_timeout_not_a_hang() {
 
     let reply = press(&primary, Ask::Status).await;
 
-    let secs = crate::limits::limits().gh_secs;
+    let secs = crate::limits::limits().gh().as_secs();
     let error = reply.unwrap_err();
     assert_eq!(
         error,

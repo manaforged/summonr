@@ -104,18 +104,19 @@ impl<P: Provider> Loop<P> {
         failure: Option<&summonr_core::error::ProviderFailure>,
         retries: u32,
     ) -> (bool, Option<Duration>) {
+        use crate::limits::Asked;
+        let limits = crate::limits::limits();
         let mut wait =
-            failure.map(|item| crate::limits::limits().retry_wait(item.retry_after, retries));
+            failure.map(|item| limits.retry_wait(item.retry_after, retries, Asked::Capped));
         let retryable = if let Some(item) = failure
             && item.kind == ProviderFailureKind::RateLimited
         {
             if self.remaining_time().is_some() {
-                wait = Some(crate::limits::limits().budget_wait(item.retry_after, retries));
+                wait = Some(limits.retry_wait(item.retry_after, retries, Asked::Whole));
             }
             self.can_wait(wait, retries)
         } else {
-            retries < crate::limits::limits().retry_limit
-                && failure.is_some_and(retryable_failure)
+            retries < limits.retry_limit && failure.is_some_and(retryable_failure)
         };
         (retryable, wait)
     }

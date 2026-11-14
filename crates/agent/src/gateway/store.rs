@@ -54,7 +54,8 @@ impl State {
     pub(crate) fn offer(&mut self, user: i64, chat: i64, code: &str, now: i64) {
         self.prune(now);
         self.pending.retain(|pending| pending.user != user);
-        let window = i64::try_from(crate::limits::limits().gateway_pair_secs).unwrap_or(i64::MAX);
+        let window =
+            i64::try_from(crate::limits::limits().gateway_pair().as_secs()).unwrap_or(i64::MAX);
         self.pending.push(Pending {
             code: code.to_string(),
             user,

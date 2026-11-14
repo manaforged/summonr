@@ -20,8 +20,7 @@ impl<P: Provider> Loop<P> {
         for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
             owned.insert(record.id.clone(), record);
         }
-        let deadline =
-            Instant::now() + crate::limits::seconds(crate::limits::limits().job_wait_secs);
+        let deadline = Instant::now() + crate::limits::limits().job_wait();
         for record in owned.into_values() {
             let label = format!("job {} `{}`", record.id, record.command);
             let status = jobs::wait(
@@ -55,7 +54,7 @@ impl<P: Provider> Loop<P> {
                 output: if running_now {
                     format!(
                         "still running after {}s; wait for it or kill it\n{}",
-                        crate::limits::limits().job_wait_secs,
+                        crate::limits::limits().job_wait().as_secs(),
                         status.text
                     )
                 } else {

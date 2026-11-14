@@ -113,7 +113,7 @@ async fn a_plain_turn_sends_the_prompt_and_ends_with_progress_then_the_reply() {
 
 #[tokio::test]
 async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
-    let sleep = format!("sleep {}", crate::limits::limits().job_wait_secs + 4);
+    let sleep = format!("sleep {}", crate::limits::limits().job_wait().as_secs() + 4);
     let mut run = session([background(&sleep), Reply::Text("started it")]);
     goal(&mut run);
     let turn = run.loop_.turn("go").await.unwrap();

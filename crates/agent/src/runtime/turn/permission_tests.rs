@@ -21,7 +21,7 @@ fn command(text: &str) -> ToolCall {
             name: "run_command".to_string(),
             arguments: serde_json::json!({
                 "command": text,
-                "timeout_secs": crate::limits::limits().command_kill_secs,
+                "timeout_secs": crate::limits::limits().command_kill().as_secs(),
             })
             .to_string(),
         },

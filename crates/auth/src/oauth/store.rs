@@ -48,7 +48,8 @@ fn now_unix() -> u64 {
 }
 
 pub(super) fn from_unix(at: u64) -> Instant {
-    Instant::now() + crate::seconds(at.saturating_sub(now_unix()).min(LIFETIME_CEILING))
+    Instant::now()
+        + std::time::Duration::from_secs(at.saturating_sub(now_unix()).min(LIFETIME_CEILING))
 }
 
 fn to_unix(at: Instant) -> u64 {
@@ -56,7 +57,7 @@ fn to_unix(at: Instant) -> u64 {
 }
 
 pub(super) fn lifetime(seconds: u64) -> Instant {
-    Instant::now() + crate::seconds(seconds.min(LIFETIME_CEILING))
+    Instant::now() + std::time::Duration::from_secs(seconds.min(LIFETIME_CEILING))
 }
 
 pub(super) fn stored(parts: &Parts<'_>, store: &dyn Store) -> Result<Option<Issued>> {

@@ -342,11 +342,12 @@ fn a_start_without_the_splash_reveals_without_a_panic() {
         std::panic::set_hook(Box::new(move |_| {
             seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }));
-        let reveal = std::time::Duration::from_millis(
+        let reveal =
             summonr_agent::limits::limits()
-                .splash_reveal_ms
-                .max(super::super::reveal_ms(&app)),
-        );
+                .splash_reveal()
+                .max(std::time::Duration::from_millis(super::super::reveal_ms(
+                    &app,
+                )));
         let end = std::time::Instant::now() + reveal * 2;
         while std::time::Instant::now() < end && !app.splash_revealed.peek() {
             screen.frame(&mut host, [], (80, 24)).unwrap();

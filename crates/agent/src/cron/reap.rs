@@ -20,7 +20,7 @@ pub(super) fn stale(job: &Job, run: &Run, now: i64) -> bool {
 fn budget(job: &Job) -> i64 {
     let secs = job
         .max_secs
-        .unwrap_or(crate::limits::limits().cron_budget_secs);
+        .unwrap_or(crate::limits::limits().cron_budget().as_secs());
     i64::try_from(secs).unwrap_or(i64::MAX)
 }
 

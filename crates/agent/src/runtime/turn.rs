@@ -128,8 +128,8 @@ mod repeat_tests;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn remaining_time(&self) -> Option<Duration> {
-        let limit = crate::limits::seconds(self.budget().max_secs?);
-        Some(limit.saturating_sub(crate::limits::seconds(self.elapsed_secs())))
+        let limit = Duration::from_secs(self.budget().max_secs?);
+        Some(limit.saturating_sub(Duration::from_secs(self.elapsed_secs())))
     }
 
     pub(super) async fn wait<F>(
@@ -140,9 +140,9 @@ impl<P: Provider> Loop<P> {
         F: Future<Output = Result<AssistantMessage>> + Send,
     {
         if let Some(remaining) = remaining {
-            tokio::time::timeout(remaining, completion)
+            crate::limits::within(remaining, "the reply", completion)
                 .await
-                .map_err(|_elapsed| WaitError::Deadline(remaining))?
+                .map_err(|_timeout| WaitError::Deadline(remaining))?
                 .map_err(WaitError::Provider)
         } else {
             completion.await.map_err(WaitError::Provider)
@@ -196,9 +196,7 @@ impl<P: Provider> Loop<P> {
         let remaining = self.remaining_time();
         let turn = self.run_turn(&mut pre, &mut *emit, events, &mut usage, &mut rounds);
         let result = match remaining {
-            Some(remaining) => tokio::time::timeout(remaining, turn)
-                .await
-                .map_err(|_elapsed| ()),
+            Some(remaining) => crate::limits::within(remaining, "the turn", turn).await,
             None => Ok(turn.await),
         };
         if result.is_err()
@@ -221,7 +219,7 @@ impl<P: Provider> Loop<P> {
         }
         match result {
             Ok(result) => result,
-            Err(()) => {
+            Err(_timeout) => {
                 self.abort_turn(
                     Abort::time_limit(),
                     events,

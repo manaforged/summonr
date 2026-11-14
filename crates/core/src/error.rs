@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +50,8 @@ pub enum Error {
     Tool(String),
     #[error("policy denied: {0}")]
     Denied(String),
+    #[error("{what} ran past {}s", .limit.as_secs())]
+    Timeout { what: String, limit: Duration },
 }
 
 impl Error {
@@ -70,7 +74,8 @@ impl Error {
             | Self::Io(_)
             | Self::Json(_)
             | Self::Tool(_)
-            | Self::Denied(_) => None,
+            | Self::Denied(_)
+            | Self::Timeout { .. } => None,
         }
     }
 }

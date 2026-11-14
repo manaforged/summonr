@@ -246,7 +246,7 @@ pub(crate) async fn wait(
     mut waiting: impl FnMut() -> Result<()>,
 ) -> Result<Status> {
     let started = std::time::Instant::now();
-    let mut pause = crate::limits::limits().job_poll_start_secs;
+    let mut pause = crate::limits::limits().job_poll_start();
     let mut announced = false;
     loop {
         let elapsed = started.elapsed().as_secs();
@@ -262,8 +262,8 @@ pub(crate) async fn wait(
             announced = true;
             waiting()?;
         }
-        tokio::time::sleep(crate::limits::seconds(pause.min(limit_secs - elapsed))).await;
-        pause = (pause * 2).min(crate::limits::limits().job_poll_cap_secs);
+        tokio::time::sleep(pause.min(std::time::Duration::from_secs(limit_secs - elapsed))).await;
+        pause = (pause * 2).min(crate::limits::limits().job_poll_cap());
     }
 }
 

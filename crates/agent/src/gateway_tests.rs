@@ -24,7 +24,7 @@ fn a_stranger_gets_one_pairing_code_then_silence() {
     assert_eq!(route(&state, STRANGER, "hi", 0), Action::Pair);
     state.offer(STRANGER, STRANGER, "XYZ789", 0);
     assert_eq!(route(&state, STRANGER, "hi again", 5), Action::Drop);
-    let expired = i64::try_from(crate::limits::limits().gateway_pair_secs).unwrap() + 1;
+    let expired = i64::try_from(crate::limits::limits().gateway_pair().as_secs()).unwrap() + 1;
     assert_eq!(route(&state, STRANGER, "later", expired), Action::Pair);
 }
 
@@ -32,7 +32,7 @@ fn a_stranger_gets_one_pairing_code_then_silence() {
 fn a_pairing_code_expires_and_works_once() {
     let mut state = State::default();
     state.offer(STRANGER, STRANGER, "XYZ789", 0);
-    let late = i64::try_from(crate::limits::limits().gateway_pair_secs).unwrap() + 1;
+    let late = i64::try_from(crate::limits::limits().gateway_pair().as_secs()).unwrap() + 1;
     assert!(state.pair("XYZ789", late).is_none());
     assert!(!state.paired(STRANGER));
     state.offer(STRANGER, STRANGER, "XYZ789", 0);

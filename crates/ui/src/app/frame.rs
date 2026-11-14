@@ -134,11 +134,10 @@ impl App {
     fn reveal(&self) {
         if !self.splash_revealed.peek()
             && self.splash_since.get().elapsed().as_millis()
-                > u128::from(
-                    summonr_agent::limits::limits()
-                        .splash_reveal_ms
-                        .max(scene::reveal_ms(self)),
-                )
+                > summonr_agent::limits::limits()
+                    .splash_reveal()
+                    .max(std::time::Duration::from_millis(scene::reveal_ms(self)))
+                    .as_millis()
         {
             self.splash_revealed.set(true);
         }

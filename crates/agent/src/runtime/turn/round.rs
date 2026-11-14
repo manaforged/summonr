@@ -105,10 +105,7 @@ impl<P: Provider> Loop<P> {
         if let Some(abort) = self.budget_abort() {
             return Ok(Some(abort));
         }
-        if let Err(error) = self
-            .prepare_round(tool_bytes, usage, events, emit)
-            .await
-        {
+        if let Err(error) = self.prepare_round(tool_bytes, usage, events, emit).await {
             return self.budget_abort().map(Some).ok_or(error);
         }
         Ok(self.budget_abort())
@@ -340,10 +337,7 @@ impl<P: Provider> Loop<P> {
         self.settle_probe().await;
         self.take_mail(events, emit)?;
         self.drain(emit);
-        if self
-            .auto_compact(tool_bytes, usage, events, emit)
-            .await?
-        {
+        if self.auto_compact(tool_bytes, usage, events, emit).await? {
             let note = self.harness_note(&self.work_progress()?);
             if !note.is_empty() {
                 self.inject(note)?;

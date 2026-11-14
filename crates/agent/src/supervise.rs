@@ -11,10 +11,6 @@ pub enum ServerKind {
     Lsp,
 }
 
-pub(crate) async fn within(grace: Duration, work: impl Future) -> bool {
-    tokio::time::timeout(grace, work).await.is_ok()
-}
-
 static CLOSING: AtomicUsize = AtomicUsize::new(0);
 static SETTLED: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
@@ -26,7 +22,7 @@ pub(crate) fn close<G: Send + 'static>(
     CLOSING.fetch_add(1, Ordering::SeqCst);
     let grace = crate::limits::limits().mcp_close_grace();
     drop(runtime.spawn(async move {
-        within(grace, child.wait()).await;
+        drop(crate::limits::within(grace, "a server's exit", child.wait()).await);
         drop(group);
         drop(child);
         if CLOSING.fetch_sub(1, Ordering::SeqCst) == 1 {
@@ -37,7 +33,7 @@ pub(crate) fn close<G: Send + 'static>(
 
 pub async fn closed() {
     let grace = crate::limits::limits().mcp_close_grace();
-    within(grace, async {
+    let settled = async {
         loop {
             let settled = SETTLED.notified();
             tokio::pin!(settled);
@@ -47,8 +43,8 @@ pub async fn closed() {
             }
             settled.await;
         }
-    })
-    .await;
+    };
+    drop(crate::limits::within(grace, "the servers' exit", settled).await);
 }
 
 pub(crate) type Slot<T> = Arc<tokio::sync::Mutex<Option<T>>>;

@@ -156,7 +156,7 @@ fn budget(job: &Job) -> String {
         || {
             format!(
                 "{} (default)",
-                summonr_core::text::duration(crate::limits::limits().cron_budget_secs)
+                summonr_core::text::duration(crate::limits::limits().cron_budget().as_secs())
             )
         },
         summonr_core::text::duration,

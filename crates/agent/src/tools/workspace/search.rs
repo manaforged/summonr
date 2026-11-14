@@ -43,7 +43,7 @@ impl SearchJob {
         let started = Instant::now();
         let report = walk::run(&query)?;
         let slow = started.elapsed().as_millis()
-            >= u128::from(crate::limits::limits().search_index_after_ms);
+            >= crate::limits::limits().search_index_after().as_millis();
         let cancelled = query.cancelled.load(Ordering::Relaxed);
         for root in query
             .roots

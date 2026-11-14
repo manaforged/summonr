@@ -10,7 +10,7 @@ use super::store;
 use super::telegram::{Bot, ChatKind, Poll, Update, User};
 use super::{Action, addressed, route};
 use crate::config::tilde;
-use crate::limits::Reach;
+use crate::limits::Asked;
 use summonr_core::error::Result;
 
 const IDLE: &str = "nothing is running";
@@ -82,9 +82,8 @@ pub(crate) async fn serve(bot: Bot, options: Options, username: Option<String>) 
 
 async fn poll(bot: &Bot, offset: i64, failures: u32, after: Option<u64>) -> Result<Poll> {
     if let Some(retries) = failures.checked_sub(1) {
-        let limits = crate::limits::limits();
-        let backoff = limits.retry_policy(Reach::Remote).delay(retries);
-        tokio::time::sleep(limits.retry_wait(after, retries).max(backoff)).await;
+        let wait = crate::limits::limits().retry_wait(after, retries, Asked::Capped);
+        tokio::time::sleep(wait).await;
     }
     bot.updates(offset).await
 }

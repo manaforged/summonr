@@ -116,7 +116,7 @@ fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, ToolRegistry) {
 fn past_the_wait() -> String {
     format!(
         "sleep {}; echo finished",
-        crate::limits::limits().command_wait_secs + 1
+        crate::limits::limits().command_wait().as_secs() + 1
     )
 }
 

@@ -162,7 +162,7 @@ impl<P: Provider> Loop<P> {
             record,
             guard: Guard { tree },
             assignment: opener,
-            deadline: budget.max_secs.map(crate::limits::seconds),
+            deadline: budget.max_secs.map(std::time::Duration::from_secs),
             started: Instant::now(),
             state: watch::Sender::new(ChildState::Running),
             stay: false,

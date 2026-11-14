@@ -76,9 +76,9 @@ impl Panel {
     /// The wait between runs of the open panel.
     #[must_use]
     pub fn every(&self) -> Option<Duration> {
-        let least = crate::limits::limits().panel_every_min_secs;
+        let least = crate::limits::limits().panel_every_min();
         self.every_secs
-            .map(|secs| Duration::from_secs(secs.max(least)))
+            .map(|secs| Duration::from_secs(secs).max(least))
     }
 }
 

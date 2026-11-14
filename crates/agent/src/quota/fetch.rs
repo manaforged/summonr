@@ -184,12 +184,13 @@ async fn exchange(plan: &Plan) -> Result<Value, String> {
         }
         Err(format!("exited before printing {reply}"))
     };
-    tokio::select! {
-        result = answer => result,
-        () = tokio::time::sleep(crate::limits::limits().panel_timeout()) => {
-            Err(format!("no {reply} within {}s", crate::limits::limits().panel_timeout_secs))
-        }
-    }
+    crate::limits::within(
+        crate::limits::limits().panel_timeout(),
+        format!("waiting for {reply}"),
+        answer,
+    )
+    .await
+    .unwrap_or_else(|error| Err(error.to_string()))
 }
 
 async fn login(endpoint: &Endpoint, url: &str) -> Result<Value, String> {

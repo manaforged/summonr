@@ -208,20 +208,14 @@ fn clicking_a_friend_in_the_model_menu_acts_after_the_menu_closes() {
     if !in_window("setup::clicking_a_friend_in_the_model_menu_acts_after_the_menu_closes") {
         return;
     }
-    let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
-    runtime.install_current();
-    let runtime = std::cell::RefCell::new(runtime);
+    let runtime = super::harness::pumped();
     let shown = steps(
         |app| claude_friend(app, State::SignedOut),
         vec![Step::Click("Model"), Step::Click(claude_model())],
         |app| {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            let acted = || app.settings_open.peek() || !app.window.terminals.list.peek().is_empty();
-            while !acted() && std::time::Instant::now() < deadline {
-                runtime.borrow_mut().pump();
-                std::thread::park_timeout(std::time::Duration::from_millis(10));
-            }
-            acted()
+            super::harness::until(runtime, || {
+                app.settings_open.peek() || !app.window.terminals.list.peek().is_empty()
+            })
         },
     );
     let moved = shown

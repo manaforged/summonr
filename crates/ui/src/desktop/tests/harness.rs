@@ -1,3 +1,7 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
 use sigil::Host;
 use sigil::app::FrameHooks;
 use sigil::events::{Event, KeyPhase, LogicalKey, ModifiersState};
@@ -7,6 +11,7 @@ use sigil::prelude::Role;
 use sigil::scene::SceneCommand;
 use tokio::sync::mpsc::unbounded_channel;
 
+use super::super::terminal::Term;
 use super::super::{App, root};
 use super::VIEW;
 use summonr_agent::hub::{Cmd, Fact, Msg, Snapshot};
@@ -291,4 +296,74 @@ pub(super) fn changed(base: &str, files: &[(&str, usize, usize)]) -> summonr_age
             .collect(),
         strays: Vec::new(),
     }
+}
+
+const DEADLINE: Duration = Duration::from_secs(10);
+const POLL: Duration = Duration::from_millis(20);
+
+pub(super) type Pump = &'static RefCell<sigil::tasks::AsyncRuntime>;
+
+pub(super) fn pumped() -> Pump {
+    let mut runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
+    let waiter = std::thread::current();
+    runtime.set_waker(move || waiter.unpark());
+    runtime.install_current();
+    Box::leak(Box::new(RefCell::new(runtime)))
+}
+
+pub(super) fn until(pump: Pump, wanted: impl FnMut() -> bool) -> bool {
+    pump_until(pump, DEADLINE, wanted)
+}
+
+pub(super) fn pump_for(pump: Pump, span: Duration) {
+    pump_until(pump, span, || false);
+}
+
+fn pump_until(pump: Pump, span: Duration, mut wanted: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + span;
+    loop {
+        pump.borrow_mut().pump();
+        if wanted() {
+            return true;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        std::thread::park_timeout(POLL.min(left));
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Which {
+    First,
+    Last,
+}
+
+pub(super) fn screen(app: &App, which: Which) -> Vec<String> {
+    let list = app.window.terminals.list.peek();
+    let term: Option<&Rc<Term>> = match which {
+        Which::First => list.first(),
+        Which::Last => list.last(),
+    };
+    term.map(|term| term.session.lines.get())
+        .unwrap_or_default()
+}
+
+pub(super) fn screen_until(
+    pump: Pump,
+    app: &App,
+    which: Which,
+    wanted: impl Fn(&[String]) -> bool,
+) -> Vec<String> {
+    let mut seen = Vec::new();
+    until(pump, || {
+        seen = screen(app, which);
+        wanted(&seen)
+    });
+    seen
+}
+
+pub(super) fn has_line(lines: &[String], text: &str) -> bool {
+    lines.iter().any(|line| line.trim() == text)
 }

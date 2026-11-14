@@ -1,38 +1,25 @@
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
 
 use sigil::events::{Key, ModifiersState};
 
-use super::harness::{Step, command, named, press, steps, typed};
+use super::harness::{
+    Pump, Step, Which, command, has_line, named, press, pumped, screen_until, steps, typed, until,
+};
 use super::in_window;
-use crate::desktop::App;
 use crate::pane::Pane;
 
-pub(super) type Pump = &'static RefCell<sigil::tasks::AsyncRuntime>;
-
-pub(super) fn pumped() -> Pump {
-    let runtime = sigil::tasks::AsyncRuntime::new().expect("runtime");
-    runtime.install_current();
-    Box::leak(Box::new(RefCell::new(runtime)))
+fn first_until(runtime: Pump, app: &crate::desktop::App, text: &str) -> Vec<String> {
+    screen_until(runtime, app, Which::First, |lines| has_line(lines, text))
 }
 
-fn screen_until(runtime: Pump, app: &App, wanted: impl Fn(&[String]) -> bool) -> Vec<String> {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        runtime.borrow_mut().pump();
-        let screen = app
-            .window
-            .terminals
-            .list
-            .peek()
-            .first()
-            .map(|term| term.session.lines.get())
-            .unwrap_or_default();
-        if wanted(&screen) || Instant::now() > deadline {
-            return screen;
-        }
-        std::thread::park_timeout(Duration::from_millis(20));
-    }
+fn prompt_after_interrupts(lines: &[String], interrupts: usize) -> bool {
+    let echoed = lines
+        .iter()
+        .map(|line| line.matches("^C").count())
+        .sum::<usize>();
+    let last = lines.iter().rposition(|line| line.contains("^C"));
+    echoed >= interrupts
+        && last.is_some_and(|at| lines[at + 1..].iter().any(|line| !line.trim().is_empty()))
 }
 
 fn line(keys: &str) -> Vec<Step> {
@@ -53,9 +40,7 @@ fn a_new_terminal_fills_the_pane_and_runs_what_you_type() {
         |_| {},
         keys,
         |app| {
-            let screen = screen_until(runtime, app, |lines| {
-                lines.iter().any(|line| line.trim() == "typed-42")
-            });
+            let screen = first_until(runtime, app, "typed-42");
             (
                 app.window.showing.peek().is_some(),
                 app.window.terminals.list.peek().len(),
@@ -71,10 +56,7 @@ fn a_new_terminal_fills_the_pane_and_runs_what_you_type() {
     let (showing, count, screen) = seen.read;
     assert!(showing, "the pane does not show the terminal");
     assert_eq!(count, 1);
-    assert!(
-        screen.iter().any(|line| line.trim() == "typed-42"),
-        "{screen:?}"
-    );
+    assert!(has_line(&screen, "typed-42"), "{screen:?}");
 }
 
 #[test]
@@ -86,9 +68,7 @@ fn control_c_reaches_the_program_and_not_the_agent() {
     let mut keys = vec![Step::Key(command("t"))];
     keys.extend(line("echo ready-$((1+1)); sleep 30; echo slept"));
     keys.push(Step::Wait(Box::new(move |app| {
-        screen_until(runtime, app, |lines| {
-            lines.iter().any(|line| line.trim() == "ready-2")
-        });
+        first_until(runtime, app, "ready-2");
     })));
     for _ in 0..2 {
         keys.push(Step::Key(press(
@@ -97,22 +77,22 @@ fn control_c_reaches_the_program_and_not_the_agent() {
             None,
         )));
     }
-    keys.extend(line("echo after-$((1+1))"));
+    keys.push(Step::Wait(Box::new(move |app| {
+        screen_until(runtime, app, Which::First, |lines| {
+            prompt_after_interrupts(lines, 2)
+        });
+    })));
+    keys.extend(line(" echo after-$((1+1))"));
     let seen = steps(
         |_| {},
         keys,
         |app| {
-            let screen = screen_until(runtime, app, |lines| {
-                lines.iter().any(|line| line.trim() == "after-2")
-            });
+            let screen = first_until(runtime, app, "after-2");
             (screen, !app.quit.peek())
         },
     );
     let (screen, open) = seen.read;
-    assert!(
-        screen.iter().any(|line| line.trim() == "after-2"),
-        "{screen:?}"
-    );
+    assert!(has_line(&screen, "after-2"), "{screen:?}");
     assert!(open, "the window took the interrupt and quit");
 }
 
@@ -191,33 +171,10 @@ fn every_new_terminal_is_told_the_size_of_its_pane() {
         |_| {},
         keys,
         |app| {
-            let last = app
-                .window
-                .terminals
-                .list
-                .peek()
-                .last()
-                .map(std::rc::Rc::clone)
-                .expect("terminal");
-            let deadline = Instant::now() + Duration::from_secs(10);
-            loop {
-                runtime.borrow_mut().pump();
-                let screen = last.session.lines.get();
-                let answer = screen
-                    .iter()
-                    .map(|line| line.trim().to_owned())
-                    .find(|line| {
-                        let mut words = line.split(' ');
-                        let number = |word: Option<&str>| {
-                            word.is_some_and(|word| word.parse::<u16>().is_ok())
-                        };
-                        number(words.next()) && number(words.next()) && words.next().is_none()
-                    });
-                if answer.is_some() || Instant::now() > deadline {
-                    return answer;
-                }
-                std::thread::park_timeout(Duration::from_millis(20));
-            }
+            let screen = screen_until(runtime, app, Which::Last, |lines| {
+                stty_size(lines).is_some()
+            });
+            stty_size(&screen)
         },
     );
     assert_ne!(
@@ -226,6 +183,17 @@ fn every_new_terminal_is_told_the_size_of_its_pane() {
         "the second terminal kept the default size"
     );
     assert!(seen.read.is_some(), "stty never answered");
+}
+
+fn stty_size(lines: &[String]) -> Option<String> {
+    lines
+        .iter()
+        .map(|line| line.trim().to_owned())
+        .find(|line| {
+            let mut words = line.split(' ');
+            let number = |word: Option<&str>| word.is_some_and(|word| word.parse::<u16>().is_ok());
+            number(words.next()) && number(words.next()) && words.next().is_none()
+        })
 }
 
 #[derive(Default)]
@@ -254,9 +222,7 @@ fn dragging_over_output_selects_it_for_copy() {
     let mut keys = vec![Step::Key(command("t"))];
     keys.extend(line("clear; echo select-$((1+1))"));
     keys.push(Step::Wait(Box::new(move |app| {
-        screen_until(runtime, app, |lines| {
-            lines.iter().any(|line| line.trim() == "select-2")
-        });
+        first_until(runtime, app, "select-2");
     })));
     keys.push(Step::Drag((256.0, 58.0), (900.0, 58.0)));
     keys.push(Step::Key(command("c")));
@@ -269,19 +235,14 @@ fn exit_row(code: &str) -> Vec<String> {
     let mut keys = vec![Step::Key(command("t"))];
     keys.extend(line(&format!("exit {code}")));
     keys.push(Step::Wait(Box::new(move |app| {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while app
-            .window
-            .terminals
-            .list
-            .peek()
-            .first()
-            .is_some_and(|term| term.session.exited.peek().is_none())
-            && Instant::now() < deadline
-        {
-            runtime.borrow_mut().pump();
-            std::thread::park_timeout(Duration::from_millis(20));
-        }
+        until(runtime, || {
+            app.window
+                .terminals
+                .list
+                .peek()
+                .first()
+                .is_none_or(|term| term.session.exited.peek().is_some())
+        });
     })));
     steps(|app| app.window.sidebar.set(true), keys, |_| ()).texts
 }

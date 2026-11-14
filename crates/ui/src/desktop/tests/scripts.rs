@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
-
 use summonr_agent::hub::{Fact, Msg, Snapshot};
 
-use super::harness::{Step, command, graded, settings, steps, typed};
+use super::harness::{
+    Pump, Step, Which, command, graded, pumped, screen_until, settings, steps, typed, until,
+};
 use super::in_window;
-use super::terminals::{Pump, pumped};
 use crate::desktop::App;
 
 fn git(dir: &Path, args: &[&str]) {
@@ -47,23 +46,10 @@ fn worktree(repo: &Path, name: &str) -> PathBuf {
     path
 }
 
-fn screen_until(runtime: Pump, app: &App, wanted: &str) -> Vec<String> {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        runtime.borrow_mut().pump();
-        let screen = app
-            .window
-            .terminals
-            .list
-            .peek()
-            .last()
-            .map(|term| term.session.lines.get())
-            .unwrap_or_default();
-        if screen.iter().any(|line| line.contains(wanted)) || Instant::now() > deadline {
-            return screen;
-        }
-        std::thread::park_timeout(Duration::from_millis(20));
-    }
+fn last_until(runtime: Pump, app: &App, wanted: &str) -> Vec<String> {
+    screen_until(runtime, app, Which::Last, |lines| {
+        lines.iter().any(|line| line.contains(wanted))
+    })
 }
 
 fn palette(action: &'static str) -> Vec<Step> {
@@ -88,7 +74,7 @@ fn run_on_two_worktrees_starts_two_terminals_on_different_ports() {
                 }),
                 palette(super::super::terminal::RUN),
                 |app| {
-                    let screen = screen_until(runtime, app, "port=");
+                    let screen = last_until(runtime, app, "port=");
                     (app.window.showing.peek().is_some(), screen)
                 },
             );
@@ -137,7 +123,7 @@ fn a_new_agent_pane_runs_setup_in_a_terminal_once_it_arrives() {
         }),
         keys,
         |app| {
-            let screen = screen_until(runtime, app, "set-up-three");
+            let screen = last_until(runtime, app, "set-up-three");
             let count = app.window.terminals.list.peek().len();
             (app.window.showing.peek(), count, screen)
         },
@@ -174,12 +160,8 @@ fn alive(pid_file: &Path) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn until_dead(pid_file: &Path) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while alive(pid_file) && Instant::now() < deadline {
-        std::thread::park_timeout(Duration::from_millis(50));
-    }
-    !alive(pid_file)
+fn until_dead(runtime: Pump, pid_file: &Path) -> bool {
+    until(runtime, || !alive(pid_file))
 }
 
 const TWO_ACTIONS: &str = "run_mode = 'nonconcurrent'\n\n\
@@ -210,12 +192,12 @@ fn two_named_actions_list_two_rows_and_nonconcurrent_leaves_one_running() {
     );
     let mut keys = filtered("run web", "Run web");
     keys.push(Step::Wait(Box::new(move |app: &App| {
-        screen_until(runtime, app, "web-up");
+        last_until(runtime, app, "web-up");
     })));
     keys.extend(filtered("run api", "Run api"));
     let pid = repo.join("web.pid");
     let seen = steps(at(), keys, |app| {
-        let screen = screen_until(runtime, app, "api-up");
+        let screen = last_until(runtime, app, "api-up");
         let names: Vec<String> = app
             .window
             .terminals
@@ -224,7 +206,7 @@ fn two_named_actions_list_two_rows_and_nonconcurrent_leaves_one_running() {
             .iter()
             .map(|term| term.label())
             .collect();
-        (names, screen, until_dead(&pid))
+        (names, screen, until_dead(runtime, &pid))
     });
     let painted = seen.text();
     let (names, screen, web_stopped) = seen.read;
@@ -241,7 +223,7 @@ fn a_cloud_only_action_is_marked_and_never_runs_here() {
     if !in_window("scripts::a_cloud_only_action_is_marked_and_never_runs_here") {
         return;
     }
-    let _runtime = pumped();
+    let runtime = pumped();
     let (_root, repo) =
         repository("[run.docs]\ncommand = 'echo ran > docs-ran.txt'\navailable_in = ['cloud']\n");
     let at = || {
@@ -258,7 +240,11 @@ fn a_cloud_only_action_is_marked_and_never_runs_here() {
         listed.text()
     );
     let seen = steps(at(), filtered("run docs", "Run docs"), |app| {
-        std::thread::park_timeout(Duration::from_millis(300));
+        until(runtime, || {
+            app.model.peek().entries.iter().any(|entry| {
+                matches!(entry, crate::model::Entry::Error(text) if text.contains("cloud only"))
+            })
+        });
         (
             app.window.terminals.list.peek().len(),
             app.window.showing.peek(),
@@ -309,7 +295,7 @@ fn a_new_agent_pane_gets_ignored_env_files_before_setup_reads_them() {
             ..graded()
         }),
         keys,
-        |app| screen_until(runtime, app, "setup-done"),
+        |app| last_until(runtime, app, "setup-done"),
     );
     let screen = seen.read;
     let shown = |wanted: &str| screen.iter().any(|line| line.trim() == wanted);
@@ -349,7 +335,7 @@ fn the_run_button_starts_the_default_action_and_its_menu_starts_another() {
     };
     let seen = steps(at(), vec![Step::Click("Run in terminal")], |app| {
         (
-            screen_until(runtime, app, "api-up"),
+            last_until(runtime, app, "api-up"),
             names(app),
             app.window.showing.peek().is_some(),
         )
@@ -374,7 +360,7 @@ fn the_run_button_starts_the_default_action_and_its_menu_starts_another() {
     );
     let menu = vec![Step::RightClick("Run in terminal"), Step::Click("Run web")];
     let seen = steps(at(), menu, |app| {
-        (screen_until(runtime, app, "web-up"), names(app))
+        (last_until(runtime, app, "web-up"), names(app))
     });
     let painted = seen.text();
     let (screen, listed) = seen.read;

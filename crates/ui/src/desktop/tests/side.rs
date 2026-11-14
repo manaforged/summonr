@@ -1,8 +1,6 @@
-use std::time::{Duration, Instant};
-
 use sigil::events::{Key, ModifiersState};
 
-use super::harness::{Step, named, steps, typed};
+use super::harness::{Step, Which, has_line, named, pump_for, pumped, screen_until, steps, typed};
 use super::in_window;
 use crate::pane::Pane;
 use summonr_agent::hub::{Fact, Msg};
@@ -34,10 +32,7 @@ fn the_terminal_tab_runs_commands_in_the_chats_folder() {
     if !in_window("side::the_terminal_tab_runs_commands_in_the_chats_folder") {
         return;
     }
-    let runtime: &'static mut sigil::tasks::AsyncRuntime = Box::leak(Box::new(
-        sigil::tasks::AsyncRuntime::new().expect("runtime"),
-    ));
-    runtime.install_current();
+    let runtime = pumped();
     let mut clicks = vec![Step::Click("Shell")];
     clicks.extend(typed("pwd").into_iter().map(Step::Key));
     clicks.push(Step::Key(named(Key::Enter, ModifiersState::empty())));
@@ -49,29 +44,12 @@ fn the_terminal_tab_runs_commands_in_the_chats_folder() {
                 .expect("folder")
                 .display()
                 .to_string();
-            let deadline = Instant::now() + Duration::from_secs(10);
-            loop {
-                runtime.pump();
-                let screen = app
-                    .window
-                    .terminals
-                    .list
-                    .peek()
-                    .first()
-                    .map(|term| term.session.lines.get())
-                    .unwrap_or_default();
-                if screen.iter().any(|line| line.trim() == folder) || Instant::now() > deadline {
-                    return (folder, screen);
-                }
-                std::thread::park_timeout(Duration::from_millis(20));
-            }
+            let screen = screen_until(runtime, app, Which::First, |lines| has_line(lines, &folder));
+            (folder, screen)
         },
     );
     let (folder, screen) = seen.read;
-    assert!(
-        screen.iter().any(|line| line.trim() == folder),
-        "{folder} not in {screen:?}"
-    );
+    assert!(has_line(&screen, &folder), "{folder} not in {screen:?}");
 }
 
 fn panel(name: &str, title: &str, every_secs: Option<u64>) -> summonr_agent::panel::Panel {
@@ -198,14 +176,10 @@ fn a_repeating_panel_runs_again_and_stops_when_it_is_hidden() {
         return;
     }
     let run = |clicks: Vec<Step>| {
-        let runtime = super::terminals::pumped();
+        let runtime = pumped();
         let mut clicks = clicks;
         clicks.push(Step::Wait(Box::new(move |_| {
-            let until = Instant::now() + Duration::from_millis(1300);
-            while Instant::now() < until {
-                runtime.borrow_mut().pump();
-                std::thread::park_timeout(Duration::from_millis(20));
-            }
+            pump_for(runtime, std::time::Duration::from_millis(1300));
         })));
         let seen = steps(
             |app| {
@@ -233,7 +207,7 @@ fn a_terminal_panel_opens_its_program_in_a_terminal() {
     if !in_window("side::a_terminal_panel_opens_its_program_in_a_terminal") {
         return;
     }
-    let _runtime = super::terminals::pumped();
+    let _runtime = pumped();
     let seen = steps(
         |app| {
             app.toggle_pane(Pane::Diff);

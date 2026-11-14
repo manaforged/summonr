@@ -150,7 +150,7 @@ fn a_terminal_in_a_worktree_lists_under_its_branch() {
     if !in_window("worktrees::a_terminal_in_a_worktree_lists_under_its_branch") {
         return;
     }
-    let _runtime = super::terminals::pumped();
+    let _runtime = super::harness::pumped();
     let shop = shop_with_a_conductor_workspace();
     let seen = steps(
         open_in(shop.tree.clone(), Vec::new()),

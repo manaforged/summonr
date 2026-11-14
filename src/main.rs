@@ -56,7 +56,7 @@ fn start(window: bool) {
         summonr_agent::interrupted().await;
         summonr_agent::stop_children();
     }));
-    let result = runtime.block_on(run(args));
+    let result = runtime.block_on(Box::pin(run(args)));
     runtime.block_on(summonr_agent::supervise::closed());
     match result {
         Ok(code) => {

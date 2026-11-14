@@ -345,4 +345,48 @@ impl<'a> Frontmatter<'a> {
                 .collect(),
         )
     }
+
+    /// The tool or argument names `key` lists, split on commas and blanks outside parentheses and quotes.
+    pub fn names(&self, key: &str) -> Option<Vec<String>> {
+        let field = self.fields.iter().find(|field| field.key == key)?;
+        if field.value.is_empty() {
+            return self.list(key);
+        }
+        Some(listed(
+            field.value.trim_start_matches('[').trim_end_matches(']'),
+        ))
+    }
+}
+
+fn listed(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let mut depth = 0_usize;
+    let mut quote: Option<char> = None;
+    for ch in text.chars() {
+        if let Some(open) = quote {
+            if ch == open {
+                quote = None;
+            } else {
+                word.push(ch);
+            }
+        } else if QUOTES.contains(&ch) {
+            quote = Some(ch);
+        } else if depth == 0 && matches!(ch, ',' | ' ' | '\t') {
+            if !word.is_empty() {
+                out.push(std::mem::take(&mut word));
+            }
+        } else {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' {
+                depth = depth.saturating_sub(1);
+            }
+            word.push(ch);
+        }
+    }
+    if !word.is_empty() {
+        out.push(word);
+    }
+    out
 }

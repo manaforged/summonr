@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{LSP, Plugin, Vars, enabled, expand};
+use super::{LSP, Plugin, Unset, Vars, enabled, expand, server_entry};
 
 const USED: [&str; 7] = [
     "command",
@@ -59,19 +59,12 @@ pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
     let user_config = BTreeMap::new();
     let vars = Vars {
         user_config: Some(&user_config),
+        env: Some(Unset::Empty),
         ..plugin.vars(workspace)
     };
     let fill = |text: String| expand(&text, &vars);
-    plugin
-        .servers(
-            plugin
-                .merged(LSP)
-                .into_iter()
-                .map(|(server, entry)| (plugin.scoped(&server), entry)),
-            workspace,
-            |_entry: &mut Entry| Vec::new(),
-        )
-        .into_iter()
+    entries(plugin)
+        .flat_map(|(key, entry)| entry.map(|entry| (key, entry)))
         .map(|(key, entry)| Server {
             key,
             argv: std::iter::once(entry.command)
@@ -100,12 +93,29 @@ pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
         .collect()
 }
 
+fn entries(plugin: &Plugin) -> impl Iterator<Item = (String, Result<Entry, String>)> {
+    plugin
+        .merged(LSP)
+        .into_iter()
+        .map(|(server, (file, entry))| {
+            (plugin.scoped(&server), server_entry(&file, &server, entry))
+        })
+}
+
+/// Refuses a language server entry `of` would drop, naming its file and key.
+pub(super) fn check(plugin: &Plugin) -> summonr_core::error::Result<()> {
+    for (_, entry) in entries(plugin) {
+        entry.map_err(summonr_core::error::Error::Config)?;
+    }
+    Ok(())
+}
+
 /// Install-report lines for the language server fields summonr does not apply.
 pub(super) fn unused(plugin: &Plugin) -> Vec<String> {
     plugin
         .merged(LSP)
         .iter()
-        .flat_map(|(server, entry)| {
+        .flat_map(|(server, (_, entry))| {
             entry
                 .as_object()
                 .into_iter()

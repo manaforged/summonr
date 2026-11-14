@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::scope::{Origin, Scope, Sourced};
-use crate::plugins::{USER_CONFIG, Unset, Vars};
+use crate::plugins::{Plugin, USER_CONFIG, Unset, Vars, expand};
 use summonr_core::error::{Error, Result};
 use summonr_core::secret::Secret;
 use summonr_types::mcp::Transport;
@@ -86,11 +86,26 @@ fn server(mut entry: Entry, name: String, origin: Origin, workspace: &Path) -> R
                 .filter(|wait| *wait >= limits.mcp_timeout_floor())
         })
         .unwrap_or_else(|| limits.mcp_call());
-    let helper = entry
-        .headers_helper
-        .take()
-        .map(|command| Helper { command, origin });
-    let Some(launch) = launch(entry) else {
+    let plugin = match origin.scope {
+        Scope::Plugin => Plugin::open(origin.dir.clone()),
+        Scope::Local | Scope::Project | Scope::User => None,
+    };
+    let paths = Vars {
+        plugin: plugin.as_ref(),
+        workspace: plugin.as_ref().map(|_| workspace),
+        ..Vars::default()
+    };
+    let helper = entry.headers_helper.take().map(|command| Helper {
+        command: expand(&command, &paths),
+        origin,
+    });
+    let user_config = std::mem::take(&mut entry.user_config);
+    let vars = Vars {
+        user_config: Some(&user_config),
+        env: Some(Unset::Kept),
+        ..paths
+    };
+    let Some(launch) = launch(entry, &vars) else {
         return Ok(Built::Bare);
     };
     let helper = match launch {
@@ -133,14 +148,8 @@ fn refused(entry: &Entry, scope: Scope) -> Option<String> {
     }
 }
 
-fn launch(entry: Entry) -> Option<Launch> {
-    let user_config = entry.user_config;
-    let vars = Vars {
-        user_config: Some(&user_config),
-        unset: Unset::Kept,
-        ..Vars::default()
-    };
-    let fill = |text: &str| crate::plugins::expand(text, &vars);
+fn launch(entry: Entry, vars: &Vars<'_>) -> Option<Launch> {
+    let fill = |text: &str| expand(text, vars);
     let remote = match entry.transport {
         Some(Transport::Stdio) => false,
         Some(Transport::Http | Transport::Sse | Transport::Ws | Transport::Sdk) | None => true,
@@ -193,11 +202,15 @@ pub(crate) struct Found {
 }
 
 pub(crate) fn servers(workspace: &Path) -> Result<Found> {
-    let super::scope::Resolved { entries, waiting } = super::scope::resolve(workspace)?;
+    let super::scope::Resolved {
+        entries,
+        waiting,
+        skipped,
+    } = super::scope::resolve(workspace)?;
     let mut found = Found {
         servers: Vec::new(),
         waiting,
-        skipped: Vec::new(),
+        skipped,
     };
     for (name, Sourced { entry, origin }) in entries {
         if entry.enabled == Some(false) {

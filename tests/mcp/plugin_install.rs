@@ -256,9 +256,83 @@ pub(crate) fn plugin_install_counts_only_language_servers_that_load() {
     );
     let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
     assert!(!ok, "{text}");
+    let file = dir.join(".lsp.json").canonicalize().expect("lsp file");
     assert!(
-        text.contains("plugin `lsp-only` adds nothing summonr loads"),
+        text.contains(&format!(
+            "{}: broken: missing field `command`",
+            file.display()
+        )),
         "{text}"
+    );
+    assert!(
+        !session.home.path().join("plugins/lsp-only").exists(),
+        "{text}"
+    );
+}
+
+pub(crate) fn plugin_install_names_the_file_and_key_of_a_server_of_the_wrong_shape() {
+    let session = Session::new();
+    let dir = session.files.path().join("shape");
+    write(
+        &dir.join(".claude-plugin/plugin.json"),
+        r#"{"name": "shape"}"#,
+    );
+    write(
+        &dir.join(".mcp.json"),
+        &json!({"mcpServers": {"fx": {"command": "fx", "args": "--stdio"}}}).to_string(),
+    );
+    let (ok, text) = session.cli(&["install", &dir.display().to_string()]);
+    assert!(!ok, "{text}");
+    let file = dir.join(".mcp.json").canonicalize().expect("mcp file");
+    assert!(
+        text.contains(&format!("{}: fx: invalid type: string", file.display())),
+        "{text}"
+    );
+    assert!(
+        !session.home.path().join("plugins/shape").exists(),
+        "{text}"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn plugin_configured_user_config_clears_the_warning_and_env_expands_once() {
+    let session = Session::new();
+    let config = "[mcp.plugin_demo_fx.user_config]\napi_token = \"s3cret\"\n";
+    std::fs::write(session.home.path().join("config.toml"), config).expect("config");
+    let token = "${user_config.api_token}|${UNSET_MCP_OPT}|${UNSET_MCP_OPT:-dflt}";
+    let source = wrapped(&session, token).display().to_string();
+    let (ok, text) = session.cli(&["install", &source]);
+    assert!(ok, "{text}");
+    assert!(!text.contains("warning\tmcp fx uses"), "{text}");
+    let (listed, list_text) = session.cli(&["install", "--list"]);
+    assert!(listed && !list_text.contains("warning"), "{list_text}");
+    let model = Model::start(vec![
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, config, &[]);
+    assert_eq!(
+        read(&session.file("token.txt")),
+        "s3cret|${UNSET_MCP_OPT}|dflt"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn plugin_user_env_sees_the_plugin_root() {
+    let session = Session::new();
+    let source = wrapped(&session, "plugin-value");
+    let (ok, text) = session.cli(&["install", &source.display().to_string()]);
+    assert!(ok, "{text}");
+    let model = Model::start(vec![
+        Step::Call("plugin_demo_fx__echo", json!({"text": "x"})),
+        Step::Text("ok"),
+    ]);
+    let config = "[mcp.plugin_demo_fx.env]\nTOKEN = \"${CLAUDE_PLUGIN_ROOT}/x\"\n";
+    session.run(&model, config, &[]);
+    let root = session.home.path().join("plugins/demo");
+    assert_eq!(
+        read(&session.file("token.txt")),
+        format!("{}/x", root.display())
     );
 }
 

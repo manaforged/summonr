@@ -124,6 +124,11 @@ fn main() {
         plugin_install::plugin_uninstall_removes_an_unknown_off_name,
         plugin_install::plugin_install_skips_a_server_turned_off_in_config,
         plugin_install::plugin_install_counts_only_language_servers_that_load,
+        plugin_install::plugin_install_names_the_file_and_key_of_a_server_of_the_wrong_shape,
+        #[cfg(unix)]
+        plugin_install::plugin_configured_user_config_clears_the_warning_and_env_expands_once,
+        #[cfg(unix)]
+        plugin_install::plugin_user_env_sees_the_plugin_root,
         #[cfg(unix)]
         plugin_install::plugin_user_config_reaches_the_server,
         #[cfg(unix)]
@@ -188,6 +193,7 @@ fn main() {
         policy::a_zero_timeout_is_refused,
         policy::a_local_claude_server_replaces_the_project_one_whole,
         policy::a_websocket_server_is_skipped_and_named,
+        policy::a_project_server_of_the_wrong_shape_is_a_note_and_the_session_runs,
         #[cfg(unix)]
         settings::claude_settings_hooks_and_env_load_only_when_imported,
         settings::a_project_deny_rule_holds_only_in_a_trusted_workspace,

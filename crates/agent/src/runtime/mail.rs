@@ -28,7 +28,11 @@ impl<P: Provider> Loop<P> {
     pub(super) fn tool_definitions(&self) -> Vec<crate::provider::ToolDefinition> {
         let mut definitions = self.tools.definitions();
         if self.mailbox.is_some() && crate::mail::tools(self.mail_module) {
-            definitions.extend(crate::mail::definitions());
+            let scope = self.tools.policy().scope();
+            definitions.extend(crate::mail::definitions().into_iter().filter(|definition| {
+                crate::mail::Tool::of(&definition.function.name)
+                    .is_some_and(|tool| scope.mail(tool))
+            }));
         }
         if let Some(hub) = &self.mcp {
             definitions.extend(hub.definitions(self.tools.policy()));
@@ -60,6 +64,9 @@ impl<P: Provider> Loop<P> {
         let Some(tool) = crate::mail::Tool::of(name) else {
             return Err(Error::Tool(format!("unknown tool `{name}`")));
         };
+        if !self.tools.policy().scope().mail(tool) {
+            return Err(Error::Denied(crate::policy::Scope::refusal(name)));
+        }
         if self.mailbox.is_none() || !crate::mail::tools(self.mail_module) {
             return Err(Error::Tool(format!(
                 "`{name}` needs the mail module (/modules mail on)"

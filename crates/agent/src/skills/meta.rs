@@ -7,9 +7,20 @@ const DESCRIPTION: &str = "description";
 const WHEN: &str = "when_to_use";
 const HINT: &str = "argument-hint";
 const ARGUMENTS: &str = "arguments";
-const TOOLS: &str = "allowed-tools";
 const MODEL: &str = "model";
 const INHERIT: &str = "inherit";
+const UNAPPLIED: [&str; 10] = [
+    "allowed-tools",
+    "disallowed-tools",
+    MODEL,
+    "effort",
+    "context",
+    "agent",
+    "background",
+    "hooks",
+    "paths",
+    "shell",
+];
 const MODEL_OFF: &str = "disable-model-invocation";
 const USER_ON: &str = "user-invocable";
 const TRUE: [&str; 4] = ["true", "yes", "on", "1"];
@@ -24,8 +35,7 @@ pub(crate) struct Meta {
     pub(crate) about: String,
     pub(crate) hint: String,
     pub(crate) arguments: Vec<String>,
-    pub(crate) allowed_tools: Vec<String>,
-    pub(crate) model: Option<String>,
+    pub(crate) unapplied: Vec<&'static str>,
     pub(crate) model_invocable: bool,
     pub(crate) user_invocable: bool,
 }
@@ -54,11 +64,11 @@ impl Meta {
             about,
             hint: front.get(HINT).unwrap_or_default().to_owned(),
             arguments: values(front, ARGUMENTS),
-            allowed_tools: values(front, TOOLS),
-            model: front
-                .get(MODEL)
-                .filter(|model| *model != INHERIT)
-                .map(str::to_owned),
+            unapplied: UNAPPLIED
+                .into_iter()
+                .filter(|key| front.list(key).is_some())
+                .filter(|key| *key != MODEL || front.get(MODEL) != Some(INHERIT))
+                .collect(),
             model_invocable: !flag(front, MODEL_OFF, false),
             user_invocable: flag(front, USER_ON, true),
         }
@@ -71,6 +81,26 @@ impl Meta {
         }
         format!("{} {}", self.about, self.hint)
     }
+
+    /// Records that the file sets `key`, which summonr reads but does not apply.
+    pub(crate) fn skip(&mut self, key: &'static str) {
+        if !self.unapplied.contains(&key) {
+            self.unapplied.push(key);
+        }
+    }
+
+    /// One note per key in `unapplied`, for the `kind` named `name`.
+    pub(crate) fn notes(&self, kind: &str, name: &str) -> Vec<String> {
+        self.unapplied
+            .iter()
+            .map(|key| unapplied(kind, name, key))
+            .collect()
+    }
+}
+
+/// The note for `field` of the `kind` named `name`, which summonr reads but does not apply.
+pub(crate) fn unapplied(kind: &str, name: &str, field: &str) -> String {
+    format!("{kind} {name} {field} (summonr does not apply it)")
 }
 
 fn heading(body: &str) -> String {
@@ -100,32 +130,5 @@ pub(crate) fn flag(front: &Frontmatter<'_>, key: &str, default: bool) -> bool {
 }
 
 fn values(front: &Frontmatter<'_>, key: &str) -> Vec<String> {
-    match front.get(key) {
-        Some(value) if !value.starts_with('[') => split(value),
-        Some(_) | None => front.list(key).unwrap_or_default(),
-    }
-}
-
-fn split(value: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut word = String::new();
-    let mut depth = 0_usize;
-    for ch in value.chars() {
-        if depth == 0 && matches!(ch, ',' | ' ' | '\t') {
-            if !word.is_empty() {
-                out.push(std::mem::take(&mut word));
-            }
-            continue;
-        }
-        if ch == '(' {
-            depth += 1;
-        } else if ch == ')' {
-            depth = depth.saturating_sub(1);
-        }
-        word.push(ch);
-    }
-    if !word.is_empty() {
-        out.push(word);
-    }
-    out
+    front.names(key).unwrap_or_default()
 }

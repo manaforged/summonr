@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::hooks::{Hook, HookEvent, Hooks};
@@ -47,11 +47,12 @@ pub(crate) struct Merge {
     wrapped: bool,
 }
 
-/// One MCP server a plugin declares: its key in the plugin, its summonr name, and its config.
+/// One MCP server a plugin declares: its key, its summonr name, the file that declares it, and its config.
 #[derive(Clone, Debug)]
 pub(crate) struct McpServer {
     pub(crate) key: String,
     pub(crate) name: String,
+    pub(crate) file: PathBuf,
     pub(crate) config: Value,
 }
 
@@ -78,6 +79,12 @@ impl Plugin {
             dir,
             manifest,
         }
+    }
+
+    /// The plugin installed in `dir`, named by its folder, or `None` when that name is not valid.
+    pub(crate) fn open(dir: PathBuf) -> Option<Self> {
+        let name = dir.file_name()?.to_str()?.to_string();
+        skills::valid(&name).then(|| Self::at(name, dir))
     }
 
     fn inside(&self, relative: &str) -> Option<PathBuf> {
@@ -194,70 +201,49 @@ impl Plugin {
         format!("{}-{server}", self.name)
     }
 
-    /// Server configs keyed by name: the default file, then each manifest declaration in order.
-    pub(crate) fn merged(&self, merge: Merge) -> BTreeMap<String, Value> {
-        let default = read_json(&self.dir.join(merge.file));
-        let mut maps = vec![if merge.wrapped {
+    fn maps(&self, merge: Merge) -> Vec<(PathBuf, Value)> {
+        let path = self.dir.join(merge.file);
+        let default = read_json(&path);
+        let default = if merge.wrapped {
             default[merge.key].clone()
         } else {
             default
-        }];
+        };
+        let mut maps = vec![(path, default)];
         for source in self.declared(merge.key).into_iter().flatten() {
             match source {
                 Source::File(path) if is_json(&path) => {
                     let file = read_json(&path);
-                    maps.push(file.get(merge.key).cloned().unwrap_or(file));
+                    maps.push((path, file.get(merge.key).cloned().unwrap_or(file)));
                 }
-                Source::Inline(map) => maps.push(map),
+                Source::Inline(map) => maps.push((self.dir.join(MANIFEST), map)),
                 Source::File(_) | Source::Outside(_) => {}
             }
         }
-        maps.iter()
-            .filter_map(Value::as_object)
-            .flatten()
-            .map(|(name, entry)| (name.clone(), entry.clone()))
-            .collect()
+        maps
     }
 
-    /// Every MCP server config this plugin declares, `mcp.toml` last.
-    pub(crate) fn mcp(&self) -> BTreeMap<String, Value> {
-        let mut servers = self.merged(MCP);
-        let native = std::fs::read_to_string(self.dir.join("mcp.toml")).ok();
+    /// Server configs keyed by name with the file that declares each: the default file, then each manifest declaration in order.
+    pub(crate) fn merged(&self, merge: Merge) -> BTreeMap<String, (PathBuf, Value)> {
+        keyed(self.maps(merge))
+    }
+
+    /// Every MCP server this plugin declares, in key order, `mcp.toml` last, with the name summonr gives it.
+    pub(crate) fn mcp_servers(&self) -> Vec<McpServer> {
+        let mut maps = self.maps(MCP);
+        let path = self.dir.join("mcp.toml");
+        let native = std::fs::read_to_string(&path).ok();
         let native = native
             .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
             .and_then(|file| serde_json::to_value(file.get("mcp")?).ok());
-        if let Some(Value::Object(table)) = native {
-            servers.extend(table);
-        }
-        servers
-    }
-
-    /// Every MCP server this plugin declares, in key order, with the name summonr gives it.
-    pub(crate) fn mcp_servers(&self) -> Vec<McpServer> {
-        self.mcp()
+        maps.extend(native.map(|table| (path, table)));
+        keyed(maps)
             .into_iter()
-            .map(|(key, config)| McpServer {
+            .map(|(key, (file, config))| McpServer {
                 name: self.mcp_name(&key),
                 key,
+                file,
                 config,
-            })
-            .collect()
-    }
-
-    pub(crate) fn servers<T: DeserializeOwned>(
-        &self,
-        named: impl IntoIterator<Item = (String, Value)>,
-        workspace: &Path,
-        fields: impl Fn(&mut T) -> Vec<&mut String>,
-    ) -> Vec<(String, T)> {
-        named
-            .into_iter()
-            .filter_map(|(name, entry)| {
-                let mut entry = T::deserialize(entry).ok()?;
-                for text in fields(&mut entry) {
-                    *text = expand(text, &self.vars(workspace));
-                }
-                Some((name, entry))
             })
             .collect()
     }
@@ -283,9 +269,31 @@ impl Plugin {
     }
 }
 
+fn keyed(maps: Vec<(PathBuf, Value)>) -> BTreeMap<String, (PathBuf, Value)> {
+    let mut servers = BTreeMap::new();
+    for (path, map) in maps {
+        if let Value::Object(map) = map {
+            servers.extend(
+                map.into_iter()
+                    .map(|(name, entry)| (name, (path.clone(), entry))),
+            );
+        }
+    }
+    servers
+}
+
 pub(super) fn is_json(path: &Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension == "json")
+}
+
+/// Server entry `key` from `file` read as `T`, or a message naming the file and the key.
+pub(crate) fn server_entry<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+    file: &Path,
+    key: &str,
+    entry: D,
+) -> std::result::Result<T, String> {
+    T::deserialize(entry).map_err(|error| format!("{}: {key}: {error}", file.display()))
 }
 
 pub(super) fn read_json(path: &Path) -> Value {
@@ -347,10 +355,7 @@ pub fn installed() -> Vec<Plugin> {
     let mut plugins: Vec<Plugin> = summonr_core::walk::children(&root)
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
-        .filter_map(|dir| {
-            let name = dir.file_name()?.to_str()?.to_string();
-            skills::valid(&name).then(|| Plugin::at(name, dir))
-        })
+        .filter_map(Plugin::open)
         .collect();
     plugins.sort_by(|left, right| left.name.cmp(&right.name));
     plugins

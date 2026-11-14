@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::config::Entry;
 use crate::config;
-use crate::plugins::read_parsed;
+use crate::plugins::{expand, read_parsed, server_entry};
 use summonr_core::error::Result;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +30,7 @@ pub(super) struct Sourced {
 pub(super) struct Resolved {
     pub entries: BTreeMap<String, Sourced>,
     pub waiting: Vec<String>,
+    pub skipped: Vec<(String, String)>,
 }
 
 type Layer = (Origin, BTreeMap<String, Entry>);
@@ -51,16 +52,22 @@ pub(super) fn resolve(workspace: &Path) -> Result<Resolved> {
     let mut peers: Vec<Layer> = Vec::new();
     let mut local = BTreeMap::new();
     let mut all = false;
+    let mut skipped = Vec::new();
     if file.import_mcp == Some(true)
         && let Some(home) = &home
     {
-        let claude = read_parsed(&home.join(".claude.json"), |text: &str| {
+        let claude_path = home.join(".claude.json");
+        let claude = read_parsed(&claude_path, |text: &str| {
             serde_json::from_str::<Value>(text)
         })?;
         let project = claude
             .as_ref()
             .and_then(|file| file.get("projects")?.get(workspace.to_str()?));
-        local = json_map(project.and_then(|entry| entry.get("mcpServers")));
+        local = json_map(
+            project.and_then(|entry| entry.get("mcpServers")),
+            &claude_path,
+            &mut skipped,
+        );
         all = project
             .and_then(|entry| entry.get("enableAllProjectMcpServers"))
             .and_then(Value::as_bool)
@@ -76,20 +83,33 @@ pub(super) fn resolve(workspace: &Path) -> Result<Resolved> {
         );
         peers.push((
             at(Scope::User, &summonr_core::dirs::claude(home)),
-            json_map(claude.as_ref().and_then(|file| file.get("mcpServers"))),
+            json_map(
+                claude.as_ref().and_then(|file| file.get("mcpServers")),
+                &claude_path,
+                &mut skipped,
+            ),
         ));
-        let codex = read_parsed(&home.join(".codex/config.toml"), |text: &str| {
+        let codex_path = home.join(".codex/config.toml");
+        let codex = read_parsed(&codex_path, |text: &str| {
             toml::from_str::<toml::Value>(text)
         })?;
+        let codex = codex
+            .as_ref()
+            .and_then(|file| file.get("mcp_servers")?.as_table());
         peers.push((
             at(Scope::User, &home.join(".codex")),
-            toml_map(codex.as_ref().and_then(|file| file.get("mcp_servers"))),
+            read_entries(codex.into_iter().flatten(), &codex_path, &mut skipped),
         ));
     }
-    let shared_file = read_parsed(&workspace.join(".mcp.json"), |text: &str| {
+    let shared_path = workspace.join(".mcp.json");
+    let shared_file = read_parsed(&shared_path, |text: &str| {
         serde_json::from_str::<Value>(text)
     })?;
-    let mut shared = json_map(shared_file.as_ref().and_then(|file| file.get("mcpServers")));
+    let mut shared = json_map(
+        shared_file.as_ref().and_then(|file| file.get("mcpServers")),
+        &shared_path,
+        &mut skipped,
+    );
     shared.extend(config::workspace(workspace)?.mcp.clone());
     let waiting = shared
         .keys()
@@ -117,7 +137,7 @@ pub(super) fn resolve(workspace: &Path) -> Result<Resolved> {
             });
         }
     }
-    let legacy = plugins(workspace, &mut entries);
+    let legacy = plugins(workspace, &mut entries, &mut skipped);
     for (name, entry) in renamed(user, &legacy) {
         let launches = entry.command.is_some() || entry.url.is_some();
         match entries.get_mut(&name) {
@@ -138,10 +158,18 @@ pub(super) fn resolve(workspace: &Path) -> Result<Resolved> {
             }
         }
     }
-    Ok(Resolved { entries, waiting })
+    Ok(Resolved {
+        entries,
+        waiting,
+        skipped,
+    })
 }
 
-fn plugins(workspace: &Path, entries: &mut BTreeMap<String, Sourced>) -> BTreeMap<String, String> {
+fn plugins(
+    workspace: &Path,
+    entries: &mut BTreeMap<String, Sourced>,
+    skipped: &mut Vec<(String, String)>,
+) -> BTreeMap<String, String> {
     let mut taken: BTreeSet<String> = entries
         .values()
         .filter(|found| found.entry.enabled != Some(false))
@@ -155,28 +183,22 @@ fn plugins(workspace: &Path, entries: &mut BTreeMap<String, Sourced>) -> BTreeMa
                 .iter()
                 .map(|server| (plugin.legacy_mcp_name(&server.key), server.name.clone())),
         );
-        let named = servers
-            .into_iter()
-            .map(|server| (server.name, server.config));
-        let found = plugin.servers(named, workspace, |entry: &mut Entry| {
-            entry
-                .command
-                .iter_mut()
-                .chain(&mut entry.url)
-                .chain(&mut entry.headers_helper)
-                .chain(&mut entry.args)
-                .chain(entry.env.values_mut())
-                .chain(entry.headers.values_mut())
-                .collect()
-        });
-        for (name, entry) in found {
+        let vars = plugin.vars(workspace);
+        for server in servers {
+            let entry: Entry = match server_entry(&server.file, &server.key, server.config) {
+                Ok(entry) => entry,
+                Err(reason) => {
+                    skipped.push((server.name, reason));
+                    continue;
+                }
+            };
             if entry
                 .endpoint()
-                .is_some_and(|endpoint| !taken.insert(endpoint))
+                .is_some_and(|endpoint| !taken.insert(expand(&endpoint, &vars)))
             {
                 continue;
             }
-            entries.entry(name).or_insert_with(|| Sourced {
+            entries.entry(server.name).or_insert_with(|| Sourced {
                 entry,
                 origin: Origin {
                     scope: Scope::Plugin,
@@ -205,22 +227,31 @@ fn renamed(
     out
 }
 
-fn json_map(value: Option<&Value>) -> BTreeMap<String, Entry> {
-    value
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, entry)| {
-            Some((name.clone(), serde_json::from_value(entry.clone()).ok()?))
-        })
-        .collect()
+fn json_map(
+    value: Option<&Value>,
+    file: &Path,
+    skipped: &mut Vec<(String, String)>,
+) -> BTreeMap<String, Entry> {
+    let table = value.and_then(Value::as_object).into_iter().flatten();
+    read_entries(table, file, skipped)
 }
 
-fn toml_map(value: Option<&toml::Value>) -> BTreeMap<String, Entry> {
-    value
-        .and_then(toml::Value::as_table)
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, entry)| Some((name.clone(), entry.clone().try_into().ok()?)))
-        .collect()
+fn read_entries<'a, D>(
+    table: impl Iterator<Item = (&'a String, &'a D)>,
+    file: &Path,
+    skipped: &mut Vec<(String, String)>,
+) -> BTreeMap<String, Entry>
+where
+    D: Clone + for<'de> serde::Deserializer<'de> + 'a,
+{
+    let mut entries = BTreeMap::new();
+    for (name, entry) in table {
+        match server_entry(file, name, entry.clone()) {
+            Ok(entry) => {
+                entries.insert(name.clone(), entry);
+            }
+            Err(reason) => skipped.push((name.clone(), reason)),
+        }
+    }
+    entries
 }

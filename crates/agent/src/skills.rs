@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use summonr_core::error::{Error, Result};
 use summonr_core::text::Frontmatter;
@@ -12,7 +13,7 @@ mod meta;
 pub(crate) use found::plugin_files;
 use found::{Found, found};
 pub(crate) use inject::{Body, Piece, Scope};
-pub(crate) use meta::{Meta, flag};
+pub(crate) use meta::{Meta, flag, unapplied};
 
 const SKILL: &str = "SKILL.md";
 /// The mark between a namespace and a name, as in `plugin:skill` or `frontend:component`.
@@ -25,6 +26,8 @@ const FLAT: usize = 1;
 
 /// Sets every config has, each with no skills: `none` turns skills off for a session.
 const BUILT_IN: [&str; 1] = ["none"];
+
+static NOTED: AtomicBool = AtomicBool::new(false);
 
 /// A named choice of skills: folder paths to include, then paths to leave out.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
@@ -248,12 +251,26 @@ pub(crate) fn load(
         .into_iter()
         .filter(|skill| skill.meta.model_invocable)
         .find_map(|skill| {
-            std::fs::read_to_string(&skill.file)
+            written(&skill.file)
                 .ok()
-                .filter(|text| !text.trim().is_empty())
-                .map(|text| skill.body(&text, None, workspace, session))
+                .filter(|body| !body.is_empty())
+                .map(|body| skill.body(&body, None, workspace, session))
         })
         .ok_or_else(|| Error::Tool(format!("skill `{name}` is not installed")))
+}
+
+/// Prints once per process each frontmatter key that the user's and the workspace's own skills and commands set and summonr does not apply.
+pub(crate) fn report(workspace: &Path) {
+    if NOTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let skills = found(workspace)
+        .into_iter()
+        .filter(|skill| skill.plugin.is_none())
+        .flat_map(|skill| skill.meta.notes("skill", &skill.name));
+    for note in skills.chain(crate::plugins::commands::notes(workspace)) {
+        eprintln!("summonr: {note}");
+    }
 }
 
 /// A skill a person ran by typing its name.
@@ -271,15 +288,19 @@ impl Typed {
         session: Option<&str>,
     ) -> Result<Body> {
         let name = &self.skill.name;
-        let text = std::fs::read_to_string(&self.skill.file)
+        let body = written(&self.skill.file)
             .map_err(|error| Error::Tool(format!("skill `{name}`: {error}")))?;
-        let body = Frontmatter::parse(&text).body.trim();
         if body.is_empty() {
             return Err(Error::Tool(format!("skill `{name}` is not installed")));
         }
         let arguments = (arguments, self.skill.meta.arguments.as_slice());
-        Ok(self.skill.body(body, Some(arguments), workspace, session))
+        Ok(self.skill.body(&body, Some(arguments), workspace, session))
     }
+}
+
+fn written(file: &Path) -> std::io::Result<String> {
+    let text = std::fs::read_to_string(file)?;
+    Ok(Frontmatter::parse(&text).body.trim().to_owned())
 }
 
 /// The skill a person runs by typing `/name`, unless it sets `user-invocable: false`.

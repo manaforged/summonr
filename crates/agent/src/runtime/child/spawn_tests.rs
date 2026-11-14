@@ -695,6 +695,77 @@ async fn an_agent_child_gets_only_the_tools_its_lists_leave() {
 }
 
 #[tokio::test]
+async fn an_mcp_allow_the_deny_list_covers_refuses_the_spawn() {
+    let (mut parent, dirs) = parent(vec![]);
+    agent_file(
+        dirs[0].path(),
+        "covered",
+        "tools: [mcp__srv__x]\ndisallowedTools: [mcp__srv]\n",
+    );
+    let budget = parent.task_budget(1).expect("the parent has a task budget");
+    let refused = parent
+        .task_start_in(agent_args("covered"), &budget, None)
+        .err()
+        .expect("the deny list leaves the agent no tool");
+    assert!(
+        refused.to_string().contains("none is a tool it may use"),
+        "{refused}"
+    );
+}
+
+fn start_named_agent(parent: &mut Loop<Scripted>, agent: &str) -> super::Run<Scripted> {
+    let budget = parent.task_budget(1).expect("the parent has a task budget");
+    let args = serde_json::from_value(serde_json::json!({
+        "assignment": "look around",
+        "access": "research",
+        "background": true,
+        "agent": agent,
+        "name": format!("{agent}-{}", parent.session_id()),
+    }))
+    .expect("the task arguments parse");
+    parent
+        .task_start_in(args, &budget, None)
+        .expect("the named agent child starts")
+}
+
+#[tokio::test]
+async fn a_named_agent_child_sees_and_runs_only_the_mail_tools_it_lists() {
+    let (mut parent, dirs) = parent(vec![]);
+    parent.mail_module = true;
+    agent_file(dirs[0].path(), "editor", "tools: [Read, Edit]\n");
+    agent_file(dirs[0].path(), "talker", "tools: Read, SendMessage\n");
+    let send = crate::mail::Tool::Send.name().to_string();
+    let board = crate::mail::Tool::Board.name().to_string();
+    let mut editor = start_named_agent(&mut parent, "editor");
+    assert!(
+        editor.child.mailbox.is_some(),
+        "the child is not on the roster"
+    );
+    let names = tool_names(&mut editor.child);
+    assert!(!names.contains(&send), "{names:?}");
+    assert!(!names.contains(&board), "{names:?}");
+    for (tool, arguments) in [
+        (&send, serde_json::json!({"to": "all", "text": "hi"})),
+        (&board, serde_json::json!({"action": "list"})),
+    ] {
+        let refused = editor
+            .child
+            .mail_execute(&call("1", tool, &arguments))
+            .expect_err("the mail tool is outside the agent's tools");
+        assert!(
+            refused
+                .to_string()
+                .contains("not one of this agent's tools"),
+            "{refused}"
+        );
+    }
+    let mut talker = start_named_agent(&mut parent, "talker");
+    let names = tool_names(&mut talker.child);
+    assert!(names.contains(&send), "{names:?}");
+    assert!(names.contains(&board), "{names:?}");
+}
+
+#[tokio::test]
 async fn an_agent_preloads_its_skills_and_notes_the_missing_ones() {
     let (mut parent, dirs) = parent(vec![]);
     let skill = dirs[0].path().join(".summonr").join("skills").join("demo");

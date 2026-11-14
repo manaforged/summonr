@@ -207,7 +207,11 @@ fn mcp_servers_merge_in_order_and_take_the_documented_name() {
             r#"{"mcpServers": {"db": {"command": "file-db"}}}"#,
         ),
     ]);
-    let servers = plugin.mcp();
+    let servers: BTreeMap<String, Value> = plugin
+        .mcp_servers()
+        .into_iter()
+        .map(|server| (server.key, server.config))
+        .collect();
     assert_eq!(servers["db"]["command"], "inline-db");
     assert_eq!(servers["api"]["command"], "api");
     assert_eq!(plugin.mcp_name("db"), "plugin_demo_db");
@@ -239,13 +243,52 @@ fn an_unset_variable_without_a_default_stays_as_written_for_mcp() {
         "${SUMMONR_PROBE_NEVER_SET}|${SUMMONR_PROBE_NEVER_SET:-fallback}|${user_config.missing}";
     let kept = Vars {
         user_config: Some(&none),
-        unset: Unset::Kept,
+        env: Some(Unset::Kept),
         ..Vars::default()
     };
     assert_eq!(expand(text, &kept), "${SUMMONR_PROBE_NEVER_SET}|fallback|");
     let empty = Vars {
         user_config: Some(&none),
+        env: Some(Unset::Empty),
         ..Vars::default()
     };
     assert_eq!(expand(text, &empty), "|fallback|");
+}
+
+#[test]
+fn plugin_variables_expand_without_user_config_and_content_keeps_env_text() {
+    let (dir, plugin) = tree(&[(MANIFEST, r#"{"name": "demo"}"#)]);
+    let workspace = tempfile::tempdir().expect("workspace");
+    let text = "${CLAUDE_PLUGIN_ROOT}|${SUMMONR_PROBE_NEVER_SET:-fallback}";
+    let env = Vars {
+        env: Some(Unset::Kept),
+        ..plugin.vars(workspace.path())
+    };
+    let root = dir.path().display();
+    assert_eq!(expand(text, &env), format!("{root}|fallback"));
+    let content = plugin.vars(workspace.path());
+    assert_eq!(
+        expand(text, &content),
+        format!("{root}|${{SUMMONR_PROBE_NEVER_SET:-fallback}}")
+    );
+}
+
+#[test]
+fn a_server_entry_of_the_wrong_shape_names_its_file_and_key() {
+    let (dir, plugin) = tree(&[
+        (MANIFEST, r#"{"name": "demo"}"#),
+        (
+            ".mcp.json",
+            r#"{"mcpServers": {"good": {"command": "x"}, "bad": {"command": "x", "args": "--stdio"}}}"#,
+        ),
+    ]);
+    let [bad, good] = plugin.mcp_servers().try_into().expect("two servers");
+    assert_eq!(good.key, "good");
+    let error = server_entry::<summonr_types::mcp::Entry, _>(&bad.file, &bad.key, bad.config)
+        .expect_err("a string args is refused");
+    let file = dir.path().join(".mcp.json");
+    assert!(
+        error.starts_with(&format!("{}: bad: ", file.display())),
+        "{error}"
+    );
 }

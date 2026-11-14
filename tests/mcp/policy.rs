@@ -156,6 +156,21 @@ pub(crate) fn a_local_claude_server_replaces_the_project_one_whole() {
     );
 }
 
+pub(crate) fn a_project_server_of_the_wrong_shape_is_a_note_and_the_session_runs() {
+    let session = Session::new();
+    std::fs::write(
+        session.work.path().join(".mcp.json"),
+        json!({"mcpServers": {"bad": {"command": "x", "args": "--stdio"}}}).to_string(),
+    )
+    .expect("write .mcp.json");
+    let outcome = session.run(&Model::start(vec![Step::Text("ok")]), "", &["--json"]);
+    assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
+    let note = "mcp bad: skipped: ";
+    assert!(outcome.stdout.contains(note), "{}", outcome.stdout);
+    let reason = ".mcp.json: bad: invalid type: string";
+    assert!(outcome.stdout.contains(reason), "{}", outcome.stdout);
+}
+
 pub(crate) fn a_websocket_server_is_skipped_and_named() {
     let session = Session::new();
     let config = "[mcp.socket]\ntype = \"ws\"\nurl = \"wss://mcp.example.invalid/socket\"\n";

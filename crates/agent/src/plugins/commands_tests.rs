@@ -201,8 +201,7 @@ fn the_manifest_commands_key_replaces_the_default_folder() {
         .find(|command| command.name == "status")
         .unwrap();
     assert_eq!(status.meta.offer(), "from file [env]");
-    assert_eq!(status.meta.model.as_deref(), Some("probe-model"));
-    assert_eq!(status.meta.allowed_tools, ["Read"]);
+    assert_eq!(status.meta.unapplied, ["model", "allowedTools"]);
     assert_eq!(status.qualified(), "/probe-kit:status");
     assert_eq!(
         status.render("prod", root, None).written(),
@@ -265,4 +264,33 @@ fn the_session_id_fills_a_skill_the_model_loads_or_a_person_types() {
     let typed = written(expand("/probe-log", workspace.path(), None, Some("s-7")));
     assert_eq!(typed.as_deref(), Some("Log to logs/s-7.log"));
     assert_eq!(load(None), "Log to logs/${CLAUDE_SESSION_ID}.log");
+}
+
+#[test]
+fn install_names_the_skill_and_command_keys_summonr_does_not_apply() {
+    let dir = tempfile::tempdir().expect("plugin source");
+    let root = dir.path().join("probe-keys");
+    let skill = root.join("skills/probe-forked");
+    std::fs::create_dir_all(&skill).expect("skill folder");
+    std::fs::create_dir_all(root.join(".claude-plugin")).expect("manifest folder");
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\ncontext: fork\nagent: Explore\nmodel: inherit\n---\nforked",
+    )
+    .expect("skill");
+    std::fs::write(
+        root.join(".claude-plugin/plugin.json"),
+        r#"{"name": "probe-keys", "commands": {"go": {"content": "Go.", "allowedTools": ["Read"]}}}"#,
+    )
+    .expect("manifest");
+    let installed = crate::plugins::manage::Plugin::install(&root).expect("install");
+    let report = installed.report();
+    for line in [
+        "skipped\tskill probe-forked context (summonr does not apply it)",
+        "skipped\tskill probe-forked agent (summonr does not apply it)",
+        "skipped\tcommand go allowedTools (summonr does not apply it)",
+    ] {
+        assert!(report.contains(line), "{line} in {report}");
+    }
+    assert!(!report.contains("model (summonr"), "{report}");
 }

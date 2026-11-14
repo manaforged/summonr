@@ -1,6 +1,7 @@
-use super::super::{HOOKS, LSP, MCP, Plugin, is_json, json_file, read_parsed};
+use super::super::{HOOKS, LSP, MCP, Plugin, is_json, json_file, read_parsed, server_entry};
 use crate::hooks::Hooks;
-use summonr_core::error::Result;
+use summonr_core::error::{Error, Result};
+use summonr_types::mcp::Entry;
 
 pub(super) fn require_tree(plugin: &Plugin) -> Result<()> {
     for path in [
@@ -19,5 +20,9 @@ pub(super) fn require_tree(plugin: &Plugin) -> Result<()> {
     for path in plugin.files(HOOKS).into_iter().chain(servers) {
         json_file(&path)?;
     }
-    Ok(())
+    for server in plugin.mcp_servers() {
+        server_entry::<Entry, _>(&server.file, &server.key, server.config)
+            .map_err(Error::Config)?;
+    }
+    super::super::lsp::check(plugin)
 }

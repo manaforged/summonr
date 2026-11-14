@@ -2,10 +2,9 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use summonr_core::markdown::{Fence, span_end};
+
 const MAX_HOPS: usize = 4;
-const FENCE_CHARS: [char; 2] = ['`', '~'];
-const FENCE_MIN: usize = 3;
-const FENCE_INDENT: usize = 3;
 
 /// Reads instruction files once each and expands their `@path` imports.
 pub(super) struct Loader<'a> {
@@ -35,19 +34,14 @@ impl<'a> Loader<'a> {
     fn read(&mut self, path: &Path, hops: usize) -> Option<String> {
         let text = std::fs::read_to_string(path).ok()?;
         let dir = path.parent().unwrap_or(path);
-        let mut fence = None;
+        let mut fence = Fence::default();
         let mut lines = Vec::new();
         for line in text.lines() {
-            if let Some(mark) = fence_mark(line) {
-                fence = match fence {
-                    None => Some(mark),
-                    Some((open, width)) if mark.0 == open && mark.1 >= width => None,
-                    open @ Some(_) => open,
-                };
+            if fence.code(line) {
                 lines.push(line.to_string());
                 continue;
             }
-            let found = if fence.is_none() && hops < MAX_HOPS {
+            let found = if hops < MAX_HOPS {
                 targets(line)
             } else {
                 Vec::new()
@@ -93,16 +87,6 @@ impl<'a> Loader<'a> {
     }
 }
 
-fn fence_mark(line: &str) -> Option<(char, usize)> {
-    let body = line.trim_start_matches(' ');
-    if line.len() - body.len() > FENCE_INDENT {
-        return None;
-    }
-    let open = body.chars().next().filter(|c| FENCE_CHARS.contains(c))?;
-    let width = body.chars().take_while(|c| *c == open).count();
-    (width >= FENCE_MIN).then_some((open, width))
-}
-
 fn targets(line: &str) -> Vec<(Range<usize>, String)> {
     let bytes = line.as_bytes();
     let mut out = Vec::new();
@@ -121,20 +105,6 @@ fn targets(line: &str) -> Vec<(Range<usize>, String)> {
         }
     }
     out
-}
-
-fn span_end(line: &str, at: usize) -> usize {
-    let run = line[at..].bytes().take_while(|b| *b == b'`').count();
-    let mut next = at + run;
-    while let Some(found) = line[next..].find('`') {
-        let start = next + found;
-        let close = line[start..].bytes().take_while(|b| *b == b'`').count();
-        if close == run {
-            return start + close;
-        }
-        next = start + close;
-    }
-    at + run
 }
 
 fn token(rest: &str) -> (String, usize) {

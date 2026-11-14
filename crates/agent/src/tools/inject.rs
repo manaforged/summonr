@@ -7,9 +7,10 @@ use crate::skills::{Body, Piece, Scope};
 const DISABLED: &str = "[shell command execution disabled by policy]";
 
 impl ToolRegistry {
-    /// Lets skills and commands defined in the workspace run their `!` blocks; user and plugin files always may.
+    /// Lets workspace skills and commands run their `!` blocks (user and plugin files always may), and prints the frontmatter keys summonr skips once.
     pub(crate) fn set_trust(&mut self, trust: bool) {
         self.trust = trust;
+        crate::skills::report(&self.workspace);
     }
 
     /// Adds the deny and ask rules and the environment that imported Claude Code settings give.

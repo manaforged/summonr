@@ -365,7 +365,7 @@ fn frontmatter_names_the_skill_and_declares_its_arguments() {
         .join(".claude/skills/probe-folder-name/SKILL.md");
     write(
         &file,
-        "---\nname: probe-named\ndescription: Short.\nwhen_to_use: When asked.\narguments: [issue, branch]\nallowed-tools: Bash(git add *) Read\nmodel: probe-model\n---\nFix $issue on $branch",
+        "---\nname: probe-named\ndescription: Short.\nwhen_to_use: When asked.\narguments: [issue, branch]\nallowed-tools: Bash(git add *) Read\nmodel: probe-model\ncontext: fork\n---\nFix $issue on $branch",
     );
     write(
         &workspace.path().join(".claude/skills/probe-plain/SKILL.md"),
@@ -388,7 +388,6 @@ fn frontmatter_names_the_skill_and_declares_its_arguments() {
         typed(workspace.path(), "/probe-plain extra words").as_deref(),
         Some("Plain body\n\nARGUMENTS: extra words")
     );
-    let meta = super::Meta::read(&file);
-    assert_eq!(meta.allowed_tools, ["Bash(git add *)", "Read"]);
-    assert_eq!(meta.model.as_deref(), Some("probe-model"));
+    let unapplied = super::Meta::read(&file).unapplied;
+    assert_eq!(unapplied, ["allowed-tools", "model", "context"]);
 }

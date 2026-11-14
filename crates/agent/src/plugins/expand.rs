@@ -13,9 +13,8 @@ const SKILL_DIR: &str = "CLAUDE_SKILL_DIR";
 const SESSION: &str = "CLAUDE_SESSION_ID";
 pub(crate) const USER_CONFIG: &str = "${user_config.";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Unset {
-    #[default]
     Empty,
     Kept,
 }
@@ -25,7 +24,7 @@ pub(crate) struct Vars<'a> {
     pub(crate) plugin: Option<&'a Plugin>,
     pub(crate) workspace: Option<&'a Path>,
     pub(crate) user_config: Option<&'a BTreeMap<String, String>>,
-    pub(crate) unset: Unset,
+    pub(crate) env: Option<Unset>,
 }
 
 /// `text` with each `open`...`}` span replaced by what `resolve` returns for its inside, or kept when it returns `None`.
@@ -72,12 +71,14 @@ pub(crate) fn expand(text: &str, vars: &Vars<'_>) -> String {
     if let Some(workspace) = vars.workspace {
         text = fill(text, &[PROJECT], &workspace.to_string_lossy());
     }
-    let Some(user_config) = vars.user_config else {
+    if let Some(user_config) = vars.user_config {
+        text = scan(&text, USER_CONFIG, |name| {
+            Some(user_config.get(name).cloned().unwrap_or_default())
+        });
+    }
+    let Some(unset) = vars.env else {
         return text;
     };
-    let text = scan(&text, USER_CONFIG, |name| {
-        Some(user_config.get(name).cloned().unwrap_or_default())
-    });
     scan(&text, "${", |inner| {
         let (name, fallback) = inner
             .split_once(":-")
@@ -85,7 +86,7 @@ pub(crate) fn expand(text: &str, vars: &Vars<'_>) -> String {
         std::env::var(name)
             .ok()
             .or_else(|| fallback.map(str::to_string))
-            .or_else(|| match vars.unset {
+            .or_else(|| match unset {
                 Unset::Empty => Some(String::new()),
                 Unset::Kept => None,
             })

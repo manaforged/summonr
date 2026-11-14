@@ -6,6 +6,8 @@ pub mod clock;
 pub mod dirs;
 /// The harness error type.
 pub mod error;
+/// Markdown code fences and code spans, so text inside code can be told apart.
+pub mod markdown;
 /// A string that never prints its value.
 pub mod secret;
 /// The platform shell and its quoting.

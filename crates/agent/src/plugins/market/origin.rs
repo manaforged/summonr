@@ -53,6 +53,14 @@ impl Origin {
             Some((body, reference)) => (body, Some(reference.to_string())),
             None => (input, None),
         };
+        if body
+            .split(['/', ':'])
+            .any(|part| matches!(part, "." | ".."))
+        {
+            return Err(Error::Config(format!(
+                "{SHAPES}; `{input}` has a `.` or `..` path segment"
+            )));
+        }
         if input.starts_with("http://") || input.starts_with("https://") {
             return Ok(web(input, body, reference));
         }
@@ -119,14 +127,15 @@ impl Origin {
     }
 
     pub(super) fn official(&self) -> bool {
-        match self {
-            Self::Github { repo, .. } => repo.starts_with(OFFICIAL_OWNER),
-            Self::Git { url, .. } => OFFICIAL_GIT.iter().any(|prefix| {
-                url.strip_prefix(prefix)
-                    .is_some_and(|rest| rest.starts_with(OFFICIAL_OWNER))
-            }),
-            Self::Url { .. } | Self::Directory { .. } | Self::File { .. } => false,
-        }
+        let repo = match self {
+            Self::Github { repo, .. } => Some(repo.as_str()),
+            Self::Git { url, .. } => OFFICIAL_GIT
+                .iter()
+                .find_map(|prefix| url.strip_prefix(prefix))
+                .map(|rest| rest.strip_suffix(".git").unwrap_or(rest)),
+            Self::Url { .. } | Self::Directory { .. } | Self::File { .. } => None,
+        };
+        repo.is_some_and(|repo| repo_ok(repo) && repo.starts_with(OFFICIAL_OWNER))
     }
 
     pub(super) async fn fetch(&self, into: &Path) -> Result<()> {
@@ -252,3 +261,7 @@ pub(super) fn ssh(body: &str) -> bool {
     };
     user_host.contains('@') && !user_host.contains('/') && !path.is_empty()
 }
+
+#[cfg(test)]
+#[path = "origin_tests.rs"]
+mod tests;

@@ -1,4 +1,7 @@
+use std::ops::Range;
 use std::path::Path;
+
+use summonr_core::markdown::{Fence, span_end};
 
 const INLINE: &str = "!`";
 const TICK: char = '`';
@@ -88,36 +91,61 @@ impl Body {
 
 fn pieces(text: &str) -> Vec<Piece<&str>> {
     let mut out = Vec::new();
+    let mut fence = Fence::default();
     let (mut start, mut at) = (0, 0);
-    while let Some(ch) = text[at..].chars().next() {
-        match block(text, at) {
-            Some((length, command)) => {
-                out.push(Piece::Text(&text[start..at]));
-                out.push(Piece::Shell {
-                    pattern: &text[at..at + length],
-                    command,
-                });
-                at += length;
-                start = at;
+    while at < text.len() {
+        let end = text[at..]
+            .find('\n')
+            .map_or(text.len(), |next| at + next + 1);
+        if !fence.open()
+            && text[at..].starts_with(FENCE)
+            && let Some((length, command)) = fenced(&text[at..])
+        {
+            shell(&mut out, text, &mut start, at..at + length, command);
+            at += length;
+        } else {
+            if !fence.code(&text[at..end]) {
+                spans(&mut out, text, &mut start, at..end);
             }
-            None => at += ch.len_utf8(),
+            at = end;
         }
     }
     out.push(Piece::Text(&text[start..]));
     out
 }
 
-fn block(text: &str, at: usize) -> Option<(usize, &str)> {
-    let rest = &text[at..];
-    let line_start = text[..at].is_empty() || text[..at].ends_with('\n');
-    if line_start && rest.starts_with(FENCE) {
-        return fenced(rest);
+fn spans<'a>(out: &mut Vec<Piece<&'a str>>, text: &'a str, start: &mut usize, line: Range<usize>) {
+    let mut at = line.start;
+    while at < line.end {
+        let rest = &text[at..line.end];
+        let spaced = text[..at].is_empty() || text[..at].ends_with(char::is_whitespace);
+        if rest.starts_with(TICK) {
+            at = span_end(&text[..line.end], at);
+        } else if spaced
+            && rest.starts_with(INLINE)
+            && let Some((length, command)) = inline(rest)
+        {
+            shell(out, text, start, at..at + length, command);
+            at += length;
+        } else {
+            at += rest.chars().next().map_or(1, char::len_utf8);
+        }
     }
-    let spaced = text[..at].is_empty() || text[..at].ends_with(char::is_whitespace);
-    if spaced && rest.starts_with(INLINE) {
-        return inline(rest);
-    }
-    None
+}
+
+fn shell<'a>(
+    out: &mut Vec<Piece<&'a str>>,
+    text: &'a str,
+    start: &mut usize,
+    block: Range<usize>,
+    command: &'a str,
+) {
+    out.push(Piece::Text(&text[*start..block.start]));
+    out.push(Piece::Shell {
+        pattern: &text[block.clone()],
+        command,
+    });
+    *start = block.end;
 }
 
 fn inline(rest: &str) -> Option<(usize, &str)> {
@@ -147,3 +175,7 @@ fn fenced(rest: &str) -> Option<(usize, &str)> {
         line = end + 1;
     }
 }
+
+#[cfg(test)]
+#[path = "inject_tests.rs"]
+mod tests;

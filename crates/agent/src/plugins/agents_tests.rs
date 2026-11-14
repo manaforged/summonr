@@ -197,3 +197,74 @@ fn manifest_agents_replace_the_default_folder() {
         .collect();
     assert_eq!(names, ["one"]);
 }
+
+fn front_agent(fields: &str) -> Agent {
+    let text = format!("---\nname: lane\n{fields}---\nWork.\n");
+    super::agent(
+        Origin::Project,
+        "lane",
+        &Frontmatter::parse(&text),
+        String::new(),
+    )
+    .expect("the agent name is valid")
+}
+
+#[test]
+fn blank_separated_tool_lists_name_every_tool() {
+    let denied = front_agent("disallowedTools: Bash Write\n");
+    assert_eq!(denied.disallowed, Some(list(&["Bash", "Write"])));
+    let scope = denied.scope();
+    assert!(!scope.builtin(Builtin::RunCommand));
+    assert!(!scope.builtin(Builtin::Write));
+    assert!(scope.builtin(Builtin::Read));
+    let allowed = front_agent("tools: Read Grep\n");
+    assert_eq!(allowed.tools, Some(list(&["Read", "Grep"])));
+    assert!(allowed.scope().resolves());
+    assert!(allowed.scope().builtin(Builtin::Search));
+    assert!(!allowed.scope().builtin(Builtin::Edit));
+    let specified = front_agent("disallowedTools: Bash(git push *), Write\n");
+    assert_eq!(
+        specified.disallowed,
+        Some(list(&["Bash(git push *)", "Write"]))
+    );
+}
+
+#[test]
+fn a_server_entry_in_tools_allows_that_servers_tools() {
+    let server = Scope::new(Some(list(&["mcp__srv"]).as_slice()), None);
+    assert!(server.mcp("srv__query"));
+    assert!(!server.mcp("other__query"));
+    assert!(!server.mcp("srvx__query"));
+}
+
+#[test]
+fn an_mcp_allow_the_deny_list_covers_does_not_resolve() {
+    let allow = list(&["mcp__srv__x"]);
+    for deny in [["mcp__srv"], ["mcp__srv__x"], ["mcp__srv__*"], ["mcp__*"]] {
+        let scope = Scope::new(Some(allow.as_slice()), Some(list(&deny).as_slice()));
+        assert!(!scope.resolves(), "{deny:?}");
+    }
+    let partial = Scope::new(
+        Some(list(&["mcp__srv"]).as_slice()),
+        Some(list(&["mcp__srv__x"]).as_slice()),
+    );
+    assert!(partial.resolves());
+    assert!(partial.mcp("srv__y"));
+    assert!(!partial.mcp("srv__x"));
+}
+
+#[test]
+fn mail_tools_follow_the_tools_list() {
+    use crate::mail::Tool as Mail;
+    let narrow = Scope::new(Some(list(&["Read", "Edit"]).as_slice()), None);
+    assert!(!narrow.mail(Mail::Send));
+    assert!(!narrow.mail(Mail::Board));
+    let messaging = Scope::new(Some(list(&["Read", "SendMessage"]).as_slice()), None);
+    for tool in [Mail::Send, Mail::Board, Mail::Inbox, Mail::Agents] {
+        assert!(messaging.mail(tool), "{tool:?}");
+    }
+    let one = Scope::new(None, Some(list(&["board"]).as_slice()));
+    assert!(one.mail(Mail::Send));
+    assert!(!one.mail(Mail::Board));
+    assert!(Scope::default().mail(Mail::Send));
+}

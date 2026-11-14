@@ -74,6 +74,15 @@ pub(crate) fn commands(workspace: &Path) -> Vec<Command> {
     all
 }
 
+/// One note per frontmatter key that the user's and the workspace's own commands set and summonr does not apply.
+pub(crate) fn notes(workspace: &Path) -> Vec<String> {
+    folders(workspace)
+        .iter()
+        .flat_map(load)
+        .flat_map(|command| command.meta.notes("command", &command.name))
+        .collect()
+}
+
 fn folders(workspace: &Path) -> Vec<Plugin> {
     let mut folders = vec![
         Plugin::at(
@@ -232,15 +241,11 @@ fn mapped(plugin: &Plugin, name: &str, entry: &Value) -> Option<Command> {
     if let Some(hint) = field(HINT) {
         hint.clone_into(&mut command.meta.hint);
     }
-    if let Some(model) = field(MODEL) {
-        command.meta.model = Some(model.to_owned());
-    }
-    if let Some(tools) = entry.get(TOOLS).and_then(Value::as_array) {
-        command.meta.allowed_tools = tools
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect();
+    for key in [MODEL, TOOLS]
+        .into_iter()
+        .filter(|key| entry.get(key).is_some())
+    {
+        command.meta.skip(key);
     }
     Some(command)
 }

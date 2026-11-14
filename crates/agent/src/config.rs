@@ -26,7 +26,7 @@ pub(crate) struct File {
     pub theme: Option<String>,
     pub background: Option<summonr_types::Background>,
     pub notify: Option<summonr_types::Notify>,
-    pub splash: Option<bool>,
+    pub splash: Option<crate::prefs::Splash>,
     pub will: Option<bool>,
     pub will_tint: Option<crate::prefs::Tint>,
     pub will_spot: Option<[i32; 2]>,

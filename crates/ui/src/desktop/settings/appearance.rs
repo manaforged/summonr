@@ -104,9 +104,15 @@ fn display(app: &App) -> NodeBuilder {
             switch(
                 "New agent artwork",
                 Some("Show artwork behind an empty agent"),
-                prefs.splash,
+                prefs.splash.shown(),
                 move |_| {
-                    splash.flip(|prefs| prefs.splash = !prefs.splash);
+                    splash.flip(|prefs| {
+                        prefs.splash = if prefs.splash.shown() {
+                            summonr_agent::prefs::Splash::Off
+                        } else {
+                            summonr_agent::prefs::Splash::ON
+                        };
+                    });
                 },
             ),
             slider(

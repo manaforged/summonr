@@ -12,27 +12,9 @@ use crate::canvas::rgb;
 const ENTRANCE: f64 = 0.45;
 const SCALE: f32 = 0.96;
 const IRON: Color = rgb(28, 29, 26);
-const WIRE: Color = rgb(86, 86, 80);
-const BONE: Color = rgb(236, 231, 220);
-const VIEW: (f32, f32, f32) = (48.0, 3.0, 412.0);
-const GLYPH: [(f32, f32); 12] = [
-    (92.0, 124.0),
-    (344.0, 124.0),
-    (344.0, 172.0),
-    (140.0, 172.0),
-    (140.0, 212.0),
-    (344.0, 212.0),
-    (344.0, 348.0),
-    (92.0, 348.0),
-    (92.0, 300.0),
-    (296.0, 300.0),
-    (296.0, 260.0),
-    (92.0, 260.0),
-];
-const LAYERS: u8 = 18;
-const DETAIL: f32 = 40.0;
-const FACE: f32 = 12.0;
-const FACE_MIN: f32 = 1.5;
+const FILL: f32 = 0.82;
+const SMALL: f32 = 32.0;
+const SNAP: f32 = 2.0;
 
 /// The summonr.dev badge at `size` points, settling in once unless motion is reduced.
 pub(super) fn mark(size: f32) -> NodeBuilder {
@@ -65,53 +47,40 @@ fn entrance(settled: Signal<bool>, size: f32) -> NodeBuilder {
         .drive(sigil::animation::Property::ScaleY, scale)
 }
 
-/// The summonr.dev badge: an iron tile with layered wire behind the bone mark.
+/// The summonr.dev badge: an iron tile with the pixel Will on it.
 pub(super) fn badge(size: f32) -> NodeBuilder {
     container()
         .width(size)
         .height(size)
         .shrink(0.0)
         .background(IRON)
-        .radius(if size < 32.0 { Radius::Sm } else { Radius::Lg })
+        .radius(if size < SMALL { Radius::Sm } else { Radius::Lg })
         .border_width(1)
         .border_color(super::style::OUTLINE)
         .child(sigil::widgets::canvas(draw).fill())
 }
 
 fn draw(scene: &mut SceneBuilder, area: Rect) {
-    let unit = area.width / VIEW.2;
-    let origin = Point::new(area.origin.x - VIEW.0 * unit, area.origin.y - VIEW.1 * unit);
-    let layers = if area.width < DETAIL { 0 } else { LAYERS };
-    for layer in (1..=layers).rev() {
-        let shift = (f32::from(layer) * 4.0, f32::from(layer) * -3.0);
-        outline(scene, origin, unit, shift, (6.0, WIRE));
-    }
-    outline(
-        scene,
-        origin,
-        unit,
-        (0.0, 0.0),
-        (FACE.max(FACE_MIN / unit), BONE),
-    );
-}
-
-fn outline(
-    scene: &mut SceneBuilder,
-    origin: Point,
-    unit: f32,
-    shift: (f32, f32),
-    (width, color): (f32, Color),
-) {
-    for (at, from) in GLYPH.iter().enumerate() {
-        let to = GLYPH[(at + 1) % GLYPH.len()];
-        let half = width / 2.0;
-        let left = from.0.min(to.0) - half + shift.0;
-        let top = from.1.min(to.1) - half + shift.1;
-        let rect = Rect::new(
-            Point::new(origin.x + left * unit, origin.y + top * unit),
-            ((from.0 - to.0).abs() + width) * unit,
-            ((from.1 - to.1).abs() + width) * unit,
-        );
-        scene.draw_rect(DrawRect::new(rect, color));
+    use crate::scene::sprite::{Pixel, Size, frame};
+    let size = if area.width < SMALL { Size::Compact } else { Size::Banner };
+    let pixels = frame(size, 0, true);
+    let rows = pixels.len() as f32;
+    let cols = pixels.first().map_or(1, Vec::len) as f32;
+    let unit = ((area.width * FILL / cols).min(area.height * FILL / rows) * SNAP).floor().max(1.0) / SNAP;
+    let left = area.origin.x + (area.width - cols * unit) / 2.0;
+    let top = area.origin.y + (area.height - rows * unit) / 2.0;
+    let ink = crate::will::will_ink(summonr_agent::prefs::Tint::Auto, false);
+    for (y, line) in pixels.iter().enumerate() {
+        for (x, pixel) in line.iter().enumerate() {
+            let colour = match pixel {
+                Pixel::Empty => continue,
+                Pixel::Edge => ink.edge,
+                Pixel::Mid => ink.mid,
+                Pixel::Core => ink.core,
+                Pixel::Eye => ink.eye,
+            };
+            let at = Point::new(left + x as f32 * unit, top + y as f32 * unit);
+            scene.draw_rect(DrawRect::new(Rect::new(at, unit, unit), colour));
+        }
     }
 }

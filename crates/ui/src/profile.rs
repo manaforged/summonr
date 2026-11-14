@@ -268,7 +268,7 @@ pub(super) fn info() -> Info {
         pick: None,
         prefs: Prefs {
             animations: false,
-            splash: false,
+            splash: summonr_agent::prefs::Splash::Off,
             ..Prefs::default()
         },
         splash: false,

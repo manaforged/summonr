@@ -135,6 +135,75 @@ impl Reaction {
     }
 }
 
+/// The startup screen: off, the classic mark, or Will on one of four backdrops.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Splash {
+    #[default]
+    Off,
+    Classic,
+    Plain,
+    Motes,
+    Atmosphere,
+    Sky,
+}
+
+impl Splash {
+    /// Every splash, in the order Settings cycles them.
+    pub const ALL: [Self; 6] = [
+        Self::Off,
+        Self::Classic,
+        Self::Plain,
+        Self::Motes,
+        Self::Atmosphere,
+        Self::Sky,
+    ];
+
+    /// The splash a plain `true` in the config file turns on.
+    pub const ON: Self = Self::Atmosphere;
+
+    /// The splash's name in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Classic => "classic",
+            Self::Plain => "plain",
+            Self::Motes => "motes",
+            Self::Atmosphere => "atmosphere",
+            Self::Sky => "sky",
+        }
+    }
+
+    /// The splash after this one in Settings.
+    pub fn next(self) -> Self {
+        let at = Self::ALL.iter().position(|each| *each == self).unwrap_or(0);
+        Self::ALL[(at + 1) % Self::ALL.len()]
+    }
+
+    /// Whether the startup screen shows at all.
+    pub fn shown(self) -> bool {
+        self != Self::Off
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Splash {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Switch(bool),
+            Name(String),
+        }
+        match Raw::deserialize(deserializer)? {
+            Raw::Switch(true) => Ok(Self::ON),
+            Raw::Switch(false) => Ok(Self::Off),
+            Raw::Name(name) => Self::ALL
+                .into_iter()
+                .find(|each| each.name() == name)
+                .ok_or_else(|| serde::de::Error::custom(format!("unknown splash `{name}`"))),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Spinner {
@@ -164,7 +233,7 @@ pub struct Prefs {
     pub theme: String,
     pub background: Background,
     pub notify: Notify,
-    pub splash: bool,
+    pub splash: Splash,
     pub will: bool,
     pub will_tint: Tint,
     pub will_spot: [i32; 2],
@@ -189,7 +258,7 @@ impl Default for Prefs {
             theme: AUTO_THEME.to_string(),
             background: Background::default(),
             notify: Notify::All,
-            splash: false,
+            splash: Splash::Off,
             will: false,
             will_tint: Tint::Auto,
             will_spot: [24, 120],

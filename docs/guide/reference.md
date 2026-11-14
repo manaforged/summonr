@@ -211,7 +211,7 @@ Top-level keys in `~/.summonr/config.toml`:
 
 | Key | Values | Effect |
 | --- | --- | --- |
-| `splash` | `true`, `false` (default) | Show the decorative startup screen. |
+| `splash` | `off` (default), `classic`, `plain`, `motes`, `atmosphere`, `sky`; `true` means `atmosphere` | The startup screen: the classic mark, or pixel Will on a plain, mote, cleared-sky or glass-card backdrop. `/settings` cycles it. |
 | `output_style` | A style name, matched exactly; default none | The [output style](extending.md#add-an-output-style) new sessions start with. A trusted workspace `.summonr/config.toml` overrides it. A plugin style with `force-for-plugin: true` overrides both. |
 | `usage` | `off = ["NAME", …]`, `[[usage.plan]]` | Plans for `summonr endpoint usage`: `off` skips plans by name. Each `[[usage.plan]]` adds one with `name`, `shape` (`codex`, `zai`, `antigravity`, or `windows` for a list of `{group, minutes, used, resets}`), and a source: `command = [...]` that prints JSON (with `stdin = [lines]` and `reply = "/json/pointer"`, summonr writes the lines and takes the first printed line that has the pointer); `file` with JSON; or `url` with `via` (a URL prefix of a set-up endpoint's `base_url` or OAuth `token_url`, whose login is used); or `url` with `token`. `token` and each `headers` value is text, `{ file, pointer }`, or `{ command, pointer }` (a JSON pointer into the file or the output). `installed = "PROGRAM"` and `os = "macos"` limit where a plan applies. Settings → Usage shows the saved readings and reads again every 30 minutes while it shows; one read runs at a time. `every_secs = N` sets the interval; `every_secs = 0` reads only on `summonr endpoint usage`. |
 | `import_claude_settings` | `true`, `false` (default) | Read Claude Code's `settings.json` files for hooks, deny and ask rules, `env`, and `outputStyle`; see [Claude Code settings](#claude-code-settings). |
@@ -607,6 +607,7 @@ On macOS the interface shows `alt` as `⌥`, so `alt+d` reads `⌥D`.
 | `alt+p` | in `/model`, adds or removes the selected model from favorites | |
 | `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
+| `F8` | cycle the splash mode | |
 | `←` `→` | in `/model`, `/login`, and `/usage`, switch between the Models, Providers, and Usage tabs; `ctrl+←` `ctrl+→` also work, and `↑` `↓` change the range in Usage | |
 | `shift+enter` `alt+enter` | newline; macOS Terminal sends `alt+enter` for Shift+Return | same |
 | `ctrl+j` | newline (default; editable in options) | |

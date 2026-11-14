@@ -12,10 +12,21 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let shape = app.clone();
     let place = derived(move || {
         let (cols, rows) = shape.viewport.get();
-        (rows, scene::window_area(&shape, cols, rows))
+        let mode = shape.model.with(|model| model.prefs.splash);
+        (rows, scene::window_area(&shape, cols, rows), mode)
     });
+    let splash = app.model.with(|model| model.prefs.splash);
+    let backdrop = match splash {
+        summonr_agent::prefs::Splash::Plain | summonr_agent::prefs::Splash::Motes => {
+            scene::ground(splash)
+        }
+        summonr_agent::prefs::Splash::Off
+        | summonr_agent::prefs::Splash::Classic
+        | summonr_agent::prefs::Splash::Atmosphere
+        | summonr_agent::prefs::Splash::Sky => scene::stage().scrim,
+    };
     container()
-        .background(scene::stage().scrim)
+        .background(backdrop)
         .fill_width()
         .fill_height()
         .child(scene::layer(surface))
@@ -26,7 +37,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .fill_width()
                 .fill_height()
                 .children_reactive(move || {
-                    let (rows, area) = place.get();
+                    let (rows, area, _mode) = place.get();
                     vec![untrack(|| window(app.clone(), rows, area))]
                 }),
         )
@@ -37,10 +48,10 @@ fn window(app: App, rows: u16, [x, y, width, card_rows]: [u16; 4]) -> NodeBuilde
     let spacer = app.clone();
     let inner = width.saturating_sub(4);
     let colours = scene::stage();
-    let tint = Color {
+    let tint = scene::panel(app.model.with(|model| model.prefs.splash)).unwrap_or(Color {
         a: (colours.pane * 255.0) as u8,
         ..colours.plate
-    };
+    });
     let clear = super::super::theme::style(super::super::theme::palette()).token(
         "surface",
         ThemeValue::Color(Color {

@@ -133,7 +133,7 @@ fn info(
     workflow: Option<workflow::Workflow>,
 ) -> Result<summonr_agent::hub::Info> {
     let prefs = summonr_agent::prefs::load()?;
-    let splash = prefs.splash && !args.no_splash;
+    let splash = prefs.splash.shown() && !args.no_splash;
     Ok(summonr_agent::hub::Info {
         trust: args.trust,
         version: env!("CARGO_PKG_VERSION").to_string(),

@@ -7,6 +7,9 @@ use super::*;
 pub(crate) fn window_area(app: &App, cols: u16, rows: u16) -> [u16; 4] {
     let model = app.model.get();
     let facts = facts(&model, app);
+    if super::lockup::drawn(model.prefs.splash) {
+        return super::lockup::window_area(cols, rows, &facts);
+    }
     let [body_width, body_rows] = body(cols, fitting(cols, rows, &facts), &facts);
     let [_, _, x, y, width] = layout(cols, rows, body_width, body_rows);
     [x, y, width, body_rows + 2]

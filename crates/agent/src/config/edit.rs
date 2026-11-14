@@ -14,7 +14,11 @@ pub(crate) fn save_prefs(path: &Path, before: &Prefs, prefs: &Prefs) -> Result<(
                 before.notify != prefs.notify,
                 value(prefs.notify.name()),
             ),
-            ("splash", before.splash != prefs.splash, value(prefs.splash)),
+            (
+                "splash",
+                before.splash != prefs.splash,
+                value(prefs.splash.name()),
+            ),
             ("will", before.will != prefs.will, value(prefs.will)),
             (
                 "will_tint",

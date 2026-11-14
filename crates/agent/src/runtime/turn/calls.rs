@@ -8,16 +8,13 @@ impl<P: Provider> Loop<P> {
         &mut self,
         planned: Vec<Call>,
         calls: Vec<ToolCall>,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<()> {
-        let (planned, calls) = self.screen(planned, calls, messages, events, emit).await?;
+        let (planned, calls) = self.screen(planned, calls, events, emit).await?;
         if self.interrupted() {
-            return self
-                .run_serial(planned, calls, messages, events, emit, usage)
-                .await;
+            return self.run_serial(planned, calls, events, emit, usage).await;
         }
         if calls.is_empty() {
             return Ok(());
@@ -25,43 +22,57 @@ impl<P: Provider> Loop<P> {
         if calls.iter().all(|call| readonly(&call.function.name)) {
             let outputs = self.run_readonly(&calls, events, emit).await?;
             let batch = planned.into_iter().zip(calls).zip(outputs).collect();
-            return self
-                .finish_batch(batch, messages, events, emit, usage)
-                .await;
+            return self.finish_batch(batch, events, emit, usage).await;
         }
-        let is_task = |call: &ToolCall| Builtin::is(&call.function.name, Builtin::Task);
-        let is_read = |call: &ToolCall| readonly(&call.function.name);
         let mut pending = planned.into_iter().zip(calls).peekable();
         while let Some((planned, call)) = pending.next() {
-            let read = is_read(&call);
-            if !(read || is_task(&call)) || self.interrupted() {
-                self.run_serial(vec![planned], vec![call], messages, events, emit, usage)
-                    .await?;
-                continue;
-            }
-            let mut group = vec![(planned, call)];
-            while let Some(next) =
-                pending.next_if(|(_, call)| if read { is_read(call) } else { is_task(call) })
-            {
-                group.push(next);
-            }
-            let calls: Vec<ToolCall> = group.iter().map(|(_, call)| call.clone()).collect();
-            let outputs = if read {
-                self.run_readonly(&calls, events, emit).await?
-            } else {
-                self.run_tasks(&calls, events, emit).await
-            };
-            let batch = group.into_iter().zip(outputs).collect();
-            self.finish_batch(batch, messages, events, emit, usage)
+            self.execute_next_group(planned, call, &mut pending, events, emit, usage)
                 .await?;
         }
         Ok(())
     }
 
+    async fn execute_next_group(
+        &mut self,
+        planned: Call,
+        call: ToolCall,
+        pending: &mut std::iter::Peekable<
+            std::iter::Zip<std::vec::IntoIter<Call>, std::vec::IntoIter<ToolCall>>,
+        >,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<()> {
+        let read = readonly(&call.function.name);
+        let is_task = Builtin::is(&call.function.name, Builtin::Task);
+        if !(read || is_task) || self.interrupted() {
+            return self
+                .run_serial(vec![planned], vec![call], events, emit, usage)
+                .await;
+        }
+        let mut group = vec![(planned, call)];
+        while let Some(next) = pending.next_if(|(_, item)| {
+            if read {
+                readonly(&item.function.name)
+            } else {
+                Builtin::is(&item.function.name, Builtin::Task)
+            }
+        }) {
+            group.push(next);
+        }
+        let calls: Vec<ToolCall> = group.iter().map(|(_, item)| item.clone()).collect();
+        let outputs = if read {
+            self.run_readonly(&calls, events, emit).await?
+        } else {
+            self.run_tasks(&calls, events, emit).await
+        };
+        let batch = group.into_iter().zip(outputs).collect();
+        self.finish_batch(batch, events, emit, usage).await
+    }
+
     async fn finish_batch(
         &mut self,
         batch: Vec<((Call, ToolCall), Ran)>,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
@@ -70,7 +81,7 @@ impl<P: Provider> Loop<P> {
             if let Some(child_usage) = child_usage {
                 usage.add(&child_usage);
             }
-            self.finish_call(planned, call, (output, millis), messages, events, emit)
+            self.finish_call(planned, call, (output, millis), events, emit)
                 .await?;
         }
         Ok(())
@@ -140,7 +151,6 @@ impl<P: Provider> Loop<P> {
         &mut self,
         planned: Vec<Call>,
         calls: Vec<ToolCall>,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
@@ -155,7 +165,6 @@ impl<P: Provider> Loop<P> {
                 planned,
                 call,
                 (output, super::elapsed_millis(started)),
-                messages,
                 events,
                 emit,
             )
@@ -277,7 +286,6 @@ impl<P: Provider> Loop<P> {
         planned: Call,
         call: ToolCall,
         result: (Result<ToolOutput>, u64),
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
@@ -293,7 +301,7 @@ impl<P: Provider> Loop<P> {
             Err(error) => (false, false, error.to_string(), Vec::new(), None),
         };
         let mut text = self.tool_text(&call, success, text).await;
-        if let Some(nudge) = super::repeat::nudge(messages, &call.function, &text) {
+        if let Some(nudge) = super::repeat::nudge(self.session.history(), &call.function, &text) {
             text.push_str(&nudge);
             self.push_event(
                 events,
@@ -305,14 +313,10 @@ impl<P: Provider> Loop<P> {
         }
         self.session
             .finish_tool(planned, text.as_str(), success, mutated, millis, patch)?;
+        self.session.attach_tool_images(images);
         self.emit_records(events, emit)?;
         let todo = success && Builtin::is(&call.function.name, Builtin::Todo);
         let arguments = call.function.arguments.clone();
-        messages.push(Message {
-            failed: !success,
-            images,
-            ..Message::tool(call.id, text)
-        });
         if todo {
             self.record_todos(&arguments, events, emit)?;
         }

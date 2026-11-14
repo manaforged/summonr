@@ -3,9 +3,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use summonr_core::dirs::summonr_home;
-use summonr_types::{Message, Role};
 
 const IMAGE_SECTION: (&str, &str) = ("<image_input>", "</image_input>");
+const IMAGE_ON: &str = "<image_input>\nThe model accepts image input.\n</image_input>";
+const IMAGE_OFF: &str = "<image_input>\nThe model does not accept image input. Do not attach images; describe them or ask the user for text instead.\n</image_input>";
 
 #[derive(Clone, Copy, Default)]
 pub struct Sources<'a> {
@@ -67,41 +68,27 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
         parts.push(section);
     }
     parts.push(format!("<cwd>{}</cwd>", workspace.display()));
-    parts.push(image_section(images));
+    parts.push(image_section(images).to_string());
     parts.join("\n\n")
 }
 
-fn image_section(images: bool) -> String {
-    let text = if images {
-        "The model accepts image input."
-    } else {
-        "The model does not accept image input. Do not attach images; describe them or ask the user for text instead."
-    };
-    format!("{}\n{text}\n{}", IMAGE_SECTION.0, IMAGE_SECTION.1)
+fn image_section(images: bool) -> &'static str {
+    if images { IMAGE_ON } else { IMAGE_OFF }
 }
 
 /// Refresh only Summonr's trailing image guidance for the selected receiver.
-pub(crate) fn model_messages(messages: &[Message], images: bool) -> Cow<'_, [Message]> {
-    let Some(system) = messages
-        .first()
-        .filter(|message| message.role == Role::System)
-    else {
-        return Cow::Borrowed(messages);
-    };
+pub(crate) fn model_system(system: &str, images: bool) -> Cow<'_, str> {
     let Some((prefix, _)) = system
-        .content
         .strip_suffix(IMAGE_SECTION.1)
         .and_then(|body| body.rsplit_once(IMAGE_SECTION.0))
     else {
-        return Cow::Borrowed(messages);
+        return Cow::Borrowed(system);
     };
     let section = image_section(images);
-    if system.content.ends_with(&section) {
-        return Cow::Borrowed(messages);
+    if system.ends_with(section) {
+        return Cow::Borrowed(system);
     }
-    let mut updated = messages.to_vec();
-    updated[0].content = format!("{prefix}{section}");
-    Cow::Owned(updated)
+    Cow::Owned(format!("{prefix}{section}"))
 }
 
 pub(crate) struct Harness<'a> {

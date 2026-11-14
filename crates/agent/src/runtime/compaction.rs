@@ -45,18 +45,9 @@ pub(super) fn estimate(chars: usize, sample: Option<(usize, u32)>) -> usize {
 }
 
 impl<P: Provider> Loop<P> {
-    pub(super) fn rewrite(
-        &mut self,
-        messages: &mut [Message],
-        edits: Vec<(usize, Message)>,
-    ) -> Result<()> {
+    pub(super) fn rewrite(&mut self, edits: Vec<(usize, Message)>) -> Result<()> {
         if edits.is_empty() {
             return Ok(());
-        }
-        for (index, message) in &edits {
-            if let Some(slot) = messages.get_mut(index + 1) {
-                slot.clone_from(message);
-            }
         }
         self.session.rewrite(edits)?;
         Ok(())
@@ -64,11 +55,11 @@ impl<P: Provider> Loop<P> {
 
     async fn summarize(
         &mut self,
-        system: &Message,
+        system: &str,
         slice: &[Message],
     ) -> Result<Option<AssistantMessage>> {
         let mut request_messages = Vec::with_capacity(slice.len() + 2);
-        request_messages.push(system.clone());
+        request_messages.push(Message::system(system.to_string()));
         request_messages.extend_from_slice(slice);
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let advertised = self.advertised_tools();
@@ -103,16 +94,14 @@ impl<P: Provider> Loop<P> {
 
     async fn summarize_until(
         &mut self,
-        messages: &[Message],
         keep_from: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<String>> {
-        let Some(reply) = self
-            .summarize(&messages[0], &messages[1..keep_from])
-            .await?
-        else {
+        let system = self.system_prompt.clone();
+        let slice = self.session.history()[..keep_from].to_vec();
+        let Some(reply) = self.summarize(&system, &slice).await? else {
             return Ok(None);
         };
         usage.add(&reply.usage);
@@ -121,7 +110,8 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config(reason));
         }
         let summary = reply.content.unwrap_or_default();
-        self.session.compact(&summary, &messages[keep_from..])?;
+        let tail = self.session.history()[keep_from..].to_vec();
+        self.session.compact(&summary, &tail)?;
         self.tools.forget_reads();
         self.outputs_cleared = false;
         Ok(Some(summary))
@@ -129,7 +119,6 @@ impl<P: Provider> Loop<P> {
 
     pub(super) async fn auto_compact(
         &mut self,
-        messages: &mut Vec<Message>,
         tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
@@ -138,14 +127,14 @@ impl<P: Provider> Loop<P> {
         if self.summary_wait > 0 {
             return Ok(false);
         }
-        let parts = self.measure_parts(messages, tool_bytes);
+        let parts = self.measure_parts(self.session.history(), tool_bytes);
         self.prompt_parts = parts;
         let chars = parts.0 + parts.2 + parts.3;
         let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
         let known = self.known_window();
         if let Some(window) = known
             && !self.outputs_cleared
-            && self.clear_old_outputs(messages, chars, estimated_tokens, window)?
+            && self.clear_old_outputs(chars, estimated_tokens, window)?
         {
             self.outputs_cleared = true;
             return Ok(true);
@@ -156,11 +145,13 @@ impl<P: Provider> Loop<P> {
         };
         let keep = self.provider.keeps_reasoning();
         let compact_chars = crate::limits::limits().compact_chars;
-        if messages.len() < 8 {
+        let history = self.session.history();
+        if history.len() < 7 {
             return Ok(false);
         }
         let tail_chars = tail_chars(window, chars, estimated_tokens, compact_chars);
-        let Some(keep_from) = compact_boundary(messages, tail_chars, keep, self.session.opener())
+        let Some(keep_from) =
+            compact_history_boundary(history, tail_chars, keep, self.session.opener())
         else {
             return Ok(false);
         };
@@ -170,13 +161,10 @@ impl<P: Provider> Loop<P> {
             window,
             keep_from,
         };
-        if self.elide_stale(messages, &size)? {
+        if self.elide_stale(&size)? {
             return Ok(true);
         }
-        let Some(summary) = self
-            .summarize_until(messages, keep_from, usage, events, emit)
-            .await?
-        else {
+        let Some(summary) = self.summarize_until(keep_from, usage, events, emit).await? else {
             self.summary_wait = crate::limits::limits().summary_retry_rounds;
             self.push_event(
                 events,
@@ -191,27 +179,25 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(false);
         };
-        messages.truncate(1);
-        messages.extend(self.session.history().iter().cloned());
         self.compact_hook(&summary, events, emit).await?;
         Ok(true)
     }
 
     fn measure_parts(
         &self,
-        messages: &[Message],
+        history: &[Message],
         tool_bytes: usize,
     ) -> (usize, usize, usize, usize) {
         let keep = self.provider.keeps_reasoning();
-        let mut system = 0;
+        let mut system = self.system_prompt.len();
         let mut tools = 0;
         let mut other = 0;
-        for message in messages {
+        for message in history {
             let chars = message_chars(message, keep);
             match message.role {
                 Role::System => system += chars,
                 Role::Tool => tools += chars,
-                _ => other += chars,
+                Role::User | Role::Assistant => other += chars,
             }
         }
         (system, tool_bytes, tools, other)
@@ -253,24 +239,17 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) async fn compact_with(&mut self, mut emit: impl FnMut(&Event)) -> Result<bool> {
-        let mut messages = Vec::with_capacity(self.session.history().len() + 1);
-        messages.push(Message::system(self.system_prompt.clone()));
-        messages.extend(self.session.history().iter().cloned());
-        let Some(keep_from) = messages
+        let Some(keep_from) = self
+            .session
+            .history()
             .iter()
             .rposition(|message| message.role == Role::User)
-            .filter(|index| *index > 1)
+            .filter(|index| *index > 0)
         else {
             return Ok(false);
         };
         if self
-            .summarize_until(
-                &messages,
-                keep_from,
-                &mut Usage::default(),
-                &mut Vec::new(),
-                &mut emit,
-            )
+            .summarize_until(keep_from, &mut Usage::default(), &mut Vec::new(), &mut emit)
             .await?
             .is_none()
         {
@@ -319,18 +298,38 @@ fn tail_chars(
     })
 }
 
-fn tail_start(messages: &[Message], target_chars: usize, reasoning_on_wire: bool) -> usize {
+fn tail_start(messages: &[Message], lead: usize, target_chars: usize, reasoning_on_wire: bool) -> usize {
     let mut chars = 0;
     let mut start = messages.len();
-    while start > 1 && chars < target_chars {
+    while start > lead && chars < target_chars {
         start -= 1;
         chars += message_chars(&messages[start], reasoning_on_wire);
     }
     start
 }
 
+fn compact_history_boundary(
+    history: &[Message],
+    target_chars: usize,
+    reasoning_on_wire: bool,
+    opener: Option<usize>,
+) -> Option<usize> {
+    boundary_in(history, 0, target_chars, reasoning_on_wire, opener)
+}
+
+#[cfg(test)]
 fn compact_boundary(
     messages: &[Message],
+    target_chars: usize,
+    reasoning_on_wire: bool,
+    opener: Option<usize>,
+) -> Option<usize> {
+    boundary_in(messages, 1, target_chars, reasoning_on_wire, opener)
+}
+
+fn boundary_in(
+    messages: &[Message],
+    lead: usize,
     target_chars: usize,
     reasoning_on_wire: bool,
     opener: Option<usize>,
@@ -338,15 +337,15 @@ fn compact_boundary(
     let summary = messages
         .iter()
         .rposition(|message| message.role == Role::System)
-        .map_or(1, |index| index + 1);
+        .map_or(lead, |index| index + 1);
     let floor = opener
-        .map_or(1, |index| (index + 2).min(messages.len()))
+        .map_or(lead, |index| (index + 1 + lead).min(messages.len()))
         .max(summary);
-    let mut start = tail_start(messages, target_chars, reasoning_on_wire).max(floor);
+    let mut start = tail_start(messages, lead, target_chars, reasoning_on_wire).max(floor);
     while start > floor && messages.get(start).is_some_and(|m| m.role == Role::Tool) {
         start -= 1;
     }
-    (start > 1).then_some(start)
+    (start > lead).then_some(start)
 }
 
 #[cfg(test)]

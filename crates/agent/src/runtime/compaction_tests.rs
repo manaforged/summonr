@@ -467,3 +467,34 @@ async fn old_tool_outputs_clear_once_in_one_batch_before_the_summary_trigger() -
     assert!(output("t16").contains("0123456789"));
     Ok(())
 }
+
+#[tokio::test]
+async fn request_history_and_compaction_preserve_system_prefix_without_cloning_vec()
+-> crate::Result<()> {
+    use crate::provider::scripted::{Reply, Scripted};
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let provider = Scripted::new([
+        Reply::Text("first"),
+        Reply::Text("second"),
+        Reply::Text("summary"),
+        Reply::Text("third"),
+    ]);
+    let sent = provider.sent();
+    let driver =
+        super::super::configure::open_driver(home.path(), workspace.path(), "m", "system")?;
+    let mut session = super::super::Loop::open(provider, "m", workspace.path(), "system", driver)?;
+    session.turn("one").await?;
+    session.turn("two").await?;
+    assert!(session.compact_with(|_| {}).await?);
+    session.turn("three").await?;
+    let sent = sent.lock().expect("captured requests");
+    assert_eq!(sent.len(), 4);
+    for request in sent.iter() {
+        assert_eq!(request[0].role, Role::System);
+        assert!(request[0].content.starts_with("system"));
+    }
+    assert!(sent[3].iter().any(|m| m.content.contains("summary")));
+    assert!(sent[3].iter().any(|m| m.role == Role::User && m.content.contains("three")));
+    Ok(())
+}

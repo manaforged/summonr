@@ -46,7 +46,7 @@ pub(super) fn body(
         .rev()
         .map(|call| (call.id.as_str(), call.function.name.as_str()))
         .collect();
-    let mut system = String::new();
+    let mut system = call.system_prompt.as_deref().unwrap_or_default().to_string();
     let mut contents: Vec<Content<'_>> = Vec::new();
     for message in call.messages {
         match message.role {

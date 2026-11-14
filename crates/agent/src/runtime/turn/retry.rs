@@ -34,7 +34,6 @@ impl<P: Provider> Loop<P> {
 
     pub(super) fn take_mail(
         &mut self,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
@@ -42,7 +41,7 @@ impl<P: Provider> Loop<P> {
             let mut queue = shared
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let delivered = super::steer::drain_steer(&mut queue, &mut self.session, messages);
+            let delivered = super::steer::drain_steer(&mut queue, &mut self.session);
             drop(queue);
             for text in delivered? {
                 self.push_event(events, emit, Event::Steered { text })?;
@@ -50,7 +49,7 @@ impl<P: Provider> Loop<P> {
         }
         let (mail, overflow) = self.take_peer_mail(crate::limits::limits().mail_per_round)?;
         for mail in mail {
-            self.inject(envelope(&mail), messages)?;
+            self.inject(envelope(&mail))?;
             self.push_event(
                 events,
                 emit,
@@ -62,7 +61,7 @@ impl<P: Provider> Loop<P> {
         }
         if overflow > 0 {
             let note = format!("[summon mail: {overflow} more message(s) waiting in the inbox]");
-            self.inject(note, messages)?;
+            self.inject(note)?;
         }
         Ok(())
     }
@@ -71,71 +70,95 @@ impl<P: Provider> Loop<P> {
         &mut self,
         error: Error,
         state: &mut RetryState,
-        messages: &mut Vec<Message>,
         tools: &super::super::mail::Advertised,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<bool> {
         let failure = error.provider_failure();
-        let mut wait = failure
-            .map(|failure| crate::limits::limits().retry_wait(failure.retry_after, state.retries));
-        let retryable = match failure {
-            Some(failure) if failure.kind == ProviderFailureKind::RateLimited => {
-                if self.remaining_time().is_some() {
-                    wait = Some(
-                        crate::limits::limits().budget_wait(failure.retry_after, state.retries),
-                    );
-                }
-                self.can_wait(wait, state.retries)
-            }
-            _ => {
-                state.retries < crate::limits::limits().retry_limit
-                    && failure.is_some_and(retryable_failure)
-            }
-        };
-        let kind = failure.map(|failure| failure.kind);
+        let (retryable, wait) = self.retry_wait_budget(failure, state.retries);
         if self.round_abort().is_some() {
             return Ok(false);
         }
-        let text = error.to_string();
-        if kind == Some(ProviderFailureKind::MalformedToolCall) {
-            if state.repairs >= crate::limits::limits().repair_limit {
-                return Err(error);
-            }
-            state.repairs += 1;
-            self.repair_call(messages, events, emit)?;
+        let Some(error) = self
+            .recover_provider_kind(
+                failure.map(|item| item.kind),
+                error,
+                state,
+                tools.json.len(),
+                events,
+                emit,
+            )
+            .await?
+        else {
             return Ok(true);
-        }
-        if kind == Some(ProviderFailureKind::Empty) && !state.continued {
-            state.continued = true;
-            self.continue_empty(messages, events, emit)?;
-            return Ok(true);
-        }
-        if kind == Some(ProviderFailureKind::ContextOverflow) {
-            if state.overflows >= crate::limits::limits().repair_limit {
-                return Err(error);
-            }
-            state.overflows += 1;
-            if !self
-                .recover_overflow(
-                    &text,
-                    messages,
-                    tools.json.len(),
-                    &mut state.usage,
-                    events,
-                    emit,
-                )
-                .await?
-            {
-                return Err(error);
-            }
-            return Ok(true);
-        }
+        };
         self.retry_or_fall_back(error, retryable, state, events, emit)?;
         if retryable && let Some(wait) = wait {
             tokio::time::sleep(wait).await;
         }
         Ok(true)
+    }
+
+    fn retry_wait_budget(
+        &self,
+        failure: Option<&summonr_core::error::ProviderFailure>,
+        retries: u32,
+    ) -> (bool, Option<Duration>) {
+        let mut wait =
+            failure.map(|item| crate::limits::limits().retry_wait(item.retry_after, retries));
+        let retryable = if let Some(item) = failure
+            && item.kind == ProviderFailureKind::RateLimited
+        {
+            if self.remaining_time().is_some() {
+                wait = Some(crate::limits::limits().budget_wait(item.retry_after, retries));
+            }
+            self.can_wait(wait, retries)
+        } else {
+            retries < crate::limits::limits().retry_limit
+                && failure.is_some_and(retryable_failure)
+        };
+        (retryable, wait)
+    }
+
+    async fn recover_provider_kind(
+        &mut self,
+        kind: Option<ProviderFailureKind>,
+        error: Error,
+        state: &mut RetryState,
+        tool_bytes: usize,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<Error>> {
+        match kind {
+            Some(ProviderFailureKind::MalformedToolCall) => {
+                if state.repairs >= crate::limits::limits().repair_limit {
+                    return Err(error);
+                }
+                state.repairs += 1;
+                self.repair_call(events, emit)?;
+                Ok(None)
+            }
+            Some(ProviderFailureKind::Empty) if !state.continued => {
+                state.continued = true;
+                self.continue_empty(events, emit)?;
+                Ok(None)
+            }
+            Some(ProviderFailureKind::ContextOverflow) => {
+                if state.overflows >= crate::limits::limits().repair_limit {
+                    return Err(error);
+                }
+                state.overflows += 1;
+                let text = error.to_string();
+                if !self
+                    .recover_overflow(&text, tool_bytes, &mut state.usage, events, emit)
+                    .await?
+                {
+                    return Err(error);
+                }
+                Ok(None)
+            }
+            Some(_) | None => Ok(Some(error)),
+        }
     }
 
     fn can_wait(&self, wait: Option<Duration>, retries: u32) -> bool {
@@ -186,17 +209,15 @@ impl<P: Provider> Loop<P> {
 
     fn repair_call(
         &mut self,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        let edits = repair_arguments(&messages[1..]);
-        self.rewrite(messages, edits)?;
+        let edits = repair_arguments(self.session.history());
+        self.rewrite(edits)?;
         self.inject(
             "[summon control: the provider rejected the previous tool call because \
              its arguments were invalid JSON.]"
                 .to_string(),
-            messages,
         )?;
         self.push_event(
             events,
@@ -209,13 +230,11 @@ impl<P: Provider> Loop<P> {
 
     fn continue_empty(
         &mut self,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         self.inject(
             "[summon control: the previous reply was empty. Please continue the task.]".to_string(),
-            messages,
         )?;
         self.push_event(
             events,
@@ -229,7 +248,6 @@ impl<P: Provider> Loop<P> {
     async fn recover_overflow(
         &mut self,
         text: &str,
-        messages: &mut Vec<Message>,
         tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
@@ -238,15 +256,12 @@ impl<P: Provider> Loop<P> {
         if let Some(cap) = crate::provider::input_cap(text) {
             self.learn_role_window(crate::workflow::Role::Implement, cap);
         }
-        if !self
-            .auto_compact(messages, tool_bytes, usage, events, emit)
-            .await?
-        {
-            let edits = force_compact(&messages[1..]);
+        if !self.auto_compact(tool_bytes, usage, events, emit).await? {
+            let edits = force_compact(self.session.history());
             if edits.is_empty() {
                 return Ok(false);
             }
-            self.rewrite(messages, edits)?;
+            self.rewrite(edits)?;
             self.tools.forget_reads();
         }
         self.push_event(

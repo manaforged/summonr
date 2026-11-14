@@ -76,6 +76,9 @@ fn turns<'a>(
     call: &CompletionRequest<'a>,
 ) -> summonr_core::error::Result<(Vec<Value>, Vec<Turn<'a>>)> {
     let mut system = Vec::new();
+    if let Some(prompt) = &call.system_prompt {
+        system.push(json!({"type": "text", "text": prompt}));
+    }
     let mut turns: Vec<Turn<'a>> = Vec::new();
     for message in call.messages {
         match message.role {

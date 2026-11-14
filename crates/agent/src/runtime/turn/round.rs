@@ -2,12 +2,11 @@ use super::*;
 
 mod reply;
 
-use reply::Pace;
+use reply::{Pace, RoundReply};
 
 impl<P: Provider> Loop<P> {
     pub(super) async fn run_turn(
         &mut self,
-        mut messages: Vec<Message>,
         pre: &mut Pretask,
         mut emit: impl FnMut(&Event),
         events: &mut Vec<Event>,
@@ -16,34 +15,37 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Turn> {
         let abort;
         let mut pace = Pace::default();
-        let tools = self
-            .open_turn(&mut messages, usage, events, &mut emit)
-            .await?;
+        let tools = self.open_turn(usage, events, &mut emit).await?;
         loop {
             while self.budget().max_tokens.is_some() && self.child_budget_running() {
                 self.await_children(events, &mut emit, usage).await?;
             }
             *reached = reached.saturating_add(1);
             if let Some(reason) = self
-                .open_round(&mut messages, tools.json.len(), usage, events, &mut emit)
+                .open_round(tools.json.len(), usage, events, &mut emit)
                 .await?
             {
                 abort = reason;
                 break;
             }
-            let Some((assistant, request_chars, (attempt, meter, meta))) = self
-                .round_call(&mut messages, &tools, events, &mut emit)
-                .await?
+            let Some((assistant, request_chars, (attempt, meter, meta))) =
+                self.round_call(&tools, events, &mut emit).await?
             else {
                 abort = self.budget_abort().unwrap_or_else(Abort::time_limit);
                 break;
             };
             let (message, stop_reason, reasoning) =
                 self.take_reply(assistant, request_chars, usage);
-            let reply = (message, reasoning, attempt, meter, meta);
-            let scope = (&mut messages, &mut *pre, &mut *events);
+            let reply = RoundReply {
+                message,
+                reasoning,
+                attempt,
+                meter,
+                meta,
+                stop_reason,
+            };
             if let Some(message) = self
-                .take_round(reply, stop_reason, &mut pace, scope, &mut emit, usage)
+                .take_round(reply, &mut pace, pre, events, &mut emit, usage)
                 .await?
             {
                 return self
@@ -58,7 +60,6 @@ impl<P: Provider> Loop<P> {
     async fn continue_with(
         &mut self,
         reply: (Message, String, Attempt, Meter, UsageMeta),
-        messages: &mut Vec<Message>,
         pre: &mut Pretask,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -74,31 +75,28 @@ impl<P: Provider> Loop<P> {
             &calls,
             meta,
         )?;
-        messages.push(message);
         self.emit_records(events, emit)?;
         self.settle(pre, events, emit).await?;
         self.capture_deferred(events, emit)?;
         self.session.settle_base()?;
-        self.execute_calls(planned, calls, messages, events, emit, usage)
+        self.execute_calls(planned, calls, events, emit, usage)
             .await
     }
 
     async fn open_turn(
         &mut self,
-        messages: &mut Vec<Message>,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Arc<super::mail::Advertised>> {
         self.settle_mcp(events, emit).await?;
         let tools = self.advertised_tools();
-        self.scout(messages, usage, events, emit).await?;
+        self.scout(usage, events, emit).await?;
         Ok(tools)
     }
 
     async fn open_round(
         &mut self,
-        messages: &mut Vec<Message>,
         tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
@@ -108,7 +106,7 @@ impl<P: Provider> Loop<P> {
             return Ok(Some(abort));
         }
         if let Err(error) = self
-            .prepare_round(messages, tool_bytes, usage, events, emit)
+            .prepare_round(tool_bytes, usage, events, emit)
             .await
         {
             return self.budget_abort().map(Some).ok_or(error);
@@ -118,7 +116,6 @@ impl<P: Provider> Loop<P> {
 
     async fn round_call(
         &mut self,
-        messages: &mut Vec<Message>,
         tools: &super::super::mail::Advertised,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -126,54 +123,68 @@ impl<P: Provider> Loop<P> {
         let role = crate::workflow::Role::Implement;
         let mut state = super::retry::RetryState::default();
         loop {
-            let request = self.request_with(role, messages, tools);
             self.freeze_catalog();
             let options = CallOptions {
                 stream: true,
                 retry: RetryPolicy::Round,
             };
-            let Missed { error, interrupted } = match self.call(role, request, options).await? {
+            match self
+                .call(role, super::CallSource::History(tools), options)
+                .await?
+            {
                 Ok(reply) => {
                     let open = reply
                         .open
                         .ok_or_else(|| Error::Config("no provider round is open".to_string()))?;
                     return Ok(Some((reply.message, reply.chars, open)));
                 }
-                Err(missed) => missed,
-            };
-            let error = match error {
-                WaitError::Steered => {
-                    messages.extend(interrupted);
-                    let stopped = self.steered("");
-                    if !stopped.is_empty() {
-                        self.inject(stopped, messages)?;
-                    }
-                    self.emit_records(events, emit)?;
-                    self.sync_usage(emit);
-                    self.take_mail(messages, events, emit)?;
-                    if self.round_abort().is_some() {
+                Err(Missed { error }) => {
+                    if !self
+                        .handle_missed_round(error, &mut state, tools, events, emit)
+                        .await?
+                    {
                         return Ok(None);
                     }
-                    continue;
                 }
-                WaitError::Deadline(_) => None,
-                WaitError::Provider(error) => {
-                    messages.extend(interrupted);
-                    Some(error)
-                }
-            };
-            self.emit_records(events, emit)?;
-            self.sync_usage(emit);
-            let Some(error) = error else {
-                return Ok(None);
-            };
-            if !self
-                .provider_failed(error, &mut state, messages, tools, events, emit)
-                .await?
-            {
-                return Ok(None);
             }
         }
+    }
+
+    async fn handle_missed_round(
+        &mut self,
+        error: WaitError,
+        state: &mut super::retry::RetryState,
+        tools: &super::super::mail::Advertised,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<bool> {
+        let error = match error {
+            WaitError::Steered => return self.handle_steer(events, emit),
+            WaitError::Deadline(_) => None,
+            WaitError::Provider(error) => Some(error),
+        };
+        self.emit_records(events, emit)?;
+        self.sync_usage(emit);
+        let Some(error) = error else {
+            return Ok(false);
+        };
+        self.provider_failed(error, state, tools, events, emit)
+            .await
+    }
+
+    fn handle_steer(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<bool> {
+        let stopped = self.steered("");
+        if !stopped.is_empty() {
+            self.inject(stopped)?;
+        }
+        self.emit_records(events, emit)?;
+        self.sync_usage(emit);
+        self.take_mail(events, emit)?;
+        Ok(self.round_abort().is_none())
     }
 
     fn take_reply(
@@ -194,7 +205,6 @@ impl<P: Provider> Loop<P> {
 
     pub(super) async fn scout(
         &mut self,
-        messages: &mut Vec<Message>,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -218,7 +228,7 @@ impl<P: Provider> Loop<P> {
             }
         };
         self.session.set_brief(&brief)?;
-        self.inject(scout::note(&brief), messages)?;
+        self.inject(scout::note(&brief))?;
         self.push_event(
             events,
             emit,
@@ -232,7 +242,7 @@ impl<P: Provider> Loop<P> {
         &mut self,
         mut input: UserInput,
         trigger: Trigger,
-    ) -> Result<Vec<Message>> {
+    ) -> Result<&[Message]> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
@@ -266,11 +276,7 @@ impl<P: Provider> Loop<P> {
             input.text = decorate(&harness, &input.text);
         }
         self.session.start_input(&input)?;
-        let history = self.session.history();
-        let mut messages = Vec::with_capacity(history.len() + 1);
-        messages.push(Message::system(self.system_prompt.clone()));
-        messages.extend(history.iter().cloned());
-        Ok(messages)
+        Ok(self.session.history())
     }
 
     fn prefix_findings(&mut self, input: &mut crate::provider::UserInput) {
@@ -325,7 +331,6 @@ impl<P: Provider> Loop<P> {
 
     pub(super) async fn prepare_round(
         &mut self,
-        messages: &mut Vec<Message>,
         tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
@@ -333,15 +338,15 @@ impl<P: Provider> Loop<P> {
     ) -> Result<()> {
         self.mail_heartbeat(crate::mail::Presence::Working);
         self.settle_probe().await;
-        self.take_mail(messages, events, emit)?;
+        self.take_mail(events, emit)?;
         self.drain(emit);
         if self
-            .auto_compact(messages, tool_bytes, usage, events, emit)
+            .auto_compact(tool_bytes, usage, events, emit)
             .await?
         {
             let note = self.harness_note(&self.work_progress()?);
             if !note.is_empty() {
-                self.inject(note, messages)?;
+                self.inject(note)?;
             }
         }
         Ok(())

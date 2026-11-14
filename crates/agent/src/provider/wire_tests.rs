@@ -336,3 +336,32 @@ fn only_claude_3_7_among_claude_3_models_takes_a_thinking_budget() {
         assert_ne!(traits(model).thinking, Thinking::Budgeted, "{model}");
     }
 }
+
+#[test]
+fn system_prompt_field_matches_leading_system_message_on_every_wire() {
+    let history = vec![user("first"), user("second")];
+    let mut with_leading = Vec::with_capacity(history.len() + 1);
+    with_leading.push(Message::system("system rules".to_string()));
+    with_leading.extend(history.clone());
+
+    let legacy = ask(&with_leading);
+    let borrowed = ask(&history).with_system_prompt("system rules");
+    assert_eq!(legacy.prefix_hash(), borrowed.prefix_hash());
+
+    assert_eq!(
+        completions::Wire::request(&legacy, false).unwrap(),
+        completions::Wire::request(&borrowed, false).unwrap()
+    );
+    assert_eq!(
+        anthropic::Wire::request(&legacy, false).unwrap(),
+        anthropic::Wire::request(&borrowed, false).unwrap()
+    );
+    assert_eq!(
+        responses::Wire::request(&legacy, false).unwrap(),
+        responses::Wire::request(&borrowed, false).unwrap()
+    );
+    assert_eq!(
+        gemini::Wire::request(&legacy, false).unwrap(),
+        gemini::Wire::request(&borrowed, false).unwrap()
+    );
+}

@@ -71,7 +71,13 @@ impl Provider for Scripted {
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         let call = {
             let mut sent = self.sent.lock().unwrap();
-            sent.push(request.messages.to_vec());
+            let mut list =
+                Vec::with_capacity(request.messages.len() + usize::from(request.system_prompt.is_some()));
+            if let Some(system) = &request.system_prompt {
+                list.push(Message::system(system.as_ref().to_string()));
+            }
+            list.extend(request.messages.iter().cloned());
+            sent.push(list);
             sent.len() - 1
         };
         if let Some(hook) = &self.hook {

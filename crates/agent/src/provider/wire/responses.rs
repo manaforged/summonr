@@ -61,17 +61,26 @@ pub(crate) fn body(
 }
 
 fn input(call: &CompletionRequest<'_>) -> summonr_core::error::Result<Vec<Value>> {
-    let fixed: Vec<&str> = call
+    let lead = call
         .messages
         .iter()
         .take_while(|message| message.role == Role::System)
-        .map(|message| message.content.as_str())
+        .count();
+    let fixed: Vec<&str> = call
+        .system_prompt
+        .as_deref()
+        .into_iter()
+        .chain(
+            call.messages[..lead]
+                .iter()
+                .map(|message| message.content.as_str()),
+        )
         .collect();
     let mut input: Vec<Value> = Vec::new();
     if !fixed.is_empty() {
         input.push(developer(&fixed.join("\n")));
     }
-    for message in &call.messages[fixed.len()..] {
+    for message in &call.messages[lead..] {
         match message.role {
             Role::System => input.push(developer(&message.content)),
             Role::User => input.push(json!({

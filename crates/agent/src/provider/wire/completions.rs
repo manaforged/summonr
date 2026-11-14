@@ -62,6 +62,7 @@ impl Chat for Wire {
         }
         effort(&mut body, call, reasoning);
         let messages = serde_json::to_vec(&messages::Messages {
+            system_prompt: call.system_prompt.as_deref(),
             list: call.messages,
             keep_reasoning: encoding.keep_reasoning,
             cached: encoding.cache_marks || call.traits.family == super::traits::Family::Anthropic,

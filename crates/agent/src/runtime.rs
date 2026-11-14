@@ -222,6 +222,7 @@ impl<P: Provider> Loop<P> {
             .or(self.price)
     }
 
+    #[cfg(test)]
     pub(crate) fn request<'a>(
         &self,
         role: workflow::Role,
@@ -240,19 +241,24 @@ impl<P: Provider> Loop<P> {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn request_with<'a>(
         &self,
         role: workflow::Role,
         messages: &'a [Message],
         advertised: &'a mail::Advertised,
     ) -> CompletionRequest<'a> {
-        let sent = messages
-            .split_last()
-            .filter(|(last, _)| last.role == Role::Assistant && last.tool_calls.is_empty())
-            .map_or(messages, |(_, earlier)| earlier);
+        let sent = trim_trailing_assistant(messages);
         self.request(role, sent, &advertised.tools, true)
             .with_tools_json(&advertised.json)
     }
+}
+
+pub(crate) fn trim_trailing_assistant(messages: &[Message]) -> &[Message] {
+    messages
+        .split_last()
+        .filter(|(last, _)| last.role == Role::Assistant && last.tool_calls.is_empty())
+        .map_or(messages, |(_, earlier)| earlier)
 }
 
 pub(crate) fn billable(error: &Error) -> bool {

@@ -239,6 +239,14 @@ impl SessionDriver {
         })
     }
 
+    pub(crate) fn history_and_partial(&mut self) -> (&[Message], &mut summonr_types::Partial) {
+        (self.state.history.as_slice(), &mut self.partial)
+    }
+
+    pub(crate) fn attach_tool_images(&mut self, images: Vec<crate::provider::Image>) {
+        self.state.attach_tool_images(images);
+    }
+
     pub(crate) fn close(&mut self) -> Result<(), DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
@@ -248,6 +256,7 @@ impl SessionDriver {
             code: None,
             footprint_kb: crate::process::footprint_kb(None),
         })?;
+        self.state.clear_tool_images();
         self.turn = None;
         self.fresh = false;
         self.remember_tree();
@@ -285,6 +294,7 @@ impl SessionDriver {
                 receipt: Some(receipt.clone()),
             })?;
         }
+        self.state.clear_tool_images();
         self.turn = None;
         self.fresh = false;
         self.remember_tree();

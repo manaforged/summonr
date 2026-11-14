@@ -103,7 +103,6 @@ impl<P: Provider> Loop<P> {
         &mut self,
         planned: Vec<Call>,
         calls: Vec<ToolCall>,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<(Vec<Call>, Vec<ToolCall>)> {
@@ -125,7 +124,7 @@ impl<P: Provider> Loop<P> {
             match heard.blocked {
                 Some(reason) => {
                     let blocked = Err(blocked(&reason));
-                    self.finish_call(planned, call, (blocked, 0), messages, events, emit)
+                    self.finish_call(planned, call, (blocked, 0), events, emit)
                         .await?;
                 }
                 None => {

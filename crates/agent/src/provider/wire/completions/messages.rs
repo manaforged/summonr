@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use serde::Serialize;
 use serde::ser::{SerializeMap, SerializeSeq, Serializer};
 use serde_json::json;
@@ -5,6 +7,7 @@ use serde_json::json;
 use crate::provider::{Image, Message, Role, ToolCall};
 
 pub(crate) struct Messages<'a> {
+    pub(crate) system_prompt: Option<&'a str>,
     pub(crate) list: &'a [Message],
     pub(crate) keep_reasoning: bool,
     pub(crate) cached: bool,
@@ -13,7 +16,7 @@ pub(crate) struct Messages<'a> {
 
 impl Serialize for Messages<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let (lead, prefix) = system_prefix(self.list);
+        let (lead, prefix) = system_prefix(self.system_prompt, self.list);
         let mut seq = Turns {
             seq: serializer.serialize_seq(None)?,
             after_tool: self.assistant_after_tool,
@@ -68,19 +71,27 @@ impl<Q: SerializeSeq> Turns<Q> {
     }
 }
 
-fn system_prefix(list: &[Message]) -> (usize, String) {
+fn system_prefix<'a>(system_prompt: Option<&'a str>, list: &'a [Message]) -> (usize, Cow<'a, str>) {
     let lead = list
         .iter()
         .take_while(|message| message.role == Role::System)
         .count();
-    let mut prefix = String::new();
+    if let Some(prompt) = system_prompt
+        && lead == 0
+    {
+        return (0, Cow::Borrowed(prompt));
+    }
+    if system_prompt.is_none() && lead == 1 {
+        return (1, Cow::Borrowed(&list[0].content));
+    }
+    let mut prefix = system_prompt.unwrap_or_default().to_string();
     for message in &list[..lead] {
         if !prefix.is_empty() {
             prefix.push_str("\n\n");
         }
         prefix.push_str(&message.content);
     }
-    (lead, prefix)
+    (lead, Cow::Owned(prefix))
 }
 
 fn element<'a, Q: SerializeSeq>(

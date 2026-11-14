@@ -38,17 +38,19 @@ impl<P: Provider> Loop<P> {
         messages: &[Message],
         advertised: Option<&mail::Advertised>,
     ) -> Result<std::result::Result<Reply, Missed>> {
-        let request = match advertised {
-            Some(advertised) => self
-                .request(role, messages, &advertised.tools, false)
-                .with_tools_json(&advertised.json),
-            None => self.request(role, messages, &[], false),
-        };
         let options = CallOptions {
             stream: false,
             retry: RetryPolicy::None,
         };
-        self.call(role, request, options).await
+        self.call(
+            role,
+            super::turn::CallSource::Slice {
+                messages,
+                advertised,
+            },
+            options,
+        )
+        .await
     }
 
     async fn aside_rounds(

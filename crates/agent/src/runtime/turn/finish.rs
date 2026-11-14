@@ -248,7 +248,6 @@ impl<P: Provider> Loop<P> {
         durable_attempt: Attempt,
         meter: Meter,
         meta: UsageMeta,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
@@ -258,7 +257,6 @@ impl<P: Provider> Loop<P> {
         self.inject(
             "[summon control: the previous reply reached the output limit and was cut off.]"
                 .to_string(),
-            messages,
         )?;
         self.push_event(
             events,

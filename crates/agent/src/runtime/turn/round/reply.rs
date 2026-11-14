@@ -35,43 +35,46 @@ impl Pace {
     }
 }
 
+pub(super) struct RoundReply {
+    pub(super) message: Message,
+    pub(super) reasoning: String,
+    pub(super) attempt: Attempt,
+    pub(super) meter: Meter,
+    pub(super) meta: UsageMeta,
+    pub(super) stop_reason: StopReason,
+}
+
 impl<P: Provider> Loop<P> {
     pub(super) async fn take_round(
         &mut self,
-        reply: (Message, String, Attempt, Meter, UsageMeta),
-        stop_reason: StopReason,
+        reply: RoundReply,
         pace: &mut Pace,
-        (messages, pre, events): (&mut Vec<Message>, &mut Pretask, &mut Vec<Event>),
+        pre: &mut Pretask,
+        events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Option<Message>> {
-        let (message, reasoning, attempt, meter, meta) = reply;
+        let RoundReply {
+            message,
+            reasoning,
+            attempt,
+            meter,
+            meta,
+            stop_reason,
+        } = reply;
         if !message.tool_calls.is_empty() {
             pace.note_calls(&message);
             let reply = (message, reasoning, attempt, meter, meta);
-            self.continue_with(reply, messages, pre, events, emit, usage)
-                .await?;
+            self.continue_with(reply, pre, events, emit, usage).await?;
             return Ok(None);
         }
         if stop_reason == StopReason::Length {
-            let mut steered = Vec::new();
-            self.steer_length(
-                &message,
-                &reasoning,
-                attempt,
-                meter,
-                meta,
-                &mut steered,
-                events,
-                emit,
-            )
-            .await?;
-            messages.push(message);
-            messages.append(&mut steered);
+            self.steer_length(&message, &reasoning, attempt, meter, meta, events, emit)
+                .await?;
             return Ok(None);
         }
         let reply = (message, reasoning, attempt, meter, meta);
-        self.close_reply(reply, pace, (messages, pre, events), emit, usage)
+        self.close_reply(reply, pace, pre, events, emit, usage)
             .await
     }
 
@@ -79,7 +82,8 @@ impl<P: Provider> Loop<P> {
         &mut self,
         (message, reasoning, attempt, meter, meta): (Message, String, Attempt, Meter, UsageMeta),
         pace: &mut Pace,
-        (messages, pre, events): (&mut Vec<Message>, &mut Pretask, &mut Vec<Event>),
+        pre: &mut Pretask,
+        events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Option<Message>> {
@@ -103,30 +107,76 @@ impl<P: Provider> Loop<P> {
             meta,
         };
         self.record_answer(answer, events, emit)?;
-        if stalled && (steered || tasks.is_some() || self.judge_due(pace)) {
-            self.note_stall(pace, events, emit)?;
-        }
-        let note = if stalled {
-            None
-        } else if holds {
-            tasks
-        } else {
-            self.judge_reply(&message.content, pace, events, emit, usage)
-                .await?
-        };
+        self.maybe_note_stall(stalled, steered, tasks.is_some(), pace, events, emit)?;
+        let note = self
+            .next_hold_note(
+                (stalled, holds, tasks),
+                &message.content,
+                pace,
+                events,
+                emit,
+                usage,
+            )
+            .await?;
         if !holds && note.is_none() {
             return Ok(Some(message));
         }
-        self.keep_reply(message, messages, events, emit)?;
+        self.reopen_with_note(&message, steered, note, pace, events, emit)?;
+        Ok(None)
+    }
+
+    fn maybe_note_stall(
+        &mut self,
+        stalled: bool,
+        steered: bool,
+        has_tasks: bool,
+        pace: &Pace,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if stalled && (steered || has_tasks || self.judge_due(pace)) {
+            self.note_stall(pace, events, emit)?;
+        }
+        Ok(())
+    }
+
+    async fn next_hold_note(
+        &mut self,
+        (stalled, holds, tasks): (bool, bool, Option<String>),
+        text: &str,
+        pace: &mut Pace,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<Option<String>> {
+        if stalled {
+            return Ok(None);
+        }
+        if holds {
+            return Ok(tasks);
+        }
+        self.judge_reply(text, pace, events, emit, usage).await
+    }
+
+    fn reopen_with_note(
+        &mut self,
+        message: &Message,
+        steered: bool,
+        note: Option<String>,
+        pace: &mut Pace,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        self.keep_reply(message, events, emit)?;
         if steered {
-            let before = messages.len();
-            self.take_mail(messages, events, emit)?;
-            pace.stalls += usize::from(messages.len() == before);
+            let before = self.session.history().len();
+            self.take_mail(events, emit)?;
+            pace.stalls += usize::from(self.session.history().len() == before);
         }
         if let Some(note) = note {
-            self.continue_turn(note, pace, messages, events, emit)?;
+            self.continue_turn(note, pace, events, emit)?;
         }
-        Ok(None)
+        Ok(())
     }
 
     fn note_stall(
@@ -146,20 +196,18 @@ impl<P: Provider> Loop<P> {
         &mut self,
         note: String,
         pace: &mut Pace,
-        messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         pace.stalls += 1;
-        self.inject(note, messages)?;
+        self.inject(note)?;
         let text = "work is still open; the turn continues".to_string();
         self.push_event(events, emit, Event::Note { text })
     }
 
     fn keep_reply(
         &mut self,
-        message: Message,
-        messages: &mut Vec<Message>,
+        message: &Message,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
@@ -167,7 +215,6 @@ impl<P: Provider> Loop<P> {
             let text = message.content.clone();
             self.push_event(events, emit, Event::Assistant { text })?;
         }
-        messages.push(message);
         Ok(())
     }
 

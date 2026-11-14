@@ -1,9 +1,12 @@
+use std::borrow::Cow;
+
 use super::*;
 
 #[derive(Clone, Debug)]
 pub struct CompletionRequest<'a> {
     pub(crate) session: String,
     pub(crate) model: String,
+    pub(crate) system_prompt: Option<Cow<'a, str>>,
     pub(crate) messages: &'a [Message],
     pub(crate) tools: &'a [ToolDefinition],
     pub(crate) max_output_tokens: Option<u32>,
@@ -90,6 +93,7 @@ impl<'a> CompletionRequest<'a> {
     ) -> Self {
         Self {
             session,
+            system_prompt: None,
             messages,
             tools,
             max_output_tokens,
@@ -102,6 +106,12 @@ impl<'a> CompletionRequest<'a> {
             prefix_hash: None,
             model,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_system_prompt(mut self, system_prompt: impl Into<Cow<'a, str>>) -> Self {
+        self.system_prompt = Some(system_prompt.into());
+        self
     }
 
     #[cfg(test)]
@@ -140,7 +150,10 @@ impl<'a> CompletionRequest<'a> {
         if let Some(prefix_hash) = &self.prefix_hash {
             return prefix_hash.clone();
         }
-        let system = self.messages.first().map(|message| &message.content);
+        let system = self
+            .system_prompt
+            .as_deref()
+            .or_else(|| self.messages.first().map(|message| message.content.as_str()));
         let tools = self.tools_bytes();
         let mut bytes = Vec::with_capacity(tools.len() + self.model.len() + 64);
         bytes.push(b'[');

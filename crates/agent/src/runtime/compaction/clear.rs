@@ -64,38 +64,38 @@ pub(super) fn elide_target(chars: usize, estimated_tokens: usize, window: Option
 impl<P: Provider> Loop<P> {
     pub(super) fn clear_old_outputs(
         &mut self,
-        messages: &mut [Message],
         chars: usize,
         estimated_tokens: usize,
         window: u32,
     ) -> Result<bool> {
         let limits = crate::limits::limits();
         let trigger = (window as usize * limits.clear_percent / 100).min(limits.clear_tokens);
-        if estimated_tokens < trigger || messages.len() < 2 {
+        let history = self.session.history();
+        if estimated_tokens < trigger || history.is_empty() {
             return Ok(false);
         }
-        let live = live_outputs(&messages[1..], messages.len() - 1);
+        let live = live_outputs(history, history.len());
         let old = &live[..live.len().saturating_sub(limits.clear_keep)];
-        let (edits, reclaimed) = clear_outputs(&messages[1..], old, usize::MAX);
+        let (edits, reclaimed) = clear_outputs(history, old, usize::MAX);
         if reclaimed.saturating_mul(estimated_tokens) / chars.max(1)
             < trigger * limits.clear_at_least_percent / 100
         {
             return Ok(false);
         }
-        self.rewrite(messages, edits)?;
+        self.rewrite(edits)?;
         self.tools.forget_reads();
         Ok(true)
     }
 
-    pub(super) fn elide_stale(&mut self, messages: &mut [Message], size: &Size) -> Result<bool> {
+    pub(super) fn elide_stale(&mut self, size: &Size) -> Result<bool> {
         let target_chars = elide_target(size.chars, size.estimated_tokens, size.window);
         let needed = size.chars.saturating_sub(target_chars);
-        let stale = live_outputs(&messages[1..], size.keep_from - 1);
-        let (edits, reclaimed) = clear_outputs(&messages[1..], &stale, needed);
+        let stale = live_outputs(self.session.history(), size.keep_from);
+        let (edits, reclaimed) = clear_outputs(self.session.history(), &stale, needed);
         if needed == 0 || reclaimed < needed {
             return Ok(false);
         }
-        self.rewrite(messages, edits)?;
+        self.rewrite(edits)?;
         self.tools.forget_reads();
         Ok(true)
     }

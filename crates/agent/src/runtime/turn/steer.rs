@@ -1,10 +1,8 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
-    pub(super) fn inject(&mut self, text: String, messages: &mut Vec<Message>) -> Result<()> {
-        let input = UserInput::from(text);
-        self.session.steer(&input)?;
-        messages.push(Message::user(input));
+    pub(super) fn inject(&mut self, text: String) -> Result<()> {
+        self.session.steer(&UserInput::from(text))?;
         Ok(())
     }
 }
@@ -14,7 +12,6 @@ const STEER_NOTE: &str = "Harness: the user sent this while you were working. Fo
 pub(super) fn drain_steer(
     queue: &mut std::collections::VecDeque<UserInput>,
     session: &mut SessionDriver,
-    messages: &mut Vec<Message>,
 ) -> Result<Vec<String>> {
     let mut delivered = Vec::new();
     while let Some(input) = queue.pop_front() {
@@ -23,7 +20,6 @@ pub(super) fn drain_steer(
             queue.push_front(input);
             return Err(Error::from(error));
         }
-        messages.push(Message::user(steered));
         delivered.extend(input.source.map(|source| source.text));
     }
     Ok(delivered)

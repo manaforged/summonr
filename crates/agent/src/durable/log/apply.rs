@@ -165,6 +165,23 @@ impl State {
             .extend(tail.iter().skip(usize::from(repeated)).cloned());
     }
 
+    pub(crate) fn attach_tool_images(&mut self, images: Vec<Image>) {
+        if !images.is_empty()
+            && let Some(last) = self.history.last_mut()
+            && last.role == Role::Tool
+        {
+            last.images = images;
+        }
+    }
+
+    pub(crate) fn clear_tool_images(&mut self) {
+        for message in &mut self.history {
+            if message.role == Role::Tool && !message.images.is_empty() {
+                message.images.clear();
+            }
+        }
+    }
+
     fn apply_end(&mut self, end: &Line) {
         if let Line::Close { reason, .. } = end {
             self.last_close_reason = reason.clone();

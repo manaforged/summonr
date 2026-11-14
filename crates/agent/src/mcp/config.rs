@@ -202,7 +202,7 @@ fn layers(workspace: &Path) -> Result<Layers> {
         serde_json::from_str::<Value>(text)
     })?;
     let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
-    let path = workspace.join(".summonr/config.toml");
+    let path = summonr_core::dirs::workspace(workspace).join("config.toml");
     if path.is_file() {
         shared.extend(config::parse(&path)?.mcp);
     }

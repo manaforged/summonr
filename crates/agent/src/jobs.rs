@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +62,7 @@ pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, Pat
     if !ignore.exists() {
         store::write(&ignore, "*\n", store::Durability::Renamed)?;
     }
-    let id = new_id()?;
+    let id = new_id();
     Ok((
         id.clone(),
         root.join(format!("{id}.json")),
@@ -285,24 +284,18 @@ mod tree;
 pub(crate) use tree::{block, child_lines};
 
 fn check_id(id: &str) -> Result<&str> {
-    if id.is_empty() || id.len() > ID_MAX {
-        return Err(Error::Tool("job id is invalid".to_string()));
-    }
-    if !id
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    {
+    if id.len() > ID_MAX || !summonr_core::text::is_name(id, "-") {
         return Err(Error::Tool("job id is invalid".to_string()));
     }
     Ok(id)
 }
 
-fn new_id() -> Result<String> {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| Error::Config(error.to_string()))?
-        .as_nanos();
-    Ok(format!("{nanos}-{}", std::process::id()))
+fn new_id() -> String {
+    format!(
+        "{}-{}",
+        summonr_core::clock::now_nanos(),
+        std::process::id()
+    )
 }
 
 #[cfg(test)]

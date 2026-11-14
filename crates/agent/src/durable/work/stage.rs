@@ -81,7 +81,7 @@ impl Work {
             return Err(WorkError("Execute requires a selected plan".to_string()));
         }
         if let Some(first) = self.steps.first_mut() {
-            first.state = StepState::Active;
+            first.state = StepStatus::Active;
         }
         self.active = (!self.steps.is_empty()).then_some(0);
         self.status = Status::Active(Stage::Execute);
@@ -138,21 +138,21 @@ impl Work {
         step.attempts = 0;
         match (policy, decision) {
             (WorkKind::Single, _) | (WorkKind::Goal, Decision::GoalComplete) => {
-                step.state = StepState::Completed;
+                step.state = StepStatus::Completed;
                 self.active = None;
                 self.status = Status::Completed;
             }
             (WorkKind::Steps, _) => {
-                step.state = StepState::Completed;
+                step.state = StepStatus::Completed;
                 self.advance_step();
             }
             (WorkKind::Goal, Decision::GoalStop(reason)) => {
-                step.state = StepState::Blocked;
+                step.state = StepStatus::Blocked;
                 self.active = None;
                 self.status = Status::Abandoned(reason);
             }
             (WorkKind::Goal, Decision::GoalContinue(reason)) => {
-                step.state = StepState::Active;
+                step.state = StepStatus::Active;
                 self.status = Status::Active(Stage::Execute);
                 self.rebase();
                 self.pending.push(format!(
@@ -170,11 +170,11 @@ impl Work {
         self.active.or_else(|| {
             self.steps
                 .iter()
-                .position(|step| step.state == StepState::Active)
+                .position(|step| step.state == StepStatus::Active)
                 .or_else(|| {
                     self.steps
                         .iter()
-                        .position(|step| step.state == StepState::Pending)
+                        .position(|step| step.state == StepStatus::Pending)
                 })
         })
     }
@@ -183,11 +183,11 @@ impl Work {
         match self
             .steps
             .iter()
-            .position(|step| step.state == StepState::Pending)
+            .position(|step| step.state == StepStatus::Pending)
         {
             Some(next) => {
                 if let Some(step) = self.steps.get_mut(next) {
-                    step.state = StepState::Active;
+                    step.state = StepStatus::Active;
                 }
                 self.active = Some(next);
                 self.status = Status::Active(Stage::Execute);
@@ -213,7 +213,7 @@ impl Work {
         let active = match self.active.or_else(|| {
             self.steps
                 .iter()
-                .position(|step| step.state != StepState::Completed)
+                .position(|step| step.state != StepStatus::Completed)
         }) {
             Some(active) => active,
             None => {
@@ -235,7 +235,7 @@ impl Work {
             self.status = Status::Failed(continuation);
             return Ok(());
         }
-        step.state = StepState::Active;
+        step.state = StepStatus::Active;
         self.status = Status::Active(Stage::Execute);
         self.rebase();
         self.pending.push(continuation);
@@ -253,7 +253,7 @@ impl Work {
             return;
         }
         if let Some(step) = self.active.and_then(|index| self.steps.get_mut(index)) {
-            step.state = StepState::Blocked;
+            step.state = StepStatus::Blocked;
         }
         self.active = None;
         self.status = Status::Abandoned(reason.to_string());

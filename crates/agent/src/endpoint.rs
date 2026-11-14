@@ -58,7 +58,7 @@ pub enum LoginFlow {
 
 impl Endpoint {
     #[must_use]
-    pub fn effort_for(&self, explicit: Option<Effort>) -> Option<Effort> {
+    pub(crate) fn effort_for(&self, explicit: Option<Effort>) -> Option<Effort> {
         explicit
             .or(self.effort)
             .or_else(|| crate::recent::default_effort(&self.name, &self.model))
@@ -295,7 +295,8 @@ pub use resolve::default_model_selection;
 use resolve::hosted;
 pub(crate) use resolve::{Keys, is_set_up};
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
-pub use route::{Region, Route, Toggle, remembered, select, toggle};
+pub(crate) use route::remembered;
+pub use route::{Region, Route, Toggle, select, toggle};
 pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]

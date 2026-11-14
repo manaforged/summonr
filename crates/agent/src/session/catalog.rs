@@ -86,10 +86,8 @@ pub fn short(id: &str) -> &str {
     id.get(..12).unwrap_or(id)
 }
 
-const PREVIEW_WIDTH: usize = 72;
-
 pub(crate) fn preview(text: &str, source: Option<&str>) -> String {
-    crate::display::ellipsize(user_text(text, source), PREVIEW_WIDTH)
+    crate::display::ellipsize(user_text(text, source), crate::display::SUMMARY_WIDTH)
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {

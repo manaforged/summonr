@@ -18,7 +18,7 @@ pub(crate) enum Thinking {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Family {
+pub(crate) enum Vendor {
     #[default]
     Other,
     Anthropic,
@@ -27,7 +27,8 @@ pub(crate) enum Family {
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct Traits {
-    pub(crate) family: Family,
+    #[serde(rename = "family")]
+    pub(crate) vendor: Vendor,
     pub(crate) thinking: Thinking,
     pub(crate) skip_signature: bool,
     #[serde(deserialize_with = "scale")]
@@ -72,12 +73,12 @@ struct Row {
 }
 
 #[derive(Deserialize)]
-struct Catalog {
+struct Table {
     rows: Vec<Row>,
 }
 
 static ROWS: LazyLock<Vec<Row>> = LazyLock::new(|| {
-    let table: Catalog = summonr_core::embedded!("model", "provider/wire/models.toml");
+    let table: Table = summonr_core::embedded!("model", "provider/wire/models.toml");
     table.rows
 });
 

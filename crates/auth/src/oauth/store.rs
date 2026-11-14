@@ -1,4 +1,4 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,20 +40,16 @@ fn to_stored(issued: &Issued) -> Stored {
     }
 }
 
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_secs())
-        .unwrap_or_default()
-}
-
 pub(super) fn from_unix(at: u64) -> Instant {
     Instant::now()
-        + std::time::Duration::from_secs(at.saturating_sub(now_unix()).min(LIFETIME_CEILING))
+        + std::time::Duration::from_secs(
+            at.saturating_sub(summonr_core::clock::now())
+                .min(LIFETIME_CEILING),
+        )
 }
 
 fn to_unix(at: Instant) -> u64 {
-    now_unix() + at.saturating_duration_since(Instant::now()).as_secs()
+    summonr_core::clock::now() + at.saturating_duration_since(Instant::now()).as_secs()
 }
 
 pub(super) fn lifetime(seconds: u64) -> Instant {

@@ -40,14 +40,15 @@ pub(crate) fn choose(
     } else {
         remembered(file, last)
     };
+    let env_model = env(super::MODEL_ENV);
     let reason = if given(model).is_some() {
         Some(Origin::ModelFlag)
-    } else if env("SUMMONR_MODEL").is_some() {
+    } else if env_model.is_some() {
         Some(Origin::Env)
     } else {
         reason.filter(|_| chosen.is_some())
     };
-    let model = given(model).or_else(|| env("SUMMONR_MODEL")).or(remembered);
+    let model = given(model).or(env_model).or(remembered);
     (chosen, model, reason)
 }
 

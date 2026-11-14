@@ -1,7 +1,20 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
+/// The name of the summonr state folder, in the home directory and in a workspace.
+pub const STATE: &str = ".summonr";
+
+/// The environment variable that moves the summonr home folder.
+pub const HOME_ENV: &str = "SUMMONR_HOME";
+
+/// The `.summonr` folder inside a workspace.
+#[must_use]
+pub fn workspace(root: &Path) -> PathBuf {
+    root.join(STATE)
+}
+
+/// The user's home directory from `HOME`, then `USERPROFILE`.
 pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -10,8 +23,9 @@ pub fn home_dir() -> Option<PathBuf> {
 
 static READY: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
 
+/// The summonr home folder: `SUMMONR_HOME`, or `~/.summonr` created with mode 0700.
 pub fn summonr_home() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("SUMMONR_HOME") {
+    if let Some(path) = std::env::var_os(HOME_ENV) {
         if path.is_empty() {
             return Err(Error::Config("SUMMONR_HOME is empty".to_string()));
         }
@@ -20,7 +34,7 @@ pub fn summonr_home() -> Result<PathBuf> {
     let home = user_home().ok_or_else(|| {
         Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
     })?;
-    let dir = home.join(".summonr");
+    let dir = home.join(STATE);
     if READY
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -46,11 +60,13 @@ pub fn summonr_home() -> Result<PathBuf> {
     Ok(dir)
 }
 
+/// The home directory that holds `~/.summonr`.
 #[cfg(not(any(test, feature = "test-home")))]
 pub fn user_home() -> Option<PathBuf> {
     home_dir()
 }
 
+/// A per-process temporary home directory for tests.
 #[cfg(any(test, feature = "test-home"))]
 pub fn user_home() -> Option<PathBuf> {
     static HOME: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();

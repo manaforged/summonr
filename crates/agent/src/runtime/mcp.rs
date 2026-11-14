@@ -81,7 +81,7 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn mcp_board(&self) -> crate::mcp::Board {
+    pub(crate) fn mcp_board(&self) -> crate::mcp::Board {
         Arc::clone(&self.mcp_board)
     }
 }

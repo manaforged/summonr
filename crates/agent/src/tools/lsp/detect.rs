@@ -139,7 +139,7 @@ pub(in crate::tools) fn available(workspace: &Path) -> bool {
 }
 
 pub(super) fn workspace_module(workspace: &Path) -> Result<Option<String>> {
-    let path = workspace.join(".summonr/config.toml");
+    let path = summonr_core::dirs::workspace(workspace).join("config.toml");
     if !path.is_file() {
         return Ok(None);
     }

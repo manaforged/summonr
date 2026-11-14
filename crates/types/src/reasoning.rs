@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+/// How a model turns reasoning off.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Off {
@@ -17,6 +18,7 @@ pub enum Off {
 }
 
 impl Off {
+    /// The request field and value that turn reasoning off, if one does.
     pub fn fragment(self) -> Option<(&'static str, Value)> {
         match self {
             Self::ThinkingDisabled => Some(("thinking", json!({"type": "disabled"}))),
@@ -30,6 +32,7 @@ impl Off {
     }
 }
 
+/// A reasoning effort level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
@@ -64,6 +67,7 @@ impl Effort {
         }
     }
 
+    /// Every effort level, lowest first.
     pub const ALL: [Self; 7] = [
         Self::None,
         Self::Minimal,
@@ -74,6 +78,7 @@ impl Effort {
         Self::Max,
     ];
 
+    /// The message for an effort name that is not a level.
     #[must_use]
     pub fn rejects(text: &str) -> String {
         let names: Vec<&str> = Self::ALL.iter().map(|effort| effort.as_str()).collect();
@@ -81,6 +86,7 @@ impl Effort {
         format!("takes {}, or {last}, not `{text}`", rest.join(", "))
     }
 
+    /// The effort level named by `text`.
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim().to_ascii_lowercase().as_str() {
@@ -95,6 +101,7 @@ impl Effort {
         }
     }
 
+    /// The level's name.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
@@ -108,6 +115,7 @@ impl Effort {
         }
     }
 
+    /// The next level, wrapping after the highest.
     #[must_use]
     pub fn next(self) -> Self {
         match self {
@@ -121,11 +129,13 @@ impl Effort {
         }
     }
 
+    /// The nearest of `levels`, rounding down on a tie.
     #[must_use]
     pub fn clamp(self, levels: &[Self]) -> Self {
         self.rounded(levels, false)
     }
 
+    /// The nearest of `levels`, rounding up on a tie when `up` is set.
     #[must_use]
     pub fn rounded(self, levels: &[Self], up: bool) -> Self {
         levels
@@ -142,6 +152,7 @@ impl Effort {
             .unwrap_or(self)
     }
 
+    /// The level `delta` steps away in `levels`, wrapping at either end.
     #[must_use]
     pub fn shifted(self, levels: &[Self], delta: isize) -> Self {
         let at = levels.iter().position(|level| *level == self).unwrap_or(0);
@@ -150,6 +161,7 @@ impl Effort {
     }
 }
 
+/// A model's price per million tokens.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Price {
     pub input: f64,
@@ -161,6 +173,7 @@ pub struct Price {
 }
 
 impl Price {
+    /// The dollar cost of these prompt, completion, cached, and cache-write tokens.
     #[must_use]
     pub fn cost(&self, prompt: u64, completion: u64, cached: u64, written: u64) -> f64 {
         let cached = cached.min(prompt);

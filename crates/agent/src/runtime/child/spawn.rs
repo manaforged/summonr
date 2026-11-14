@@ -315,7 +315,7 @@ impl<P: Provider> Loop<P> {
         if self.children_lock.is_some() {
             return Ok(());
         }
-        let path = self.workspace.join(".summonr").join("lead");
+        let path = summonr_core::dirs::workspace(&self.workspace).join("lead");
         let held = crate::durable::store::lock(&path, false).map_err(|error| {
             Error::Tool(format!("cannot lock this checkout for children: {error}"))
         })?;

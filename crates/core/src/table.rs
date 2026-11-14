@@ -1,5 +1,6 @@
 use serde::de::DeserializeOwned;
 
+/// Parses TOML text into `T`.
 pub fn parse<T: DeserializeOwned>(text: &str) -> Result<T, String> {
     toml::from_str(text).map_err(|error| error.to_string())
 }

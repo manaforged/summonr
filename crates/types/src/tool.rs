@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 
 use crate::{Image, ToolKind, Usage};
 
+/// A function tool definition.
 pub fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {
     ToolDefinition {
         kind: ToolKind::Function,
@@ -71,6 +72,7 @@ fn required(schema: &Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// A tool definition sent to a provider.
 #[derive(Clone, Debug, Serialize)]
 pub struct ToolDefinition {
     #[serde(rename = "type")]
@@ -78,6 +80,7 @@ pub struct ToolDefinition {
     pub function: FunctionDefinition,
 }
 
+/// The name, description, and JSON schema of a function tool.
 #[derive(Clone, Debug, Serialize)]
 pub struct FunctionDefinition {
     pub name: String,
@@ -85,6 +88,7 @@ pub struct FunctionDefinition {
     pub parameters: Value,
 }
 
+/// The approval a tool call needs before it runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Grant {
     Write(std::path::PathBuf),
@@ -93,6 +97,7 @@ pub enum Grant {
 }
 
 impl Grant {
+    /// The approval as the text the prompt shows.
     #[must_use]
     pub fn prompt(&self) -> String {
         match self {
@@ -108,6 +113,7 @@ impl Grant {
     }
 }
 
+/// The result of a tool call.
 pub struct ToolOutput {
     pub text: String,
     pub success: bool,
@@ -118,6 +124,7 @@ pub struct ToolOutput {
 }
 
 impl ToolOutput {
+    /// A successful result that changed nothing.
     pub fn ok(text: String) -> Self {
         Self {
             text,
@@ -129,6 +136,7 @@ impl ToolOutput {
         }
     }
 
+    /// A successful result that changed files, with its patch.
     pub fn mutated(text: String, patch: Option<String>) -> Self {
         Self {
             mutated: true,
@@ -137,12 +145,14 @@ impl ToolOutput {
         }
     }
 
+    /// This result with `success` set.
     #[must_use]
     pub fn with_success(mut self, success: bool) -> Self {
         self.success = success;
         self
     }
 
+    /// This result with `mutated` set.
     #[must_use]
     pub fn with_mutated(mut self, mutated: bool) -> Self {
         self.mutated = mutated;
@@ -150,6 +160,7 @@ impl ToolOutput {
     }
 }
 
+/// The text, reasoning, and usage streamed so far.
 #[derive(Default)]
 pub struct Partial {
     pub text: String,

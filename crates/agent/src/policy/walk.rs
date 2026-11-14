@@ -232,7 +232,7 @@ pub(crate) fn resolve(target: &str, cwd: &Path) -> Option<PathBuf> {
     Some(normalize_onto(base, Path::new(target)))
 }
 
-pub fn normalize(path: &Path) -> PathBuf {
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     normalize_onto(PathBuf::new(), path)
 }
 

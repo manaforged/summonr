@@ -52,12 +52,12 @@ pub(crate) fn metric(workspace: &Path) -> Result<Option<Metric>> {
 
 #[must_use]
 pub(crate) fn check_path(workspace: &Path) -> std::path::PathBuf {
-    workspace.join(".summonr/check.toml")
+    summonr_core::dirs::workspace(workspace).join("check.toml")
 }
 
 #[must_use]
 pub(crate) fn contract_path(workspace: &Path) -> std::path::PathBuf {
-    workspace.join(".summonr/contract.toml")
+    summonr_core::dirs::workspace(workspace).join("contract.toml")
 }
 
 pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {

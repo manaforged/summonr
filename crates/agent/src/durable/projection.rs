@@ -39,8 +39,9 @@ fn text_events(text: String, reasoning: String, assistant_events: AssistantEvent
 }
 
 impl Line {
-    pub fn events(&self) -> Vec<Event> {
-        self.clone().into_events(AssistantEvents::Include)
+    /// The events this line projects, assistant text and reasoning included.
+    pub fn events(self) -> Vec<Event> {
+        self.into_events(AssistantEvents::Include)
     }
 
     pub(crate) fn into_events(self, assistant_events: AssistantEvents) -> Vec<Event> {

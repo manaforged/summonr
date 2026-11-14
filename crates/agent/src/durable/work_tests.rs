@@ -1,4 +1,4 @@
-use super::{Candidate, Decision, StepState, Work, WorkKind};
+use super::{Candidate, Decision, StepStatus, Work, WorkKind};
 use crate::durable::log;
 use crate::durable::tree::snapshot;
 use crate::tools::{Todo, TodoStatus};
@@ -41,7 +41,7 @@ fn todo_marked_done_cannot_finish_a_steps_plan() {
     work.verify(shot.clone()).unwrap();
     work.verdict(true, Decision::Automatic).unwrap();
     assert!(!work.terminal());
-    assert_eq!(work.steps[1].state, StepState::Active);
+    assert_eq!(work.steps[1].state, StepStatus::Active);
     assert_eq!(work.completion_checks().len(), 1);
 }
 

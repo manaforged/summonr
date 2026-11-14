@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use summonr_core::error::Result;
 
 pub(crate) fn dir(workspace: &Path) -> PathBuf {
-    let local = workspace.join(".summonr").join("jobs");
+    let local = summonr_core::dirs::workspace(workspace).join("jobs");
     if local.is_dir() {
         return local;
     }

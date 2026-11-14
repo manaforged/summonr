@@ -34,7 +34,7 @@ impl<P: Provider> Loop<P> {
         Some(text)
     }
 
-    pub fn abandon_work(&mut self, reason: &str) -> Result<()> {
+    pub(crate) fn abandon_work(&mut self, reason: &str) -> Result<()> {
         self.session.abandon_work(reason).map_err(Error::from)
     }
 

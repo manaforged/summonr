@@ -33,7 +33,7 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
         )
     }
     .envs([("CLAUDE_PROJECT_DIR", workspace.as_os_str())])
-    .envs(summonr_core::dirs::summonr_home().map(|home| ("SUMMONR_HOME", home)))
+    .envs(summonr_core::dirs::summonr_home().map(|home| (summonr_core::dirs::HOME_ENV, home)))
     .envs(
         root.into_iter()
             .flat_map(|root| [("CLAUDE_PLUGIN_ROOT", root), ("SUMMONR_PLUGIN_ROOT", root)]),

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use summonr_core::secret::Secret;
 
+/// The OAuth grant a login uses.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Grant {
@@ -12,17 +13,20 @@ pub enum Grant {
 }
 
 impl Grant {
+    /// Whether the grant needs the person to act.
     #[must_use]
     pub fn interactive(self) -> bool {
         matches!(self, Self::DeviceCode | Self::AuthorizationCode)
     }
 
+    /// Whether the grant opens a browser.
     #[must_use]
     pub fn browser(self) -> bool {
         matches!(self, Self::AuthorizationCode)
     }
 }
 
+/// The body format of a token request.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenStyle {
@@ -31,6 +35,7 @@ pub enum TokenStyle {
     Json,
 }
 
+/// How an issued token goes on a request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TokenScheme {
@@ -39,6 +44,7 @@ pub enum TokenScheme {
     GoogleKey,
 }
 
+/// A known value, or the unknown text kept for a warning.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum Lenient<T> {
@@ -62,6 +68,7 @@ impl<T: Copy> Lenient<T> {
     }
 }
 
+/// The OAuth settings of a login endpoint.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct OAuth {
     pub token_url: String,
@@ -98,21 +105,25 @@ pub struct OAuth {
 }
 
 impl OAuth {
+    /// The grant, or the default when it is unset or unknown.
     #[must_use]
     pub fn grant(&self) -> Grant {
         Lenient::known(self.grant.as_ref()).unwrap_or_default()
     }
 
+    /// The token request format, or the default when it is unset or unknown.
     #[must_use]
     pub fn token_style(&self) -> TokenStyle {
         Lenient::known(self.token_style.as_ref()).unwrap_or_default()
     }
 
+    /// The token scheme, if it is set and known.
     #[must_use]
     pub fn scheme(&self) -> Option<TokenScheme> {
         Lenient::known(self.scheme.as_ref())
     }
 
+    /// The keys whose values are unknown, with those values.
     #[must_use]
     pub fn unknown(&self) -> Vec<(&'static str, &str)> {
         [

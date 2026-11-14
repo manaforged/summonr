@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::{ToolDefinition, tool};
 
+/// The condition under which a built-in tool is advertised or runs.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Gate {
@@ -57,6 +58,7 @@ struct Data {
     retired: Vec<Retired>,
 }
 
+/// One row of the built-in tools table.
 pub struct Tool {
     kind: Builtin,
     name: &'static str,
@@ -71,7 +73,8 @@ pub struct Tool {
     pub definition: Option<ToolDefinition>,
 }
 
-pub struct Catalog {
+/// The built-in tools table with the apply-patch definition and retired names.
+pub struct Toolset {
     pub tool: Vec<Tool>,
     pub apply_patch: ToolDefinition,
     retired: Vec<(&'static str, Builtin, Option<&'static str>)>,
@@ -81,8 +84,9 @@ fn leak(text: String) -> &'static str {
     text.leak()
 }
 
-pub fn catalog() -> &'static Catalog {
-    static LOADED: OnceLock<Catalog> = OnceLock::new();
+/// The built-in tools table, loaded once.
+pub fn catalog() -> &'static Toolset {
+    static LOADED: OnceLock<Toolset> = OnceLock::new();
     LOADED.get_or_init(|| {
         let data: Data = summonr_core::embedded!("tool", "tools.toml");
         let tools = data
@@ -119,7 +123,7 @@ pub fn catalog() -> &'static Catalog {
                 }
             })
             .collect();
-        Catalog {
+        Toolset {
             tool: tools,
             apply_patch: tool(
                 "apply_patch",
@@ -135,10 +139,12 @@ pub fn catalog() -> &'static Catalog {
     })
 }
 
+/// The help text of a built-in tool.
 pub fn help(kind: Builtin) -> String {
     kind.spec().help.clone().unwrap_or_default()
 }
 
+/// A built-in tool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Builtin {
@@ -157,6 +163,7 @@ pub enum Builtin {
 }
 
 impl Builtin {
+    /// The built-in tool with the current name `name`.
     #[must_use]
     pub fn live(name: &str) -> Option<Self> {
         catalog()
@@ -166,8 +173,9 @@ impl Builtin {
             .map(|tool| tool.kind)
     }
 
+    /// The built-in tool that a Claude Code tool name or alias maps to.
     #[must_use]
-    pub fn from_claude(name: &str) -> Option<Self> {
+    pub(crate) fn from_claude(name: &str) -> Option<Self> {
         let named = |claude: &&str| claude.eq_ignore_ascii_case(name);
         catalog()
             .tool
@@ -176,6 +184,7 @@ impl Builtin {
             .map(|tool| tool.kind)
     }
 
+    /// This tool's row in the built-in tools table.
     pub fn spec(self) -> &'static Tool {
         match catalog().tool.iter().find(|tool| tool.kind == self) {
             Some(tool) => tool,
@@ -183,47 +192,56 @@ impl Builtin {
         }
     }
 
+    /// This tool's current name.
     #[must_use]
     pub fn name(self) -> &'static str {
         self.spec().name
     }
 
+    /// This tool's Claude Code name and aliases.
     #[must_use]
     pub fn claude(self) -> (Option<&'static str>, &'static [&'static str]) {
         (self.spec().claude, self.spec().claude_aliases)
     }
 
+    /// This tool's Agent Client Protocol tool kind.
     #[must_use]
     pub fn acp_kind(self) -> &'static str {
         self.spec().acp_kind
     }
 
+    /// The built-in tool for a current or retired name.
     #[must_use]
     pub fn of(name: &str) -> Option<Self> {
         retired(name).map_or_else(|| Self::live(name), |row| Some(row.1))
     }
 
+    /// Whether `name` is a current or retired name of `kind`.
     #[must_use]
     pub fn is(name: &str, kind: Self) -> bool {
         Self::of(name) == Some(kind)
     }
 
+    /// Whether this tool only reads.
     #[must_use]
     pub fn readonly(self) -> bool {
         self.spec().readonly
     }
 
+    /// Whether this tool edits or writes files.
     #[must_use]
     pub fn edits(self) -> bool {
         matches!(self, Self::Edit | Self::Write)
     }
 
+    /// The verb that describes a call of this tool.
     #[must_use]
     pub fn verb(self) -> &'static str {
         self.spec().verb
     }
 }
 
+/// The retired-name row for `name`: the name, its tool, and its operation.
 pub fn retired(name: &str) -> Option<&'static (&'static str, Builtin, Option<&'static str>)> {
     catalog()
         .retired
@@ -231,10 +249,12 @@ pub fn retired(name: &str) -> Option<&'static (&'static str, Builtin, Option<&'s
         .find(|(retired, _, _)| *retired == name)
 }
 
+/// The operation a retired tool name maps to.
 pub fn retired_op(name: &str) -> Option<&'static str> {
     retired(name).and_then(|(_, _, op)| *op)
 }
 
+/// Whether `name` names a built-in tool that only reads.
 pub fn readonly(name: &str) -> bool {
     Builtin::of(name).is_some_and(Builtin::readonly)
 }

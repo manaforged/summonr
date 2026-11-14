@@ -109,7 +109,7 @@ fn restore_line(line: Line, last_work: &mut Option<Work>, out: &mut Vec<Event>) 
         Line::Work { work } => *last_work = Some(*work),
         line => {
             let interrupted = matches!(line, Line::Interrupted { .. });
-            out.extend(line.into_events(crate::durable::projection::AssistantEvents::Include));
+            out.extend(line.events());
             if interrupted {
                 out.push(Event::Note {
                     text: "Partial answer · interrupted".to_string(),

@@ -28,7 +28,7 @@ fn mail_enabled(value: Option<&OsStr>, fallback: bool) -> bool {
 pub(crate) const MONITOR: &str = "monitor";
 
 pub(crate) fn listed() -> bool {
-    mail_enabled(std::env::var_os("SUMMONR_MAIL").as_deref(), true)
+    tools(true)
 }
 
 pub(crate) fn tools(module: bool) -> bool {
@@ -36,16 +36,7 @@ pub(crate) fn tools(module: bool) -> bool {
 }
 
 fn clean_id(id: &str) -> String {
-    id.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .take(64)
-        .collect()
+    summonr_core::text::clean_name(id, "-_.", '-', 64)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,9 +71,7 @@ struct Stamp {
 }
 
 pub(crate) fn slug(cwd: &str) -> String {
-    cwd.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect()
+    summonr_core::text::clean_name(cwd, "", '-', usize::MAX)
 }
 
 pub(crate) fn inbox_text(mail: &[Mail]) -> String {
@@ -350,7 +339,8 @@ pub(crate) mod tools;
 
 use files::{append, inbox_path};
 pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
-pub use roster::{Agent, live, roster};
+pub(crate) use roster::roster;
+pub use roster::{Agent, live};
 use roster::{targets, unique_name};
 pub(crate) use sweep::sweep_inboxes;
 pub(crate) use tools::{Tool, definitions, is_mail_tool};

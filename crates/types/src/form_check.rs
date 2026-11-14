@@ -3,6 +3,7 @@ use serde_json::Value;
 use super::{Choice, Field, FieldKind, TextFormat};
 
 impl Field {
+    /// Checks `value` against this field's type and constraints.
     pub fn check(&self, value: &Value) -> Result<(), String> {
         let title = &self.title;
         match &self.kind {
@@ -123,6 +124,7 @@ fn check_choices(
 }
 
 impl TextFormat {
+    /// The format's display name.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {

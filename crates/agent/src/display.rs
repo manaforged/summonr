@@ -15,6 +15,9 @@ impl From<usize> for Span {
     }
 }
 
+/// The cell width of a one-line summary: a session preview, a step title, or a tool call argument.
+pub(crate) const SUMMARY_WIDTH: usize = 72;
+
 pub(crate) fn ellipsize(text: &str, span: impl Into<Span>) -> String {
     ellipsize_by(UnicodeWidthStr::width, text, span)
 }

@@ -186,7 +186,7 @@ impl<T: 'static> Table<T> {
 }
 
 #[must_use]
-pub fn asks_help(words: &[&str]) -> bool {
+pub(crate) fn asks_help(words: &[&str]) -> bool {
     words.iter().any(|word| matches!(*word, "--help" | "-h"))
 }
 

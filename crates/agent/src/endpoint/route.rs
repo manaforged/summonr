@@ -170,7 +170,7 @@ pub(super) fn slot(file: &File, name: &str) -> String {
     }
 }
 
-pub fn remembered(route: &str) -> String {
+pub(crate) fn remembered(route: &str) -> String {
     let provider = provider_of(route);
     if routes(provider).nth(1).is_some() {
         provider.to_string()

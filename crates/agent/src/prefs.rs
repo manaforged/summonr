@@ -48,7 +48,7 @@ pub const FPS_DEFAULT: u32 = 25;
 /// The gap between transcript paragraphs, in pixels, that the Spacing setting picks from.
 pub const SPACING: std::ops::RangeInclusive<u8> = 8..=24;
 /// The paragraph gap before a person changes it.
-pub const SPACING_DEFAULT: u8 = 16;
+pub(crate) const SPACING_DEFAULT: u8 = 16;
 pub const FPS_MIN: u32 = 1;
 pub const FPS_MAX: u32 = 240;
 

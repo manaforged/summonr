@@ -197,7 +197,7 @@ fn shaped_tool(mut definition: ToolDefinition) -> ToolDefinition {
     definition
 }
 
-pub fn shaped(definitions: Vec<ToolDefinition>, patch: bool) -> Vec<ToolDefinition> {
+pub(crate) fn shaped(definitions: Vec<ToolDefinition>, patch: bool) -> Vec<ToolDefinition> {
     let mut shaped = definitions;
     if patch {
         shaped.push(shaped_tool(catalog().apply_patch.clone()));

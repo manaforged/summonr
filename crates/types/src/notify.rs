@@ -1,3 +1,4 @@
+/// When summonr sends a notification.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Notify {
@@ -8,6 +9,7 @@ pub enum Notify {
 }
 
 impl Notify {
+    /// The name stored in the config file.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -17,6 +19,7 @@ impl Notify {
         }
     }
 
+    /// The setting's display label.
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -26,6 +29,7 @@ impl Notify {
         }
     }
 
+    /// The next notification setting.
     #[must_use]
     pub fn toggle(self) -> Self {
         match self {
@@ -35,11 +39,13 @@ impl Notify {
         }
     }
 
+    /// Whether a turn end notifies.
     #[must_use]
     pub fn turns(self) -> bool {
         self != Self::Off
     }
 
+    /// Whether an approval request notifies.
     #[must_use]
     pub fn approvals(self) -> bool {
         self == Self::All

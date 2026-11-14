@@ -210,20 +210,11 @@ fn key(memory: &Path, workspace: &Path) -> String {
     let root = root(workspace, layout.as_ref());
     let identity = first_commit(workspace, layout.as_ref())
         .unwrap_or_else(|| root.to_string_lossy().into_owned());
-    let name: String = root
+    let base = root
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default()
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .take(KEY_NAME_CHARS)
-        .collect();
+        .unwrap_or_default();
+    let name = summonr_core::text::clean_name(&base, "._-", '-', KEY_NAME_CHARS);
     let hash = summonr_core::text::fnv64(identity.as_bytes());
     existing(memory, &hash).unwrap_or_else(|| format!("{name}-{hash}"))
 }

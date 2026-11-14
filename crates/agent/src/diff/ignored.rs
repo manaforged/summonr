@@ -14,7 +14,7 @@ const RULES: &[Rule] = &[
     Rule::Dir(".mypy_cache"),
     Rule::Dir(".ruff_cache"),
     Rule::Under {
-        dir: ".summonr",
+        dir: summonr_core::dirs::STATE,
         keep: &["check.toml", "policy.toml"],
     },
 ];

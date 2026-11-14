@@ -14,12 +14,7 @@ pub(super) fn path_word(word: &str) -> &str {
     let Some((name, value)) = word.split_once('=') else {
         return word;
     };
-    if name.is_empty()
-        || value.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if value.is_empty() || !summonr_core::text::is_name(name, "_-") {
         return word;
     }
     let rooted = value.starts_with(['/', '~', '\\']) || value.as_bytes().get(1) == Some(&b':');

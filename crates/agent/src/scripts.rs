@@ -212,7 +212,7 @@ impl Scripts {
 }
 
 fn layered(root: &Path) -> Result<Table> {
-    let own = root.join(".summonr").join("scripts.toml");
+    let own = summonr_core::dirs::workspace(root).join("scripts.toml");
     if let Some(table) = read(&own, toml_text::<Table>)? {
         return Ok(table);
     }

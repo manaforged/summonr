@@ -63,8 +63,6 @@ pub(crate) fn effective(name: &str, text: &str) -> Option<(String, Value)> {
     routed(arguments(name, text).ok()?).ok()?.ok()
 }
 
-const LABEL_ARG_WIDTH: usize = 72;
-
 #[must_use]
 pub fn call_label(name: &str, arguments: &str) -> String {
     effective(name, arguments).map_or_else(
@@ -76,7 +74,7 @@ pub fn call_label(name: &str, arguments: &str) -> String {
             let verb = if name == SEARCH_TOOL { " search" } else { "" };
             format!(
                 "{name}{verb} {}",
-                crate::display::ellipsize(&summary, LABEL_ARG_WIDTH)
+                crate::display::ellipsize(&summary, crate::display::SUMMARY_WIDTH)
             )
         },
         |(alias, _)| {

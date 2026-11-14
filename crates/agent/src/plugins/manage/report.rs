@@ -184,17 +184,10 @@ fn config_needs(plugin: &Plugin) -> std::collections::BTreeMap<String, Vec<Strin
 fn config_keys(text: &str) -> BTreeSet<String> {
     let keys = std::cell::RefCell::new(BTreeSet::new());
     scan(text, USER_CONFIG, |key| {
-        if key_ok(key) {
+        if summonr_core::text::is_name(key, "_-.") {
             keys.borrow_mut().insert(key.to_string());
         }
         None
     });
     keys.into_inner()
-}
-
-fn key_ok(key: &str) -> bool {
-    !key.is_empty()
-        && key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
 }

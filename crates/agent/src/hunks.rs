@@ -48,8 +48,10 @@ pub enum Op {
 const FILE: &str = "review.json";
 
 fn file(root: &Path) -> PathBuf {
-    crate::diff::state_dir(root)
-        .map_or_else(|| root.join(".summonr").join(FILE), |dir| dir.join(FILE))
+    crate::diff::state_dir(root).map_or_else(
+        || summonr_core::dirs::workspace(root).join(FILE),
+        |dir| dir.join(FILE),
+    )
 }
 
 fn doc(root: &Path) -> store::Doc<store::Json<Marks>> {

@@ -4,6 +4,7 @@ use serde_json::{Map, Value, json};
 #[path = "form_check.rs"]
 mod check;
 
+/// A form an MCP server asks the person to fill in.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Form {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -12,6 +13,7 @@ pub struct Form {
     pub fields: Vec<Field>,
 }
 
+/// One field of a form.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
@@ -24,6 +26,7 @@ pub struct Field {
     pub default: Option<Value>,
 }
 
+/// The type of a form field and its constraints.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FieldKind {
@@ -61,6 +64,7 @@ pub enum FieldKind {
     },
 }
 
+/// The format a text field must match.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TextFormat {
@@ -70,6 +74,7 @@ pub enum TextFormat {
     DateTime,
 }
 
+/// One option of a choice field.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Choice {
     pub value: String,
@@ -78,6 +83,7 @@ pub struct Choice {
     pub description: Option<String>,
 }
 
+/// How the person answered a form.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FormAction {
@@ -86,6 +92,7 @@ pub enum FormAction {
     Cancel,
 }
 
+/// The answer to a form with any filled-in content.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FormAnswer {
     pub action: FormAction,
@@ -94,6 +101,7 @@ pub struct FormAnswer {
 }
 
 impl FormAnswer {
+    /// The answer that declines the form.
     #[must_use]
     pub const fn declined() -> Self {
         Self {
@@ -102,6 +110,7 @@ impl FormAnswer {
         }
     }
 
+    /// The answer that cancels the form.
     #[must_use]
     pub const fn cancelled() -> Self {
         Self {
@@ -110,6 +119,7 @@ impl FormAnswer {
         }
     }
 
+    /// The answer as the JSON the server receives.
     #[must_use]
     pub fn wire(&self) -> Value {
         serde_json::to_value(self).unwrap_or_else(|_| json!({"action": "cancel"}))
@@ -117,6 +127,7 @@ impl FormAnswer {
 }
 
 impl Form {
+    /// The form in a server's elicitation request, if it is a form.
     pub fn parse(server: &str, params: &Value) -> Option<Self> {
         if params
             .get("mode")
@@ -150,6 +161,7 @@ impl Form {
         })
     }
 
+    /// Checks `content` against every field of the form.
     pub fn check(&self, content: &Map<String, Value>) -> Result<(), String> {
         for field in &self.fields {
             match content.get(&field.name) {
@@ -221,6 +233,7 @@ impl Field {
         })
     }
 
+    /// A field value as the text shown to the person.
     #[must_use]
     pub fn shown(value: &Value) -> String {
         match value {
@@ -232,6 +245,7 @@ impl Field {
         }
     }
 
+    /// The value typed for this field, or the default when nothing was typed.
     pub fn read(&self, typed: &str) -> Result<Option<Value>, String> {
         let typed = typed.trim();
         if typed.is_empty() {

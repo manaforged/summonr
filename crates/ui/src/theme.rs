@@ -306,7 +306,7 @@ pub(super) fn load(
     }
     overlay(
         &mut palette,
-        &workspace.join(".summonr/theme.toml"),
+        &summonr_core::dirs::workspace(workspace).join("theme.toml"),
         &mut problems,
     );
     (palette, problems)

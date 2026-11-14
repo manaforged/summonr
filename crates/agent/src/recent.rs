@@ -131,7 +131,7 @@ pub(crate) fn remembered_effort(
 }
 
 #[must_use]
-pub fn default_effort(endpoint: &str, model: &str) -> Option<Effort> {
+pub(crate) fn default_effort(endpoint: &str, model: &str) -> Option<Effort> {
     let home = summonr_core::dirs::summonr_home().ok();
     remembered_effort(home.as_deref(), endpoint, model).or_else(|| {
         crate::catalog::known(endpoint, model)

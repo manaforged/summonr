@@ -64,36 +64,36 @@ impl Work {
                 let heading: String = phase
                     .unwrap_or_default()
                     .chars()
-                    .take(LEDGER_WIDTH)
+                    .take(crate::display::SUMMARY_WIDTH)
                     .collect();
                 lines.push(format!("{}. {heading}", roman(number)));
             }
-            if compact && step.state != StepState::Active {
+            if compact && step.state != StepStatus::Active {
                 tally_state(&mut lines, step.state);
                 continue;
             }
             let indent = if phase.is_some() { "  " } else { "" };
-            let title = crate::display::ellipsize(&step.title, LEDGER_WIDTH);
+            let title = crate::display::ellipsize(&step.title, crate::display::SUMMARY_WIDTH);
             lines.push(format!("{indent}{} {title}", step_mark(step.state)));
         }
         lines
     }
 }
 
-fn step_mark(state: StepState) -> &'static str {
+fn step_mark(state: StepStatus) -> &'static str {
     match state {
-        StepState::Pending => "[ ]",
-        StepState::Active => "[/]",
-        StepState::Completed => "[x]",
-        StepState::Blocked => "[!]",
+        StepStatus::Pending => "[ ]",
+        StepStatus::Active => "[/]",
+        StepStatus::Completed => "[x]",
+        StepStatus::Blocked => "[!]",
     }
 }
 
-const LEGEND: [(StepState, &str); 4] = [
-    (StepState::Completed, "done"),
-    (StepState::Active, "this step"),
-    (StepState::Pending, "later"),
-    (StepState::Blocked, "blocked"),
+const LEGEND: [(StepStatus, &str); 4] = [
+    (StepStatus::Completed, "done"),
+    (StepStatus::Active, "this step"),
+    (StepStatus::Pending, "later"),
+    (StepStatus::Blocked, "blocked"),
 ];
 
 impl Work {
@@ -109,8 +109,8 @@ impl Work {
     }
 }
 
-fn tally_state(lines: &mut Vec<String>, state: StepState) {
-    if state == StepState::Active {
+fn tally_state(lines: &mut Vec<String>, state: StepStatus) {
+    if state == StepStatus::Active {
         return;
     }
     if let Some((_, word)) = LEGEND.iter().find(|(listed, _)| *listed == state) {

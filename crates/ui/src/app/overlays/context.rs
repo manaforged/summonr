@@ -90,7 +90,7 @@ impl App {
 
     fn job_log(&self, id: &str) -> String {
         summonr_agent::jobs::load(&self.workspace(), id).map_or_else(
-            |_| format!(".summonr/jobs/{id}.log"),
+            |_| format!("{}/jobs/{id}.log", summonr_core::dirs::STATE),
             |record| {
                 summonr_agent::jobs::log_path(&self.workspace(), &record)
                     .display()

@@ -31,16 +31,7 @@ impl Store for secret::Store {
     }
 
     fn claim(&self, name: &str) -> summonr_auth::Result<Box<dyn Send>> {
-        let safe: String = login_slot(name)
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
+        let safe = summonr_core::text::clean_name(&login_slot(name), "-", '_', usize::MAX);
         summonr_core::dirs::summonr_home()
             .and_then(|home| crate::config::hold(&home.join("locks").join(safe)))
             .map(|file| Box::new(file) as Box<dyn Send>)

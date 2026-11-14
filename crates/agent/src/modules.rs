@@ -9,7 +9,7 @@ pub use summonr_types::modules::{Module, ModuleId, Switches, named};
 
 pub fn load(workspace: &Path) -> Result<Switches> {
     let user = config::file()?.modules.clone();
-    let path = workspace.join(".summonr/config.toml");
+    let path = summonr_core::dirs::workspace(workspace).join("config.toml");
     let project = if path.is_file() {
         config::parse(&path)?.modules
     } else {

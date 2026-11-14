@@ -5,6 +5,7 @@ use std::str::SplitInclusive;
 
 const IRREGULAR: &[(&str, &str)] = &[("child", "children"), ("entry", "entries")];
 
+/// `count` and `word`, with the plural form when `count` is not 1.
 pub fn plural(count: usize, word: &str) -> String {
     if count == 1 {
         return format!("{count} {word}");
@@ -19,11 +20,13 @@ pub fn plural(count: usize, word: &str) -> String {
     }
 }
 
+/// A kB figure as whole megabytes, such as `24 MB`.
 #[must_use]
 pub fn megabytes(kb: u64) -> String {
     format!("{:.0} MB", kb as f64 / 1024.0)
 }
 
+/// Elapsed seconds as `45s`, `12m34s`, or `1h02m03s`.
 pub fn duration(secs: u64) -> String {
     if secs < 60 {
         return format!("{secs}s");
@@ -36,6 +39,7 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
+/// The stable FNV-1a 64-bit hasher.
 #[derive(Clone, Copy)]
 pub struct Fnv64(u64);
 
@@ -58,12 +62,14 @@ impl Hasher for Fnv64 {
     }
 }
 
+/// The FNV-1a 64-bit hash of `bytes` as 16 hex digits.
 pub fn fnv64(bytes: &[u8]) -> String {
     let mut hasher = Fnv64::default();
     hasher.write(bytes);
     format!("{:016x}", hasher.finish())
 }
 
+/// `text` with each of `secrets` replaced by `[secret]`.
 pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
     secrets
         .into_iter()
@@ -80,6 +86,7 @@ const KEY_ECHOES: &[&str] = &[
     "x-api-key:",
 ];
 
+/// `text` with the key after an "api key:" style echo replaced by `[key]`.
 pub fn hide_key_echo(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -108,15 +115,41 @@ pub fn hide_key_echo(text: &str) -> String {
     out
 }
 
+/// `text` with each run of whitespace collapsed to one space.
 #[must_use]
 pub fn squash(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Whether `name` is non-empty and holds only ASCII letters, digits, and characters in `extra`.
+#[must_use]
+pub fn is_name(name: &str, extra: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || extra.contains(c))
+}
+
+/// `name` with characters outside ASCII letters, digits, and `extra` set to `with`, cut to `max`.
+#[must_use]
+pub fn clean_name(name: &str, extra: &str, with: char, max: usize) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || extra.contains(c) {
+                c
+            } else {
+                with
+            }
+        })
+        .take(max)
+        .collect()
 }
 
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;
 
+/// The fence line that opens and closes front matter.
 pub const FENCE: &str = "---";
 
 const ITEM: &str = "- ";
@@ -128,6 +161,7 @@ struct Field<'a> {
     items: Vec<&'a str>,
 }
 
+/// The fenced metadata fields of a document and the body after them.
 pub struct Frontmatter<'a> {
     fields: Vec<Field<'a>>,
     pub body: &'a str,
@@ -212,6 +246,7 @@ fn block_scalar(
 }
 
 impl<'a> Frontmatter<'a> {
+    /// Reads the front matter of `text`; a text with none is all body.
     pub fn parse(text: &'a str) -> Self {
         let plain = Self {
             fields: Vec::new(),
@@ -262,6 +297,7 @@ impl<'a> Frontmatter<'a> {
         plain
     }
 
+    /// The scalar value of `key`, if it is set and not empty.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.fields
             .iter()
@@ -269,6 +305,7 @@ impl<'a> Frontmatter<'a> {
             .map(|field| field.value.as_ref())
     }
 
+    /// The list value of `key`, from a block list or an inline list.
     pub fn list(&self, key: &str) -> Option<Vec<String>> {
         let field = self.fields.iter().find(|field| field.key == key)?;
         if field.value.is_empty() {

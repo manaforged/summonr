@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// One session event, shared by the journal projection, the hub, and the views.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
@@ -145,6 +146,7 @@ pub enum Event {
     Dismissed,
 }
 
+/// Why a child checkout was kept on disk.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Hold {
@@ -155,6 +157,7 @@ pub enum Hold {
 }
 
 impl Hold {
+    /// The reason as a phrase for messages.
     #[must_use]
     pub const fn reason(self) -> &'static str {
         match self {
@@ -166,12 +169,14 @@ impl Hold {
     }
 }
 
+/// A child checkout kept on disk and why.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Kept {
     pub checkout: std::path::PathBuf,
     pub hold: Hold,
 }
 
+/// Why a turn or a run stopped early.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AbortCode {
@@ -184,6 +189,7 @@ pub enum AbortCode {
 }
 
 impl AbortCode {
+    /// The child agents this stop also stops.
     #[must_use]
     pub fn child_scope(self) -> crate::ChildScope {
         if matches!(self, Self::Cancelled | Self::Error) {
@@ -194,6 +200,7 @@ impl AbortCode {
     }
 }
 
+/// An early stop with its code and reason.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Abort {
     pub code: AbortCode,
@@ -201,6 +208,7 @@ pub struct Abort {
 }
 
 impl Abort {
+    /// The stop for a reached work-time limit.
     #[must_use]
     pub fn time_limit() -> Self {
         Self {
@@ -210,6 +218,7 @@ impl Abort {
     }
 }
 
+/// A progress figure as `progress`, `progress/total`, and an optional message.
 #[must_use]
 pub fn progress_text(progress: f64, total: Option<f64>, message: Option<&str>) -> String {
     let amount = total.map_or_else(
@@ -219,6 +228,7 @@ pub fn progress_text(progress: f64, total: Option<f64>, message: Option<&str>) -
     message.map_or_else(|| amount.clone(), |message| format!("{amount} · {message}"))
 }
 
+/// The state of one plan step in a step-mode run.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StepState {
     #[serde(rename = "start")]
@@ -232,6 +242,7 @@ pub enum StepState {
 }
 
 impl StepState {
+    /// The state as the text the JSON event carries.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

@@ -233,7 +233,7 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub async fn turn_mail_with(&mut self, emit: impl FnMut(&Event)) -> Result<Turn> {
+    pub(crate) async fn turn_mail_with(&mut self, emit: impl FnMut(&Event)) -> Result<Turn> {
         if self.inbox.is_empty() {
             return Err(Error::Config("there is no pending peer mail".to_string()));
         }

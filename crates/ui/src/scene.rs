@@ -41,9 +41,7 @@ pub(crate) fn sky_seed() -> u64 {
 }
 
 pub(crate) fn fresh_sky() -> u64 {
-    let clock = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_nanos() as u64);
+    let clock = summonr_core::clock::now_nanos() as u64;
     clock ^ u64::from(std::process::id()).rotate_left(32)
 }
 

@@ -303,10 +303,7 @@ fn reference(name: &str) -> bool {
 }
 
 pub(crate) fn valid(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    summonr_core::text::is_name(name, "-_")
 }
 
 pub(crate) fn markdown_entries<T>(
@@ -335,7 +332,10 @@ fn roots(workspace: &Path) -> Vec<(PathBuf, usize)> {
         roots.push((home.join(".claude/skills"), FLAT));
         roots.push((home.join(".agents/skills"), FLAT));
     }
-    roots.push((workspace.join(".summonr").join("skills"), DEPTH));
+    roots.push((
+        summonr_core::dirs::workspace(workspace).join("skills"),
+        DEPTH,
+    ));
     roots.push((workspace.join(".claude/skills"), FLAT));
     roots.extend(plugin_dirs().into_iter().map(|dir| (dir, FLAT)));
     roots

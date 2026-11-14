@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
+/// The class of a provider failure, which decides retry and advice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderFailureKind {
     Authentication,
@@ -17,6 +18,7 @@ pub enum ProviderFailureKind {
     Http,
 }
 
+/// A failed provider request with its class, HTTP status, and retry hint.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProviderFailure {
     pub kind: ProviderFailureKind,
@@ -32,6 +34,7 @@ impl std::fmt::Display for ProviderFailure {
     }
 }
 
+/// The one error type of the harness.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("configuration error: {0}")]
@@ -55,6 +58,7 @@ pub enum Error {
 }
 
 impl Error {
+    /// A provider error of `kind` with no status and no retry hint.
     pub fn provider(kind: ProviderFailureKind, message: impl Into<String>) -> Self {
         Self::Provider(ProviderFailure {
             kind,
@@ -65,6 +69,7 @@ impl Error {
         })
     }
 
+    /// The provider failure inside this error, if it is one.
     pub fn provider_failure(&self) -> Option<&ProviderFailure> {
         match self {
             Self::Provider(failure) => Some(failure),
@@ -80,4 +85,5 @@ impl Error {
     }
 }
 
+/// A result with the harness error type.
 pub type Result<T> = std::result::Result<T, Error>;

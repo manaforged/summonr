@@ -19,7 +19,6 @@ pub(crate) use progress::{checks, roman};
 pub use summonr_types::WorkPhase;
 pub use summonr_types::{WorkKind, WorkProgress};
 
-const LEDGER_WIDTH: usize = 72;
 const TREES: &str = "tree.json";
 const DECISION: &str = "Goal Work requires a completion decision";
 
@@ -52,7 +51,7 @@ pub(crate) enum Status {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StepState {
+pub(crate) enum StepStatus {
     Pending,
     Active,
     Completed,
@@ -93,7 +92,7 @@ pub(crate) struct Step {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) phase: Option<String>,
     pub(crate) checks: Vec<usize>,
-    pub(crate) state: StepState,
+    pub(crate) state: StepStatus,
     pub(crate) attempts: u16,
     pub(crate) rounds: u32,
 }
@@ -104,7 +103,7 @@ impl Step {
             title: title.to_string(),
             phase: phase.map(str::to_string),
             checks,
-            state: StepState::Pending,
+            state: StepStatus::Pending,
             attempts: 0,
             rounds: 0,
         }
@@ -262,7 +261,7 @@ impl Work {
         let current = self.active.or_else(|| {
             self.steps
                 .iter()
-                .rposition(|step| matches!(step.state, StepState::Blocked | StepState::Completed))
+                .rposition(|step| matches!(step.state, StepStatus::Blocked | StepStatus::Completed))
         });
         let step = current.and_then(|index| self.steps.get(index));
         WorkProgress {

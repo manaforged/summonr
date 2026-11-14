@@ -113,7 +113,6 @@ pub use plugins::manage::Plugin;
 pub use prompt::{Sources, system_prompt};
 pub use provider::dollars;
 pub use provider::{Client, Delta, Effort, Usage, UserInput};
-pub use recent::default_effort;
 pub use runtime::{Budget, Job, Loop, NextAction, Turn};
 pub use session::{
     ProfileScope, export as export_session, export_json, info as session_info, last_for,

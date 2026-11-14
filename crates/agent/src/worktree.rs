@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use summonr_core::error::{Error, Result};
 
@@ -343,11 +342,7 @@ fn parse_list(primary: &Path, text: &str) -> Vec<Tree> {
 }
 
 fn new_id() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{nanos:x}")
+    format!("{:x}", summonr_core::clock::now_nanos())
 }
 
 #[cfg(test)]

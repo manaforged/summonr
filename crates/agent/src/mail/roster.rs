@@ -61,7 +61,7 @@ pub fn live(dir: &Path) -> Vec<Agent> {
     roster
 }
 
-pub fn roster(agents: &[Agent], me: &str) -> String {
+pub(crate) fn roster(agents: &[Agent], me: &str) -> String {
     if agents.is_empty() {
         return "no live agents".to_string();
     }

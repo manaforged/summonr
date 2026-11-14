@@ -188,7 +188,7 @@ impl<P: Provider> Loop<P> {
         self.catalog_frozen = true;
     }
 
-    pub fn set_env(&mut self, env: impl IntoIterator<Item = (String, String)>) {
+    pub(crate) fn set_env(&mut self, env: impl IntoIterator<Item = (String, String)>) {
         self.tools.set_env(env);
     }
 
@@ -218,7 +218,7 @@ impl<P: Provider> Loop<P> {
         self.tools.policy_inert()
     }
 
-    pub fn set_context_window(&mut self, window: Option<u32>) {
+    pub(crate) fn set_context_window(&mut self, window: Option<u32>) {
         self.context_window = window;
     }
 

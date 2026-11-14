@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -46,7 +45,7 @@ struct RunInfo {
 
 impl Log {
     pub(super) fn start() -> Option<Self> {
-        let run = format!("{}-{}", millis(), std::process::id());
+        let run = format!("{}-{}", summonr_core::clock::now_millis(), std::process::id());
         let home = match summonr_agent::summonr_home() {
             Ok(home) => home,
             Err(error) => {
@@ -84,7 +83,7 @@ impl Log {
         let result = append(
             &path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": run,
                 "event": "start",
                 "pid": std::process::id(),
@@ -101,7 +100,7 @@ impl Log {
         let result = result.and_then(|()| {
             append(
                 &path,
-                &json!({"time_unix_ms": millis(), "run": run, "event": "exit", "code": 0}),
+                &json!({"time_unix_ms": summonr_core::clock::now_millis(), "run": run, "event": "exit", "code": 0}),
                 false,
             )
         });
@@ -121,7 +120,7 @@ impl Log {
         if let Err(source) = append(
             &self.path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": self.run,
                 "event": "session",
                 "session": session,
@@ -138,7 +137,7 @@ impl Log {
         if let Err(source) = append(
             &self.path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": self.run,
                 "event": "exit",
                 "code": code,
@@ -294,7 +293,7 @@ fn hook(path: PathBuf, run: String) {
         let result = append(
             &path,
             &json!({
-                "time_unix_ms": millis(),
+                "time_unix_ms": summonr_core::clock::now_millis(),
                 "run": run,
                 "event": "panic",
                 "message": info.to_string(),
@@ -322,12 +321,6 @@ fn append(path: &Path, value: &serde_json::Value, durable: bool) -> io::Result<(
     if durable { file.sync_data() } else { Ok(()) }
 }
 
-fn millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-}
 
 fn binary() -> String {
     std::env::current_exe()

@@ -290,11 +290,7 @@ fn unknown(name: &str, tail: &str) -> Error {
 }
 
 fn named(token: &str) -> bool {
-    !token.is_empty()
-        && token.len() <= 40
-        && token
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    token.len() <= 40 && summonr_core::text::is_name(token, "-_.")
 }
 
 #[cfg(test)]

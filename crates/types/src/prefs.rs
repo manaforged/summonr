@@ -1,3 +1,4 @@
+/// How much of a tool's output the transcript shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolOutput {
@@ -7,6 +8,7 @@ pub enum ToolOutput {
 }
 
 impl ToolOutput {
+    /// The part of `output` shown: all of it, or its last non-blank line cut to 120 characters.
     pub fn text(self, output: &str) -> &str {
         if self == Self::Full {
             return output;
@@ -22,6 +24,7 @@ impl ToolOutput {
             .map_or(line.len(), |(index, _)| index);
         &line[..end]
     }
+    /// The name stored in the config file.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -30,6 +33,7 @@ impl ToolOutput {
             Self::Hidden => "hidden",
         }
     }
+    /// The next tool output setting.
     #[must_use]
     pub fn toggle(self) -> Self {
         match self {
@@ -40,6 +44,7 @@ impl ToolOutput {
     }
 }
 
+/// Whether a section is off, collapsed, or expanded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Visibility {
     Off,
@@ -48,6 +53,7 @@ pub enum Visibility {
 }
 
 impl Visibility {
+    /// The name stored in the config file.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -56,6 +62,7 @@ impl Visibility {
             Self::Expanded => "expanded",
         }
     }
+    /// The next visibility setting.
     #[must_use]
     pub fn toggle(self) -> Self {
         match self {
@@ -64,6 +71,7 @@ impl Visibility {
             Self::Expanded => Self::Off,
         }
     }
+    /// The visibility named by `value`, or `fallback`.
     #[must_use]
     pub fn parse(value: &str, fallback: Self) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {

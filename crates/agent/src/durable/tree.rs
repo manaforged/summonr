@@ -8,7 +8,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
@@ -66,10 +66,7 @@ pub(crate) fn snapshot(
     scope: &[String],
 ) -> io::Result<Snapshot> {
     let walk = || {
-        let taken = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let taken = summonr_core::clock::now();
         let mut files = BTreeMap::new();
         let mut stamps = BTreeMap::new();
         let mut hashed = 0;

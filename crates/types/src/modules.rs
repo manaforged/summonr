@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use summonr_core::error::{Error, Result};
 
+/// A built-in module.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ModuleId {
     Search,
@@ -15,6 +16,7 @@ pub enum ModuleId {
 }
 
 impl ModuleId {
+    /// The module's name in config and on the command line.
     #[must_use]
     pub const fn name(self) -> &'static str {
         ALL[self as usize].name
@@ -28,6 +30,7 @@ impl ModuleId {
     }
 }
 
+/// Deserializes a module switch table, dropping unknown names.
 pub fn switch_map<'de, D>(
     deserializer: D,
 ) -> std::result::Result<BTreeMap<ModuleId, bool>, D::Error>
@@ -41,6 +44,7 @@ where
         .collect())
 }
 
+/// A built-in module's id, name, summary, and default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Module {
     pub id: ModuleId,
@@ -49,6 +53,7 @@ pub struct Module {
     pub default: bool,
 }
 
+/// Every built-in module.
 pub const ALL: [Module; 9] = [
     Module {
         id: ModuleId::Search,
@@ -106,6 +111,7 @@ pub const ALL: [Module; 9] = [
     },
 ];
 
+/// Which modules are off by user choice or denied by the project.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Switches {
     off: BTreeSet<ModuleId>,
@@ -113,6 +119,7 @@ pub struct Switches {
 }
 
 impl Switches {
+    /// The switches from the user and project module tables.
     #[must_use]
     pub fn from_maps(user: &BTreeMap<ModuleId, bool>, project: &BTreeMap<ModuleId, bool>) -> Self {
         let mut off = BTreeSet::new();
@@ -129,11 +136,13 @@ impl Switches {
         Self { off, denied }
     }
 
+    /// Whether module `id` is on.
     #[must_use]
     pub fn enabled(&self, id: ModuleId) -> bool {
         !self.off.contains(&id) && !self.denied.contains(&id)
     }
 
+    /// Each module with its state and summary, one per line.
     #[must_use]
     pub fn table(&self) -> String {
         ALL.iter()
@@ -152,6 +161,7 @@ impl Switches {
     }
 }
 
+/// The module named `name`.
 pub fn named(name: &str) -> Result<Module> {
     ALL.iter()
         .copied()

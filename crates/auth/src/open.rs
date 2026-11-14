@@ -3,7 +3,7 @@ use std::process::Command;
 
 use crate::{Error, Result};
 
-pub const HEADLESS: &str = "SUMMONR_NO_BROWSER";
+const HEADLESS: &str = "SUMMONR_NO_BROWSER";
 
 pub fn external(target: impl AsRef<OsStr>) -> Result<()> {
     if cfg!(test) || std::env::var_os(HEADLESS).is_some() {

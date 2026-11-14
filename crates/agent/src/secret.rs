@@ -63,10 +63,14 @@ pub(crate) struct Store {
     seal: Option<[u8; KEY_LEN]>,
 }
 
+pub(crate) fn live_keys() -> bool {
+    std::env::var_os("SUMMONR_LIVE_KEYS").is_some()
+}
+
 impl Store {
     pub(crate) fn discover() -> Result<Self> {
         #[cfg(test)]
-        if std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
+        if !live_keys() {
             let file = std::env::temp_dir()
                 .join(format!("summon-test-{}", std::process::id()))
                 .join(FILE);

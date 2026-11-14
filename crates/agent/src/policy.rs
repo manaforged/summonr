@@ -13,7 +13,8 @@ mod walk;
 
 use decide::Check;
 pub(crate) use decide::{Action, Decision};
-pub use walk::{normalize, shell_words};
+pub(crate) use walk::normalize;
+pub use walk::shell_words;
 pub(crate) use {
     danger::danger,
     walk::{argv, verb},
@@ -64,7 +65,7 @@ impl Policy {
         if let Ok(home) = summonr_core::dirs::summonr_home() {
             policy.overlay_file(&home.join("policy.toml"))?;
         }
-        policy.overlay_file(&workspace.join(".summonr/policy.toml"))?;
+        policy.overlay_file(&summonr_core::dirs::workspace(workspace).join("policy.toml"))?;
         policy.roots = crate::config::file()?.write_root_paths();
         Ok(policy)
     }

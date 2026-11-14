@@ -6,12 +6,14 @@ use std::path::{Path, PathBuf};
 #[path = "hooks_config.rs"]
 mod config;
 
+/// The built-in tool that a Claude Code or summonr tool name names.
 #[must_use]
 pub fn builtin(name: &str) -> Option<Builtin> {
     let name = name.trim();
     Builtin::from_claude(name).or_else(|| Builtin::live(name))
 }
 
+/// The points in a session where hooks run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HookEvent {
     PreTool,
@@ -21,7 +23,9 @@ pub enum HookEvent {
 }
 
 impl HookEvent {
+    /// Every hook event, in order.
     pub const ALL: [Self; 4] = [Self::PreTool, Self::PostTool, Self::Compact, Self::Stop];
+    /// The event's key in the `[hooks]` config table.
     #[must_use]
     pub const fn key(self) -> &'static str {
         match self {
@@ -31,6 +35,7 @@ impl HookEvent {
             Self::Stop => "stop",
         }
     }
+    /// The event's Claude Code hook name.
     #[must_use]
     pub const fn claude(self) -> &'static str {
         match self {
@@ -42,6 +47,7 @@ impl HookEvent {
     }
 }
 
+/// The input shape a hook command reads: summonr or Claude Code.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Dialect {
@@ -50,6 +56,7 @@ pub enum Dialect {
     Claude,
 }
 
+/// Which tools a hook applies to: a name list or a pattern.
 #[derive(Clone, Debug)]
 pub enum Matcher {
     Names(Vec<String>),
@@ -57,6 +64,7 @@ pub enum Matcher {
 }
 
 impl Matcher {
+    /// The matcher in `text`; empty or `*` matches every tool.
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
         if text.is_empty() || text == "*" {
@@ -84,6 +92,7 @@ impl Matcher {
     }
 }
 
+/// One hook command with its dialect and tool matcher.
 #[derive(Clone, Debug)]
 pub struct Hook {
     pub command: String,
@@ -101,6 +110,7 @@ impl Hook {
             root: None,
         }
     }
+    /// Whether this hook runs for `tool`.
     pub fn applies(&self, tool: Option<&str>) -> bool {
         let (Some(matcher), Some(tool)) = (&self.matcher, tool) else {
             return true;
@@ -110,6 +120,7 @@ impl Hook {
                 && Builtin::live(tool)
                     .is_some_and(|kind| kind.claude().1.iter().any(|alias| matcher.matches(alias))))
     }
+    /// The tool name in this hook's dialect.
     pub fn tool_name(&self, tool: &str) -> String {
         if self.dialect == Dialect::Summonr {
             return tool.to_string();
@@ -118,6 +129,7 @@ impl Hook {
             .and_then(|kind| kind.claude().0)
             .map_or_else(|| mcp_name(tool), str::to_string)
     }
+    /// The Claude Code JSON input for this hook call.
     pub fn claude_payload(&self, call: &Call<'_>) -> Value {
         let payload = call.payload;
         let mut body = json!({ "session_id": call.session, "cwd": call.workspace, "hook_event_name": call.event.claude() });
@@ -152,19 +164,23 @@ fn mcp_name(tool: &str) -> String {
     }
 }
 
+/// The configured hooks by event.
 #[derive(Clone, Debug, Default)]
 pub struct Hooks {
     lists: [Vec<Hook>; 4],
 }
 
 impl Hooks {
+    /// The hooks for `event`.
     #[must_use]
     pub fn of(&self, event: HookEvent) -> &[Hook] {
         &self.lists[index(event)]
     }
+    /// Adds `hook` to `event`.
     pub fn push(&mut self, event: HookEvent, hook: Hook) {
         self.lists[index(event)].push(hook);
     }
+    /// The config keys of the events that have hooks.
     #[must_use]
     pub fn names(&self) -> Vec<&'static str> {
         HookEvent::ALL
@@ -184,6 +200,7 @@ const fn index(event: HookEvent) -> usize {
     }
 }
 
+/// One hook call: the event, workspace, session, and payload.
 pub struct Call<'a> {
     pub event: HookEvent,
     pub workspace: &'a Path,

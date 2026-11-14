@@ -147,7 +147,7 @@ impl App {
                 return;
             }
         }
-        let path = self.workspace().join(".summonr").join("theme.toml");
+        let path = summonr_core::dirs::workspace(&self.workspace()).join("theme.toml");
         match editor.palette.peek().save(&path) {
             Ok(()) => self.select_theme(&editor.name.peek()),
             Err(error) => editor.error.set(format!("Could not save colors: {error}")),

@@ -266,7 +266,11 @@ pub fn list(workspace: &Path, trust: bool) -> Vec<Panel> {
         read_dir(&home.join("panels"), None, &mut found);
     }
     if trust {
-        read_dir(&workspace.join(".summonr").join("panels"), None, &mut found);
+        read_dir(
+            &summonr_core::dirs::workspace(workspace).join("panels"),
+            None,
+            &mut found,
+        );
     }
     found
         .into_values()

@@ -58,7 +58,10 @@ pub(crate) fn commands(workspace: &Path) -> Vec<Command> {
 
 fn folders(workspace: &Path) -> Vec<Plugin> {
     let mut folders = vec![
-        Plugin::at(PROJECT.to_string(), workspace.join(".summonr")),
+        Plugin::at(
+            PROJECT.to_string(),
+            summonr_core::dirs::workspace(workspace),
+        ),
         Plugin::at(PROJECT.to_string(), workspace.join(".claude")),
     ];
     if let Ok(home) = summonr_core::dirs::summonr_home() {

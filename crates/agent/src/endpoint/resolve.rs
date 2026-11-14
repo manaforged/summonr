@@ -39,9 +39,16 @@ pub fn vision() -> Result<Option<Endpoint>> {
         .find_map(|name| resolve(Some(name), None, Requirement::ModelAndKey).ok()))
 }
 
+const MODEL_ENV: &str = "SUMMONR_MODEL";
+
+fn env_base() -> Option<String> {
+    std::env::var("SUMMONR_BASE_URL")
+        .ok()
+        .filter(|base| !base.trim().is_empty())
+}
+
 pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Origin> {
-    let env = std::env::var("SUMMONR_BASE_URL").is_ok_and(|base| !base.trim().is_empty());
-    if env && name.is_none() {
+    if env_base().is_some() && name.is_none() {
         return Some(Origin::Env);
     }
     let file = config::file().ok()?;
@@ -49,8 +56,7 @@ pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Origin> {
 }
 
 pub fn resolve(name: Option<&str>, model: Option<&str>, need: Requirement) -> Result<Endpoint> {
-    if let Ok(base) = std::env::var("SUMMONR_BASE_URL")
-        && !base.trim().is_empty()
+    if let Some(base) = env_base()
         && matches!(name, None | Some(ENV_ENDPOINT))
     {
         return Ok(with_catalog_window(env_endpoint(&base, model)));
@@ -118,7 +124,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
         model: Some(
             model
                 .map(str::to_string)
-                .or_else(|| std::env::var("SUMMONR_MODEL").ok())
+                .or_else(|| std::env::var(MODEL_ENV).ok())
                 .filter(|value| !value.trim().is_empty())
                 .or_else(|| super::preset::env_default().map(|preset| preset.model.to_string()))
                 .unwrap_or_default(),

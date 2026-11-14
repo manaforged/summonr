@@ -65,7 +65,7 @@ impl Chat for Wire {
             system_prompt: call.system_prompt.as_deref(),
             list: call.messages,
             keep_reasoning: encoding.keep_reasoning,
-            cached: encoding.cache_marks || call.traits.family == super::traits::Family::Anthropic,
+            cached: encoding.cache_marks || call.traits.vendor == super::traits::Vendor::Anthropic,
             assistant_after_tool: encoding.assistant_after_tool,
         })?;
         Ok(super::Wired {

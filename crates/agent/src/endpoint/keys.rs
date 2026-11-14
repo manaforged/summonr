@@ -121,7 +121,7 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
 }
 
 pub(super) fn env_key<S: AsRef<str>>(names: &[S]) -> Option<String> {
-    if cfg!(test) && std::env::var_os("SUMMONR_LIVE_KEYS").is_none() {
+    if cfg!(test) && !crate::secret::live_keys() {
         return None;
     }
     names.iter().find_map(|name| {

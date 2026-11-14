@@ -16,7 +16,7 @@ impl<P: Provider> Loop<P> {
         self.context_sample = None;
     }
 
-    pub fn set_compact_tokens(&mut self, tokens: Option<u32>) {
+    pub(crate) fn set_compact_tokens(&mut self, tokens: Option<u32>) {
         self.compact_tokens = tokens;
     }
 
@@ -87,7 +87,7 @@ impl<P: Provider> Loop<P> {
         self.tuning.remove(&role);
     }
 
-    pub fn set_price(&mut self, price: Option<crate::provider::Price>) {
+    pub(crate) fn set_price(&mut self, price: Option<crate::provider::Price>) {
         self.price = price;
     }
 

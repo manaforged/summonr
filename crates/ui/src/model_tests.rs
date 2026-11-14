@@ -269,7 +269,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
             },
         };
         for _ in 0..2 {
-            for event in line.events() {
+            for event in line.clone().events() {
                 model.apply(Msg::Fact(Fact::Event(event)));
             }
         }

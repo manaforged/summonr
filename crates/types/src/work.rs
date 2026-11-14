@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
+/// The kind of a run: one turn, a step plan, or a goal.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkKind {
@@ -11,6 +12,7 @@ pub enum WorkKind {
 }
 
 impl WorkKind {
+    /// The kind's display name.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -21,6 +23,7 @@ impl WorkKind {
     }
 }
 
+/// The phase of a run.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkPhase {
@@ -43,6 +46,7 @@ impl Display for WorkPhase {
     }
 }
 
+/// The progress of a run.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct WorkProgress {
     pub kind: WorkKind,
@@ -65,11 +69,13 @@ pub struct WorkProgress {
 }
 
 impl WorkProgress {
+    /// Whether the run has finished.
     #[must_use]
     pub fn terminal(&self) -> bool {
         matches!(self.phase, WorkPhase::Completed | WorkPhase::Failed)
     }
 
+    /// The exit code of a finished run.
     #[must_use]
     pub fn exit_code(&self) -> Option<i32> {
         match self.phase {
@@ -80,6 +86,7 @@ impl WorkProgress {
         }
     }
 
+    /// The process exit code: 2 when checks failed, 3 when stopped short, else the run's code.
     #[must_use]
     pub fn exit_status(&self, checks_failed: bool, aborted: bool) -> i32 {
         if checks_failed {
@@ -114,6 +121,7 @@ impl Display for WorkProgress {
     }
 }
 
+/// The status of a todo item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TodoStatus {
@@ -124,6 +132,7 @@ pub enum TodoStatus {
 }
 
 impl TodoStatus {
+    /// The status named by `name`, accepting the Agent Client Protocol names.
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "pending" => Some(Self::Pending),
@@ -134,6 +143,7 @@ impl TodoStatus {
         }
     }
 
+    /// The status's Agent Client Protocol name.
     pub fn acp(self) -> &'static str {
         match self {
             Self::Pending | Self::Blocked => "pending",
@@ -143,6 +153,7 @@ impl TodoStatus {
     }
 }
 
+/// One todo item.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Todo {
     pub text: String,
@@ -150,6 +161,7 @@ pub struct Todo {
 }
 
 impl Todo {
+    /// The item's status mark.
     pub fn mark(&self) -> &'static str {
         match self.status {
             TodoStatus::Done => "✓",
@@ -159,10 +171,12 @@ impl Todo {
         }
     }
 
+    /// Whether the item is still to do.
     pub fn open(&self) -> bool {
         matches!(self.status, TodoStatus::Active | TodoStatus::Pending)
     }
 
+    /// The item as its mark and text.
     pub fn line(&self) -> String {
         format!("{} {}", self.mark(), self.text)
     }

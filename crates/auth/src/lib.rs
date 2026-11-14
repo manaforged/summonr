@@ -5,10 +5,12 @@ use leyline::{RequestBuilder, Session};
 use summonr_core::secret::Secret;
 
 mod oauth;
+/// Opens a URL in the user's browser.
 pub mod open;
 
 pub use oauth::{Grant, Spec, TokenStyle};
 
+/// The `User-Agent` value: `summonr/` and the crate version.
 pub const AGENT: &str = concat!("summonr/", env!("CARGO_PKG_VERSION"));
 
 struct Waits {
@@ -31,6 +33,7 @@ const WAITS: Waits = Waits {
 
 const TIMED_OUT: &str = "the login timed out";
 
+/// The one error type of sign-in and key handling.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -43,16 +46,20 @@ pub enum Error {
     NeedsLogin { name: String, detail: String },
 }
 
+/// A result with the auth error type.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The future that resolves to the text a person pasted back, if any.
 pub type Answer = std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>;
 
+/// How a sign-in shows lines to a person and asks for pasted text.
 pub struct Prompt {
     say: Box<dyn FnMut(&str) + Send>,
     ask: Box<dyn FnMut(String) -> Answer + Send>,
 }
 
 impl Prompt {
+    /// A prompt that shows lines with `say` and asks with `ask`.
     pub fn new(
         say: impl FnMut(&str) + Send + 'static,
         ask: impl FnMut(String) -> Answer + Send + 'static,
@@ -63,14 +70,17 @@ impl Prompt {
         }
     }
 
+    /// A prompt that shows lines and never gets an answer.
     pub fn telling(say: impl FnMut(&str) + Send + 'static) -> Self {
         Self::new(say, |_| Box::pin(std::future::ready(None)))
     }
 
+    /// Shows `line` to the person.
     pub fn notice(&mut self, line: &str) {
         (self.say)(line);
     }
 
+    /// Asks with `line` and returns the trimmed answer, or fails when none came.
     pub async fn request(&mut self, line: &str) -> Result<String> {
         (self.ask)(line.to_string())
             .await
@@ -82,6 +92,7 @@ impl Prompt {
     }
 }
 
+/// Where keys and login grants are kept by name.
 pub trait Store: Send + Sync {
     fn get(&self, name: &str) -> Result<Option<String>>;
     fn set(&self, name: &str, secret: &str) -> Result<()>;
@@ -91,6 +102,7 @@ pub trait Store: Send + Sync {
     }
 }
 
+/// How a token goes on a request.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scheme {
@@ -101,6 +113,7 @@ pub enum Scheme {
 }
 
 impl Scheme {
+    /// Puts `token` on `request` as this scheme's header.
     pub fn apply(self, request: RequestBuilder, token: &str) -> RequestBuilder {
         match self {
             Self::Bearer => request.bearer_auth(token),
@@ -120,6 +133,7 @@ impl From<summonr_types::oauth::TokenScheme> for Scheme {
     }
 }
 
+/// A fixed key or an OAuth login.
 #[derive(Clone, Debug)]
 pub enum Method {
     Key(Secret),
@@ -154,6 +168,7 @@ enum Held {
     Login(Box<LoginState>),
 }
 
+/// The credential of one endpoint, shared across its requests.
 #[derive(Clone)]
 pub struct Auth {
     held: Arc<Held>,
@@ -162,6 +177,7 @@ pub struct Auth {
 }
 
 impl Auth {
+    /// The credential `name` with its method, scheme, and store.
     pub fn new(method: Method, scheme: Scheme, name: &str, store: Arc<dyn Store>) -> Self {
         let held = match method {
             Method::Key(key) => Held::Key(key),
@@ -179,14 +195,17 @@ impl Auth {
         }
     }
 
+    /// Whether this credential is an OAuth login.
     pub fn is_login(&self) -> bool {
         matches!(self.held.as_ref(), Held::Login(_))
     }
 
+    /// How the token goes on a request.
     pub fn scheme(&self) -> Scheme {
         self.scheme
     }
 
+    /// The current token, refreshed when a login token is stale.
     pub async fn token(&self, http: &Session) -> Result<String> {
         match self.held.as_ref() {
             Held::Key(key) => Ok(key.expose().to_string()),
@@ -194,11 +213,13 @@ impl Auth {
         }
     }
 
+    /// Puts the current token on `request`.
     pub async fn apply(&self, request: RequestBuilder, http: &Session) -> Result<RequestBuilder> {
         let token = self.token(http).await?;
         Ok(self.scheme.apply(request, &token))
     }
 
+    /// Runs the sign-in flow; fails for a key credential.
     pub async fn login(&self, http: &Session, prompt: &mut Prompt) -> Result<()> {
         let Held::Login(login) = self.held.as_ref() else {
             return Err(Error::Config(
@@ -208,6 +229,7 @@ impl Auth {
         oauth::login(parts(login), http, &self.store, prompt).await
     }
 
+    /// The headers built from claims in the held login token.
     pub fn stamped(&self) -> Vec<(String, String)> {
         let Held::Login(login) = self.held.as_ref() else {
             return Vec::new();
@@ -224,6 +246,7 @@ impl Auth {
         oauth::stamped(&login.spec, issued)
     }
 
+    /// Drops the held login token and marks a stored grant with no exchange as expired.
     pub fn forget_live(&self) {
         let Held::Login(login) = self.held.as_ref() else {
             return;
@@ -236,6 +259,7 @@ impl Auth {
         }
     }
 
+    /// Whether a key is set or a readable login grant is stored.
     pub fn ready(&self) -> Result<bool> {
         match self.held.as_ref() {
             Held::Key(_) => Ok(true),
@@ -263,12 +287,14 @@ fn parts(login: &LoginState) -> Parts<'_> {
     }
 }
 
+/// An HTTP session with these total and connect timeouts.
 pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
     builder(timeout, connect)
         .build()
         .map_err(|error| Error::Transport(error.to_string()))
 }
 
+/// A session builder with these total and connect timeouts.
 pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder {
     session(leyline::Timeout::new().total(timeout).connect(connect))
 }

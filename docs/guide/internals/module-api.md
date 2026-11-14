@@ -114,7 +114,7 @@ nullable lists and reasoning content. `provider::fit` owns image conversion.
 | interrupt | `summonr::interrupted` | the one wait for SIGINT, SIGTERM, or SIGHUP (Ctrl+C on Windows), returning 130, 143, or 129: the main run, the webhook listener, and the Telegram bridge |
 | named rows | `summonr_core::table::{parse, embedded}`, `summonr_core::catalog::{Row, Catalog::{from_rows, get, rows}}` | the one shape for typed data tables: `table` parses one typed struct from TOML text and `embedded` panics at startup on invalid built-in text; `Catalog` holds named rows with a retired-name column (`Row::{name, retired}`), rejects a name or alias listed twice, and `get` finds a row by name or retired alias; provider presets and question sets hold their rows there, so a retired preset name routes to its replacement through the same lookup |
 | child identity | `child.rs::ChildRecord::spawned` | projects the same name, model, assignment, access, and workspace metadata for native dispatch and durable journal replay; metadata refreshes update an existing UI row rather than creating another row |
-| clock | `summonr_core::clock::{now, now_millis}` | epoch seconds and millis for stamps, job records, and schedule math; the former owners (mail, catalog, durable/log, cron) read it |
+| clock | `summonr_core::clock::{now, now_millis, now_nanos}` | epoch seconds, millis, and nanos for stamps, job records, ids, seeds, and schedule math; the former owners (mail, catalog, durable/log, cron) read it |
 | command table | `command::table::{Row, Arity, Scope, Table}` (`find`, `apply`, `walk`, `scoped`, `verbs`, `help_lines`), `command::table::{asks_help, number}` | the one row table and walker for CLI flags: root flags and scoped verb flags, `mcp add`, `cron add`/`edit`/`run`/`log`, and `gateway telegram`; each table keeps its own error wording; the Options lines of `summonr --help` render from the root rows |
 | shell quote | `shell::quote` | the one POSIX single-quote escaper for scripts summonr writes (askpass shims, the command wrapper, the crontab line) |
 | workflow | `workflow.rs`, `[workflows.NAME]` | four roles: Scout, Implement, Judge, Summary |
@@ -138,6 +138,9 @@ nullable lists and reasoning content. `provider::fit` owns image conversion.
 | duration | `text::duration` | `45s`, `12m34s`, `1h02m03s` for elapsed time anywhere in the UI |
 | count noun | `text::plural` | `"1 hunk"` / `"3 hunks"`; irregular forms such as child/children live in its table |
 | content hash | `text::fnv64`, `text::Fnv64` | the one non-cryptographic hash: `prefix_hash`, MCP catalog keys, line tags, hunk ids, tree fingerprints, and prompt dedup; `Fnv64` is the stable `Hasher` for multi-field input and for any value stored or compared across runs |
+| name check | `text::{is_name, clean_name}` | the one test and the one cleaner for a name of ASCII letters, digits, and the caller's extra characters: mail ids, MCP names and aliases, memory keys, login lock files, plugin config keys, skill names, job ids, and `NAME=value` words; each caller passes its own extra characters, replacement, and length |
+| state folder | `dirs::{STATE, workspace, HOME_ENV}` | the `.summonr` folder name, a workspace's `.summonr` folder, and the `SUMMONR_HOME` variable; the home lookup, walk skips, hooks, cron, and every workspace file under `.summonr` read them |
+| summary width | `display::SUMMARY_WIDTH` | the 72-cell clip of a one-line summary: session previews, Work ledger step titles, and tool call arguments in `mcp::call_label` |
 | front matter | `text::Frontmatter::{parse, get, list}`, `text::FENCE`, `skills::markdown_entries` | the one reader of fenced metadata in skills, plugin commands, and plugin agents; reads scalar fields, comma/inline/block lists, and common literal/folded text blocks (`\|` or `>` with optional `-` or `+`); simple values borrow the source, block values own their normalized text, and the body remains unchanged; skill summaries use `text::squash` for one-line catalog entries |
 | mcp status | `mcp::status`, `mcp::Board`, `Loop::mcp_board`, `/mcp` pane, `summonr mcp list\|get` | one status for the pane and the CLI: configured and waiting servers, state from the live hub when a session has one, tool count and schema bytes from the catalog; language-server rows (`ServerKind::Lsp`) and each live server's memory (`rss_kb`) come from `supervise::live` |
 | mcp config | `config::{Section, save_named, remove_named}`, `mcp::{add, remove, probe}` | the one writer of named `[mcp.NAME]` and `[endpoint.NAME]` tables, picked by `Section`; `summonr plugin install` and `summonr mcp add` both use it; `probe` connects once after `mcp add` and caches the tool list |
@@ -284,8 +287,10 @@ clock, and help-from-rows are in. What the census still ranks, by job:
 ## How this is enforced
 
 - Census: `python3 scripts/api-census.py --check` reads the "Names we
-  delete" table above and compares the counts against the baseline. Re-run
-  it in the same change that adds a row.
+  delete" table above and compares the counts against the baseline. A
+  `module::item` or `file.rs::item` name also counts a definition of `item`
+  in that module's file, so a copy renamed at its call sites still shows.
+  Re-run it in the same change that adds a row.
 - File size: the same gate counts the source files over 400 lines (0 today)
   and denies a rise.
 - [CONTRIBUTING.md](../../../CONTRIBUTING.md) § Shared API sends contributors to this page.

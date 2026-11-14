@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+/// One MCP server entry from a config file.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct Entry {
     pub command: Option<String>,
@@ -23,6 +24,7 @@ pub struct Entry {
 }
 
 impl Entry {
+    /// Applies `top` over this entry; a `top` with no launch changes only its switches.
     pub fn overlay(&mut self, top: Self) {
         if top.command.is_none() && top.url.is_none() {
             self.enabled = top.enabled.or(self.enabled);

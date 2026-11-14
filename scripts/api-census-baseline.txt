@@ -10,6 +10,21 @@ delete overlay::hint	0	`ui::{Dialog, Prompt, Hints, notice}`
 delete overlay::band	0	`ui::{Dialog, Prompt, Hints, notice}`
 delete summonr decide	0	`summonr classify`, `classify`
 delete summonr infer	0	`summonr classify`, `classify`
+delete Fact::Mail	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Fact::Receipt	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Fact::System	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Fact::Injected	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Fact::Cleared	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Intent::User	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Intent::Image	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete Fact::Transcript(Vec<Msg>)	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete hub::replay::ReplayState	0	`Line`, with `Event` projected by `Line::events`; the view builds every transcript `Entry` from `Event` (`Event::{User, Injected, Cleared}` reach only a view and are never serialized); `Fact::Transcript { replace, events }`; `hub::replay::Replay` holds `Arc` shares of the last `Fact::{Settings, Pending, Changed}`; `Msg`/`Cmd` stay UI transport
+delete supervise::within	0	`limits::within`, the `Limits` `Duration` getters, `std::time::Duration::from_secs`, `Limits::retry_wait`
+delete limits::seconds	0	`limits::within`, the `Limits` `Duration` getters, `std::time::Duration::from_secs`, `Limits::retry_wait`
+delete durations::secs	0	`limits::within`, the `Limits` `Duration` getters, `std::time::Duration::from_secs`, `Limits::retry_wait`
+delete durations::millis	0	`limits::within`, the `Limits` `Duration` getters, `std::time::Duration::from_secs`, `Limits::retry_wait`
+delete crate::seconds	0	`limits::within`, the `Limits` `Duration` getters, `std::time::Duration::from_secs`, `Limits::retry_wait`
+delete budget_wait	0	`limits::within`, the `Limits` `Duration` getters, `std::time::Duration::from_secs`, `Limits::retry_wait`
 delete provider::limits	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs`
 delete limits::secs	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs`
 delete limits::secs_f64	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs`
@@ -85,13 +100,13 @@ session dialect Cmd	1	one session event
 session dialect Entry	1	one session event
 name collision: Kind	0	one word, one domain
 clip-shaped helper	0	text::ellipsize
-short-shaped helper	1	check the job, then name it
+short-shaped helper	0	check the job, then name it
 wrap-shaped helper	5	check the job, then name it
 surface painter	0	rows::paint
 sigil prelude glob	0	named imports
 legacy tool alias literal	0	one alias table
-match wildcard arm	106	name the arm
-timeout mention	14	one timeout policy
+match wildcard arm	105	name the arm
+timeout mention	5	one timeout policy
 delete winapi-util	0	nothing
 delete smol_str	0	nothing
 delete reqwest	0	nothing

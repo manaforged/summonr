@@ -110,12 +110,10 @@ impl<P: Provider> Loop<P> {
         if let Some(set) = self.tools.skill_set().cloned() {
             child.choose_skills(set)?;
         }
-        if args.access == Access::Implement {
-            child.mcp = self
-                .mcp
-                .as_ref()
-                .map(|hub| Arc::new(hub.for_child(&workspace)));
-        }
+        child.mcp = self
+            .mcp
+            .as_ref()
+            .map(|hub| Arc::new(hub.for_child(&workspace)));
         child.mail_module = self.mail_module;
         child.context_window = self.receiver_window(role);
         child.compact_tokens = self.compact_tokens;

@@ -8,6 +8,7 @@ pub(super) struct Tool {
     pub(super) name: String,
     pub(super) description: String,
     pub(super) schema: Value,
+    pub(super) read_only: bool,
 }
 
 impl Tool {
@@ -35,6 +36,10 @@ impl Tool {
                 .get("inputSchema")
                 .cloned()
                 .unwrap_or_else(|| json!({"type": "object"})),
+            read_only: item
+                .pointer("/annotations/readOnlyHint")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             name,
         })
     }

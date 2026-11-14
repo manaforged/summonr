@@ -71,7 +71,13 @@ jobs:
               exit "$status"
             fi
           }
+          banned_paths='(^|/)\.DS_Store$|\.bak([.-].*)?$|\.(orig|rej|swp|swo)$|~$|(^|/)\.env(\..+)?$'
+          allowed_env='(^|/)\.env\.(example|sample|template)$'
           while IFS= read -r -d '' path; do
+            if printf '%s\n' "$path" | grep -qiE "$banned_paths" && ! printf '%s\n' "$path" | grep -qiE "$allowed_env"; then
+              echo "::error::Tracked path $path is an ignored editor, backup, or environment file"
+              failed=1
+            fi
             git show "$HEAD:$path" | strings > "$RUNNER_TEMP/hygiene-content"
             scan "$RUNNER_TEMP/hygiene-content" "Repository content"
           done < <(git ls-tree -r --name-only -z "$HEAD")

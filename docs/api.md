@@ -1,6 +1,6 @@
 # summonr API map
 
-For agents and tools that run summonr as a child process. The commands, flags, exit codes, and JSON shapes on this page are the supported surface. The Rust items in the `summonr` library crate are public to the binary only. Do not link against them. The subcommand `askpass` and the flag `--profile-tui` are internal entry points. Do not call them.
+For agents and tools that run summonr as a child process. The commands, flags, exit codes, and JSON shapes on this page are the supported surface. The Rust items in the `summonr` library crate are public to the binary only. Do not link against them. The subcommands `askpass`, `cron tick`, and `cron exec` and the flag `--profile-tui` are internal entry points. Do not call them.
 
 Binary: `summonr`. Source of truth: `src/main/cli.rs`.
 
@@ -24,6 +24,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr worktree list [--json]`, `summonr worktree prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
 | `summonr panel list`, `summonr panel check NAME` | List custom panels, or run one and report what the app cannot draw; exit 1 on a mistake |
 | `summonr endpoint list [--all] [--check]` | List the endpoints that are set up and their key source, offline; `--all` adds the rest, `--check` asks each for its models |
+| `summonr endpoint usage [--json]` | Show each plan's usage windows, the share used, and when each resets |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
 | `summonr endpoint add NAME --url URL [--model M]`, `summonr endpoint remove NAME` | Add or update your own OpenAI-compatible server, or remove it |
 | `summonr module list` | List compiled modules and their state |
@@ -77,7 +78,7 @@ summonr ignores its own output files when it checks whether the workspace change
 
 | Job | Command or flag |
 | --- | --- |
-| Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|minimal\|low\|medium\|high\|xhigh\|max` |
+| Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|off\|minimal\|low\|medium\|high\|xhigh\|max` |
 | Set a budget | `--max-tokens N`, `--max-secs N` |
 | Add a writable root under `--strict` | `--add-dir DIR` |
 | Allow only listed commands | `--strict` with `policy.toml` |
@@ -101,9 +102,9 @@ summonr ignores its own output files when it checks whether the workspace change
 | 1 | Harness error: bad arguments, config error, or internal failure. The message goes to stderr as `summonr: <error>`. | `src/main.rs` |
 | 2 | A check failed, including a goal or step run that stopped short and then failed the check at exit. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
 | 3 | Stopped short (budget, stall, or aborted turn) with no check configured, or the check passed but the goal was not met. | `WorkProgress::exit_status` in `crates/types/src/work.rs` |
-| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `until_signal` in `src/main.rs` |
-| 143 | Terminated by `SIGTERM` (Unix). | `until_signal` in `src/main.rs` |
-| 129 | Hung up by `SIGHUP` (Unix). | `until_signal` in `src/main.rs` |
+| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `interrupted` in `crates/agent/src/lib.rs` |
+| 143 | Terminated by `SIGTERM` (Unix). | `interrupted` in `crates/agent/src/lib.rs` |
+| 129 | Hung up by `SIGHUP` (Unix). | `interrupted` in `crates/agent/src/lib.rs` |
 
 When a `--goal` or `--steps` run stops short, summonr runs the configured check once at exit, and its result decides the exit code. `-p` runs no check at exit.
 
@@ -117,7 +118,7 @@ An unknown option is exit code 1 with `unknown option`. `summonr mcp add` exits 
 
 ### `--json` on a session (`-p`, `--goal`, `--steps`)
 
-summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `crates/agent/src/tools.rs`.
+summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. A run that fails before its session starts, for example on a broken config file or a missing key, prints one line instead: an `aborted` event with code `error`. The shapes come from `Event` in `crates/types/src/event.rs`.
 
 | `type` | Fields |
 | --- | --- |
@@ -126,6 +127,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `tool_result` | `id`, `success`, `mutated`, `output`, optional `millis`, and for a file edit an optional `patch` (the unified diff of that call) |
 | `assistant` | `text`; a turn that takes a steered message after a reply prints one per reply |
 | `delta` | `text` |
+| `steered` | `text`, a queued user message delivered between model rounds |
 | `reasoning` | `text` |
 | `note` | `text` |
 | `usage` | `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cached_tokens`, `cache_write_tokens` (prompt tokens written to the provider cache), optional `millis`, `prefix_hash`, `cost` |
@@ -179,7 +181,7 @@ Markdown on stdout. It is not JSON.
 
 ### `summonr acp`
 
-JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
+JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1` with no auth methods, and `authenticate` answers an empty object. The methods are `session/new` (needs `cwd`) and `session/prompt`. summonr sends `session/update` notifications and accepts a `session/cancel` notification. When a command needs approval, summonr sends `session/request_permission` with `allow_once`, `reject_once`, and, for a write grant, `allow_always`; the command runs only on an allow option. Source: `crates/agent/src/acp.rs`.
 
 ## Conventions
 

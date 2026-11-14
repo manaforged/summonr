@@ -204,7 +204,7 @@ pub(super) type Check = (fn(&Args) -> bool, &'static str);
 pub(super) const CONFLICTS: [Check; 4] = [
     (
         |args| args.grep.is_some() && !matches!(args.verb, Some(Verb::Sessions)),
-        "--grep works with `summonr sessions`; use `summonr session search TEXT`",
+        "--grep works with `summonr session list`; use `summonr session search TEXT`",
     ),
     (
         |args| args.here && args.worktree,

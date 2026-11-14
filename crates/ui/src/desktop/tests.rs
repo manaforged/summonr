@@ -1,5 +1,4 @@
 use sigil::prelude::HostMode;
-use std::collections::BTreeMap;
 
 use sigil::Host;
 use sigil::app::FrameHooks;
@@ -135,12 +134,14 @@ fn the_window_model_picker_rows_sit_between_header_and_hints() {
             app.update(Msg::Fact(Fact::Models {
                 request: 1,
                 rows: names.iter().map(|id| selection(id)).collect(),
-                facts: names
-                    .iter()
-                    .map(|id| (selection(id), Model::named(*id)))
-                    .collect(),
-                groups: BTreeMap::new(),
-                causes: BTreeMap::new(),
+                facts: std::sync::Arc::new(
+                    names
+                        .iter()
+                        .map(|id| (selection(id), Model::named(*id)))
+                        .collect(),
+                ),
+                groups: Default::default(),
+                causes: Default::default(),
                 pinned: 0,
                 recent: 0,
                 loading: false,

@@ -257,7 +257,7 @@ pub(super) fn steps<T>(
 }
 
 pub(super) fn settings(snapshot: Snapshot) -> impl FnOnce(&App) {
-    move |app| app.update(Msg::Fact(Fact::Settings(snapshot)))
+    move |app| app.update(Msg::Fact(Fact::Settings(snapshot.into())))
 }
 
 pub(super) fn graded() -> Snapshot {

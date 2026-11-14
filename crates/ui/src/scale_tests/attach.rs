@@ -117,8 +117,8 @@ fn an_attached_image_keeps_its_info_band_during_active_and_queued_turns() {
                 steering: 0,
                 queued,
             }));
-            let rows = (0..queued).map(|_| (false, "later".to_string())).collect();
-            app.update(Msg::Fact(Fact::Pending(rows)));
+            let rows: Vec<_> = (0..queued).map(|_| (false, "later".to_string())).collect();
+            app.update(Msg::Fact(Fact::Pending(rows.into())));
             paste_png(app);
         });
         let shown = grid.text();

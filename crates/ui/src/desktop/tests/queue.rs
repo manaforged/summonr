@@ -10,10 +10,13 @@ fn waiting(app: &super::super::App) {
         steering: 1,
         queued: 1,
     }));
-    app.update(Msg::Fact(Fact::Pending(vec![
-        (true, "use the new parser".to_owned()),
-        (false, "then update the docs\nwith examples".to_owned()),
-    ])));
+    app.update(Msg::Fact(Fact::Pending(
+        vec![
+            (true, "use the new parser".to_owned()),
+            (false, "then update the docs\nwith examples".to_owned()),
+        ]
+        .into(),
+    )));
 }
 
 #[test]

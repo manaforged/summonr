@@ -1,6 +1,7 @@
 use crate::forge::{self, Ask, State};
 use crate::hub::{Fact, Msg};
 use crate::scripts::{Script, Scripts, Workspace};
+use crate::tools::Event;
 use crate::worktree::{self, Tree};
 
 use super::Reader;
@@ -46,7 +47,7 @@ impl Reader {
     }
 
     fn note(&self, text: String) {
-        self.send(Msg::Fact(Fact::System(text)));
+        self.send(Msg::Fact(Fact::Event(Event::Note { text })));
     }
 }
 

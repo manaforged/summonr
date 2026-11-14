@@ -1,6 +1,7 @@
 use super::export::export_session;
 use super::*;
 use crate::hub::Fact;
+use crate::tools::Event;
 
 impl Worker {
     pub(super) fn new(
@@ -115,16 +116,10 @@ impl Worker {
         if self.queue.take_recorded(&input.text) {
             return;
         }
-        drop(
-            self.ui
-                .send(Msg::Intent(crate::hub::Intent::User(input.text.clone()))),
-        );
-        for image in &input.images {
-            drop(
-                self.ui
-                    .send(Msg::Intent(crate::hub::Intent::Image(image.clone()))),
-            );
-        }
+        drop(self.ui.send(Msg::Fact(Fact::Event(Event::User {
+            text: input.text.clone(),
+            images: input.images.clone(),
+        }))));
     }
 
     pub(super) fn peers(&mut self, peers: &[crate::mail::Agent]) {
@@ -187,10 +182,10 @@ impl Worker {
             if *shown {
                 continue;
             }
-            drop(self.ui.send(Msg::Fact(Fact::Mail {
+            drop(self.ui.send(Msg::Fact(Fact::Event(Event::Mail {
                 from: message.sender().to_string(),
-                text: message.text.clone(),
-            })));
+                text: message.text,
+            }))));
         }
     }
 
@@ -198,17 +193,19 @@ impl Worker {
         match self.loop_.mail_poll() {
             Ok(mail) => {
                 if self.mail_error.take().is_some() {
-                    drop(
-                        self.ui
-                            .send(Msg::Fact(Fact::System("mail recovered".to_string()))),
-                    );
+                    drop(self.ui.send(Msg::Fact(Fact::Event(Event::Note {
+                        text: "mail recovered".to_string(),
+                    }))));
                 }
                 mail
             }
             Err(error) => {
                 let text = format!("mail poll failed: {error}");
                 if self.mail_error.as_ref() != Some(&text) {
-                    drop(self.ui.send(Msg::Fact(Fact::System(text.clone()))));
+                    drop(
+                        self.ui
+                            .send(Msg::Fact(Fact::Event(Event::Note { text: text.clone() }))),
+                    );
                     self.mail_error = Some(text);
                 }
                 Vec::new()
@@ -223,7 +220,9 @@ impl Worker {
     }
 
     pub(super) fn system(&self, text: &str) {
-        drop(self.ui.send(Msg::Fact(Fact::System(text.to_string()))));
+        drop(self.ui.send(Msg::Fact(Fact::Event(Event::Note {
+            text: text.to_string(),
+        }))));
     }
 
     pub(super) fn outcome(&self, text: &str) {

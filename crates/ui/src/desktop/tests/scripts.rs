@@ -122,10 +122,13 @@ fn a_new_agent_pane_runs_setup_in_a_terminal_once_it_arrives() {
     let folder = worktree(&repo, "three");
     let mut keys = vec![Step::Key(command("n"))];
     keys.push(Step::Wait(Box::new(move |app: &App| {
-        app.update(Msg::Fact(Fact::Settings(Snapshot {
-            workspace: folder,
-            ..graded()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            Snapshot {
+                workspace: folder,
+                ..graded()
+            }
+            .into(),
+        )));
     })));
     let seen = steps(
         settings(Snapshot {
@@ -292,10 +295,13 @@ fn a_new_agent_pane_gets_ignored_env_files_before_setup_reads_them() {
     let arrived = folder.clone();
     let mut keys = vec![Step::Key(command("n"))];
     keys.push(Step::Wait(Box::new(move |app: &App| {
-        app.update(Msg::Fact(Fact::Settings(Snapshot {
-            workspace: arrived,
-            ..graded()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            Snapshot {
+                workspace: arrived,
+                ..graded()
+            }
+            .into(),
+        )));
     })));
     let seen = steps(
         settings(Snapshot {

@@ -45,7 +45,9 @@ fn session_status_follows_the_turn_and_its_questions() {
         (Status::Idle, approval(None), Status::Idle),
         (
             Status::Review,
-            Msg::Fact(Fact::System("note".into())),
+            Msg::Fact(Fact::Event(Event::Note {
+                text: "note".into(),
+            })),
             Status::Review,
         ),
         (
@@ -72,7 +74,7 @@ fn viewing_a_session_clears_finished_states_only() {
 
 #[test]
 fn switching_back_restores_the_turn_then_its_open_question() {
-    let mut replay = super::replay::ReplayState::default();
+    let mut replay = super::replay::Replay::default();
     replay.record(&Msg::Fact(Fact::Busy(Some(Activity::Turn))), false);
     replay.record(&approval(Some("git push --force")), false);
     let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
@@ -91,7 +93,7 @@ fn switching_back_restores_the_turn_then_its_open_question() {
 
 #[test]
 fn an_answered_question_is_not_asked_again_on_switch() {
-    let mut replay = super::replay::ReplayState::default();
+    let mut replay = super::replay::Replay::default();
     replay.record(&Msg::Fact(Fact::Busy(Some(Activity::Turn))), false);
     replay.record(&approval(Some("rm -rf build")), false);
     replay.record(&approval(None), false);
@@ -112,18 +114,18 @@ fn text_handed_back_while_away_returns_once_on_switch() {
             "finish the docs",
         )]))
     };
-    let handed = |replay: &mut super::replay::ReplayState| {
+    let handed = |replay: &mut super::replay::Replay| {
         let (app, mut inbox) = tokio::sync::mpsc::unbounded_channel();
         replay.resend(&app);
         std::iter::from_fn(|| inbox.try_recv().ok())
             .filter(|msg| matches!(msg, Msg::Fact(Fact::Restored(_))))
             .count()
     };
-    let mut away = super::replay::ReplayState::default();
+    let mut away = super::replay::Replay::default();
     away.record(&restored(), false);
     assert_eq!(handed(&mut away), 1);
     assert_eq!(handed(&mut away), 0);
-    let mut shown = super::replay::ReplayState::default();
+    let mut shown = super::replay::Replay::default();
     shown.record(&restored(), true);
     assert_eq!(handed(&mut shown), 0);
 }
@@ -224,12 +226,7 @@ async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
     .await;
     until("the first session's transcript", &mut inbox, |msg| {
         assert!(!matches!(msg, Msg::Intent(Intent::Reset)));
-        matches!(
-            msg,
-            Msg::Fact(Fact::Transcript(lines))
-                if matches!(lines.first(), Some(Msg::Intent(Intent::Reset)))
-        )
-        .then_some(())
+        matches!(msg, Msg::Fact(Fact::Transcript { replace: true, .. })).then_some(())
     })
     .await;
     until("the first session's id", &mut inbox, |msg| {

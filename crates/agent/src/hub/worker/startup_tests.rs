@@ -21,11 +21,12 @@ fn task_progress_replays_the_current_numbered_plan() {
     history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui, false);
     let progress = std::iter::from_fn(|| inbox.try_recv().ok())
         .flat_map(|message| match message {
-            Msg::Fact(Fact::Transcript(lines)) => lines,
-            message => vec![message],
+            Msg::Fact(Fact::Transcript { events, .. }) => events,
+            Msg::Fact(Fact::Event(event)) => vec![event],
+            _message => Vec::new(),
         })
-        .find_map(|message| match message {
-            Msg::Fact(Fact::Event(crate::Event::Work { progress })) => Some(progress),
+        .find_map(|event| match event {
+            crate::Event::Work { progress } => Some(progress),
             _ => None,
         })
         .expect("replay must restore the checkpoint task progress");
@@ -54,11 +55,12 @@ fn replay_streams_the_journal_without_reading_the_tree_sidecar() {
     history::replay_transcript(driver.path(), Some("fixture".to_string()), None, &ui, false);
     let progress = std::iter::from_fn(|| inbox.try_recv().ok())
         .flat_map(|message| match message {
-            Msg::Fact(Fact::Transcript(lines)) => lines,
-            message => vec![message],
+            Msg::Fact(Fact::Transcript { events, .. }) => events,
+            Msg::Fact(Fact::Event(event)) => vec![event],
+            _message => Vec::new(),
         })
-        .find_map(|message| match message {
-            Msg::Fact(Fact::Event(crate::Event::Work { progress })) => Some(progress),
+        .find_map(|event| match event {
+            crate::Event::Work { progress } => Some(progress),
             _ => None,
         })
         .expect("replay must build progress without reading work.tree.json");
@@ -225,7 +227,7 @@ async fn a_session_opened_with_an_unfinished_goal_says_how_to_go_on() {
     worker(loop_, receiver, ui, info, false).await;
     let notes: Vec<String> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|msg| match msg {
-            Msg::Fact(Fact::System(text)) => Some(text),
+            Msg::Fact(Fact::Event(crate::Event::Note { text })) => Some(text),
             _msg => None,
         })
         .collect();

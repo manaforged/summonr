@@ -1,5 +1,6 @@
 use super::*;
 use crate::hub::Fact;
+use crate::tools::Event;
 
 pub(crate) fn export_session(
     session: &std::path::Path,
@@ -35,7 +36,9 @@ pub(crate) fn export_session(
         Ok(out)
     });
     let message = match written {
-        Ok(out) => Msg::Fact(Fact::System(format!("exported to {}", out.display()))),
+        Ok(out) => Msg::Fact(Fact::Event(Event::Note {
+            text: format!("exported to {}", out.display()),
+        })),
         Err(error) => Msg::Fact(Fact::Failed(error.to_string())),
     };
     drop(ui.send(message));

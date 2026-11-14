@@ -17,10 +17,16 @@ fn transcript_replay_notifies_model_subscribers_once() {
             counter.set(counter.get() + 1);
         });
         assert_eq!(runs.get(), 1);
-        let lines: Vec<Msg> = (0..50)
-            .map(|at| Msg::Intent(Intent::User(format!("turn {at}"))))
+        let events = (0..50)
+            .map(|at| summonr_agent::Event::User {
+                text: format!("turn {at}"),
+                images: Vec::new(),
+            })
             .collect();
-        app.update(Msg::Fact(Fact::Transcript(lines)));
+        app.update(Msg::Fact(Fact::Transcript {
+            replace: false,
+            events,
+        }));
         assert_eq!(runs.get(), 2);
         assert_eq!(app.model.with(|model| model.entries.len()), 50);
     });

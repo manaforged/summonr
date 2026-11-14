@@ -153,10 +153,13 @@ fn the_folder_menu_lists_known_projects_and_switches_to_one() {
     let seen = steps(
         |app| {
             app.window.sidebar.set(false);
-            app.update(Msg::Fact(Fact::Settings(Snapshot {
-                workspace: folder.clone(),
-                ..graded()
-            })));
+            app.update(Msg::Fact(Fact::Settings(
+                Snapshot {
+                    workspace: folder.clone(),
+                    ..graded()
+                }
+                .into(),
+            )));
             app.update(Msg::Fact(Fact::Sessions(Ok(vec![chat(
                 "01a1000000000000000000000000aaaa",
                 "/work/alpha",

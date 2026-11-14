@@ -1,4 +1,5 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -96,9 +97,9 @@ struct Board {
     rows: Vec<ModelId>,
     top: usize,
     sorted: bool,
-    facts: BTreeMap<ModelId, Model>,
-    groups: BTreeMap<String, State>,
-    causes: BTreeMap<String, String>,
+    facts: Arc<BTreeMap<ModelId, Model>>,
+    groups: Arc<BTreeMap<String, State>>,
+    causes: Arc<BTreeMap<String, String>>,
 }
 
 impl Board {
@@ -114,9 +115,9 @@ impl Board {
             top: rows.len(),
             sorted: false,
             rows,
-            facts: BTreeMap::new(),
-            groups: BTreeMap::new(),
-            causes: BTreeMap::new(),
+            facts: Arc::default(),
+            groups: Arc::default(),
+            causes: Arc::default(),
         }
     }
 
@@ -130,7 +131,7 @@ impl Board {
                 } else {
                     State::Loading
                 };
-                self.groups.insert(endpoint.name.clone(), state);
+                Arc::make_mut(&mut self.groups).insert(endpoint.name.clone(), state);
             }
             if !endpoint.model.is_empty() {
                 add(
@@ -140,7 +141,7 @@ impl Board {
             }
             for model in listing.into_iter().flat_map(|listing| &listing.models) {
                 let row = ModelId::new(&endpoint.name, &model.id);
-                self.facts.insert(row.clone(), model.clone());
+                Arc::make_mut(&mut self.facts).insert(row.clone(), model.clone());
                 add(&mut self.rows, row);
             }
         }
@@ -148,7 +149,7 @@ impl Board {
 
     fn waiting(&mut self, setup: &[(String, String, State)]) {
         for (name, model, state) in setup {
-            self.groups.insert(name.clone(), *state);
+            Arc::make_mut(&mut self.groups).insert(name.clone(), *state);
             add(&mut self.rows, ModelId::new(name, model));
         }
     }
@@ -165,24 +166,27 @@ impl Board {
             order(&mut self.rows[top..], &self.facts, &self.groups);
             self.sorted = true;
         }
-        let mut sent: Vec<ModelId> = home.map(recent::pinned).unwrap_or_default();
-        sent.retain(|row| self.rows.contains(row));
+        let pins: Vec<ModelId> = home.map(recent::pinned).unwrap_or_default();
+        let known: BTreeSet<&ModelId> = self.rows.iter().collect();
+        let mut seen: BTreeSet<&ModelId> = BTreeSet::new();
+        let mut sent: Vec<ModelId> = Vec::new();
+        for row in pins.iter().filter(|row| known.contains(row)) {
+            seen.insert(row);
+            sent.push(row.clone());
+        }
         let pinned = sent.len();
-        for row in &self.rows[..top] {
-            add(&mut sent, row.clone());
-        }
+        let (front, back) = self.rows.split_at(top);
+        sent.extend(front.iter().filter(|row| seen.insert(*row)).cloned());
         let head = sent.len();
-        for row in &self.rows[top..] {
-            add(&mut sent, row.clone());
-        }
+        sent.extend(back.iter().filter(|row| seen.insert(*row)).cloned());
         Msg::Fact(Fact::Models {
             request,
             pinned,
             recent: head - pinned,
             rows: sent,
-            facts: self.facts.clone(),
-            groups: self.groups.clone(),
-            causes: self.causes.clone(),
+            facts: Arc::clone(&self.facts),
+            groups: Arc::clone(&self.groups),
+            causes: Arc::clone(&self.causes),
             loading,
             error: errors.join("; "),
         })
@@ -193,13 +197,16 @@ impl Board {
             let row = ModelId::new(&name, &model.id);
             (model.cost.rank(), std::cmp::Reverse(model.release), row)
         });
+        let facts = Arc::make_mut(&mut self.facts);
         for model in models {
             let row = ModelId::new(&name, &model.id);
-            self.facts.insert(row.clone(), model);
+            facts.insert(row.clone(), model);
             add(&mut self.rows, row);
         }
-        self.causes.remove(&name);
-        self.groups.insert(name, State::Ready);
+        if self.causes.contains_key(&name) {
+            Arc::make_mut(&mut self.causes).remove(&name);
+        }
+        Arc::make_mut(&mut self.groups).insert(name, State::Ready);
     }
 }
 
@@ -245,7 +252,7 @@ impl Reader {
                 Err(done) => {
                     registry = None;
                     if matches!(done, Ok(Ok(()))) {
-                        enrich(&endpoints, &mut board.facts);
+                        enrich(&endpoints, Arc::make_mut(&mut board.facts));
                     }
                     continue;
                 }
@@ -262,8 +269,8 @@ impl Reader {
                         }
                         state => state,
                     };
-                    board.groups.insert(name.clone(), state);
-                    board.causes.insert(name, error.to_string());
+                    Arc::make_mut(&mut board.groups).insert(name.clone(), state);
+                    Arc::make_mut(&mut board.causes).insert(name, error.to_string());
                 }
             }
         }

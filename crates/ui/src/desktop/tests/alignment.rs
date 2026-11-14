@@ -10,7 +10,7 @@ use super::super::sidebar::WIDTH;
 use super::super::style::{GUTTER, ICON};
 use super::super::{App, root};
 use super::{VIEW, in_window};
-use summonr_agent::hub::{Activity, Fact, Intent, Msg};
+use summonr_agent::hub::{Activity, Fact, Msg};
 use summonr_agent::session::SessionInfo;
 use summonr_agent::tools::Event;
 
@@ -95,7 +95,10 @@ fn working_reply(app: &App) {
             Duration::from_secs(5),
         ),
     ]))));
-    app.update(Msg::Intent(Intent::User("Hi".to_owned())));
+    app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+        text: "Hi".to_owned(),
+        images: Vec::new(),
+    })));
     app.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
     app.update(Msg::Fact(Fact::Event(Event::Assistant {
         text: "Hi, Thomas.".to_owned(),
@@ -300,7 +303,10 @@ fn the_reading_column_starts_and_ends_every_mark_at_the_gutter() {
 fn paragraph_gap(spacing: u8) -> f32 {
     let marks = marks(move |app| {
         app.model_mut(|model| model.prefs.spacing = spacing);
-        app.update(Msg::Intent(Intent::User("Hi".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "Hi".to_owned(),
+            images: Vec::new(),
+        })));
         app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: "First paragraph.\n\nSecond paragraph.".to_owned(),
         })));

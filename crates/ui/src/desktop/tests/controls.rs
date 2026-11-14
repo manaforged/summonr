@@ -5,10 +5,13 @@ use super::in_window;
 use summonr_agent::hub::{Cmd, Fact, Msg, Snapshot};
 
 fn used(app: &super::super::App) {
-    app.update(Msg::Fact(Fact::Settings(Snapshot {
-        context_window: Some(200_000),
-        ..graded()
-    })));
+    app.update(Msg::Fact(Fact::Settings(
+        Snapshot {
+            context_window: Some(200_000),
+            ..graded()
+        }
+        .into(),
+    )));
     app.update(Msg::Fact(Fact::Event(summonr_agent::tools::Event::Usage {
         prompt_tokens: 1500,
         completion_tokens: 20,

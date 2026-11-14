@@ -171,7 +171,10 @@ impl Worker {
 
     pub(in crate::hub::worker) fn clear(&mut self) -> bool {
         match self.loop_.clear_history() {
-            Ok(()) => drop(self.ui.send(Msg::Fact(Fact::Cleared))),
+            Ok(()) => drop(
+                self.ui
+                    .send(Msg::Fact(Fact::Event(crate::tools::Event::Cleared))),
+            ),
             Err(error) => self.fail(&error.to_string()),
         }
         true

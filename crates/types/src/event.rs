@@ -68,6 +68,20 @@ pub enum Event {
     Steered {
         text: String,
     },
+    /// A user message a view shows with its images; never serialized.
+    #[serde(skip)]
+    User {
+        text: String,
+        images: Vec<crate::Image>,
+    },
+    /// A harness message the model received as user text; never serialized.
+    #[serde(skip)]
+    Injected {
+        text: String,
+    },
+    /// The conversation history was cleared; never serialized.
+    #[serde(skip)]
+    Cleared,
     Aborted {
         reason: String,
         #[serde(default)]

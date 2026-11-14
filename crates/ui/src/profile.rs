@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use super::app::App;
 use super::view::root;
 use summonr_agent::durable::store::{Durability, write};
-use summonr_agent::hub::{Fact, Info, Intent, Msg};
+use summonr_agent::hub::{Fact, Info, Msg};
 use summonr_agent::prefs::{FPS_DEFAULT, FPS_MAX, FPS_MIN, Prefs};
 use summonr_agent::tools::Event;
 use summonr_core::error::{Error, Result};
@@ -146,7 +146,10 @@ async fn capture(options: &Options) -> Result<()> {
     let app = App::new(info(), workspace.path().to_owned(), commands);
     app.resize(options.cols, options.rows);
     for index in 0..options.history {
-        app.update(Msg::Intent(Intent::User(format!("Review change {index}"))));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: format!("Review change {index}"),
+            images: Vec::new(),
+        })));
         app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: format!("Change {index}: measured layout, terminal output, and memory usage."),
         })));

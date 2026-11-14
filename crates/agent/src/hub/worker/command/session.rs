@@ -102,7 +102,10 @@ impl Worker {
                         self.replay(true);
                         drop(self.ui.send(Msg::Fact(Fact::Session(id))));
                     }
-                    None => drop(self.ui.send(Msg::Fact(Fact::Cleared))),
+                    None => drop(
+                        self.ui
+                            .send(Msg::Fact(Fact::Event(crate::tools::Event::Cleared))),
+                    ),
                 }
                 self.send_settings();
                 self.system(&match files {

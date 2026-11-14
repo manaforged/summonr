@@ -70,9 +70,9 @@ pub(crate) fn run(
                 }
                 let app = App::new(info.clone(), workspace.clone(), commands.clone());
                 if let Err(error) = calibrate(&mut std::io::stdout()) {
-                    app.update(Msg::Fact(Fact::System(format!(
-                        "Could not measure terminal text widths: {error}"
-                    ))));
+                    app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Note {
+                        text: format!("Could not measure terminal text widths: {error}"),
+                    })));
                 }
                 if let Ok((cols, rows)) = crossterm::terminal::size() {
                     app.resize(cols, rows);

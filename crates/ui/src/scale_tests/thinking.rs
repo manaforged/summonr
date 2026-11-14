@@ -6,7 +6,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use super::super::app::App;
 use super::super::view::root;
 use super::busy_info;
-use summonr_agent::hub::{Fact, Intent, Msg};
+use summonr_agent::hub::{Fact, Msg};
 use summonr_agent::prefs::Visibility;
 use summonr_agent::tools::Event;
 
@@ -30,7 +30,10 @@ fn only_the_thinking_header_folds_the_reasoning() {
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(info, workspace.path().to_owned(), commands);
         app.resize(COLS, ROWS);
-        app.update(Msg::Intent(Intent::User("why".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "why".to_owned(),
+            images: Vec::new(),
+        })));
         app.update(Msg::Fact(Fact::Event(Event::Reasoning {
             text: "copy this reasoning line".to_owned(),
         })));

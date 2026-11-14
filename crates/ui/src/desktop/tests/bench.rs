@@ -8,7 +8,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use super::super::{App, root, split};
 use super::VIEW;
 use crate::view::keys::bindings::{Dir, Split};
-use summonr_agent::hub::{Activity, Fact, Intent, Msg};
+use summonr_agent::hub::{Activity, Fact, Msg};
 use summonr_agent::tools::Event;
 
 const DELTAS: usize = 400;
@@ -31,21 +31,26 @@ fn stream(app: &App, n: usize) {
     }
 }
 
-fn history(n: usize) -> Vec<Msg> {
+fn history(n: usize) -> Vec<Event> {
     (0..n)
         .flat_map(|n| {
             [
-                Msg::Intent(Intent::User(format!("Step {n}: check the parser"))),
-                Msg::Fact(Fact::Event(Event::Assistant {
+                Event::User {
+                    text: format!("Step {n}: check the parser"),
+                    images: Vec::new(),
+                },
+                Event::Assistant {
                     text: format!("Checked step {n}. The parser handles **nested** lists and `code` spans.\n\n- one\n- two"),
-                })),
+                },
             ]
         })
         .collect()
 }
 
 fn talk(pane: &App, n: usize) {
-    history(n).into_iter().for_each(|msg| pane.update(msg));
+    history(n)
+        .into_iter()
+        .for_each(|event| pane.update(Msg::Fact(Fact::Event(event))));
 }
 
 fn run(panes: usize, streaming: usize, history: usize) -> f64 {
@@ -75,7 +80,10 @@ fn run(panes: usize, streaming: usize, history: usize) -> f64 {
         let live: Vec<App> = apps.iter().take(streaming).cloned().collect();
         for pane in &live {
             talk(pane, history);
-            pane.update(Msg::Intent(Intent::User("Review the change".to_owned())));
+            pane.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+                text: "Review the change".to_owned(),
+                images: Vec::new(),
+            })));
             pane.update(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
             pane.refresh();
         }
@@ -203,7 +211,10 @@ fn navigate(step: Step) -> f64 {
                 let para = "The parser handles **nested** lists and `code` spans, and it keeps every word in order across this long paragraph of an answer. ".repeat(6);
                 let text = vec![para; 60].join("\n\n");
                 for n in 0..6 {
-                    app.update(Msg::Intent(Intent::User(format!("Step {n}"))));
+                    app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+                        text: format!("Step {n}"),
+                        images: Vec::new(),
+                    })));
                     app.update(Msg::Fact(Fact::Event(Event::Assistant {
                         text: text.clone(),
                     })));
@@ -248,9 +259,10 @@ fn navigate(step: Step) -> f64 {
                 }
                 Step::Switch(messages) => {
                     let want = landed.get() + 1;
-                    let mut lines = vec![Msg::Intent(Intent::Reset)];
-                    lines.extend(history(messages));
-                    drop(hub.send(Msg::Fact(Fact::Transcript(lines))));
+                    drop(hub.send(Msg::Fact(Fact::Transcript {
+                        replace: true,
+                        events: history(messages),
+                    })));
                     drop(hub.send(Msg::Fact(Fact::Replayed)));
                     while landed.get() < want {
                         runtime.pump();

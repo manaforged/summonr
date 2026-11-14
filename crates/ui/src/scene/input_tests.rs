@@ -145,7 +145,8 @@ fn splash_hides_usage_meters_until_the_first_prompt_even_with_a_known_window() {
                 model: "profile".to_string(),
                 context_window: Some(200_000),
                 ..summonr_agent::hub::Snapshot::default()
-            },
+            }
+            .into(),
         )));
         let fresh = render(&app, 110, 30);
         assert!(

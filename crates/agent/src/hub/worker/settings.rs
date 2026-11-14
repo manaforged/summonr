@@ -4,6 +4,7 @@ use crate::hub::{Fact, Intent};
 use crate::hub::{Msg, Snapshot};
 use crate::provider::Client;
 use crate::runtime::Loop;
+use crate::tools::Event;
 use crate::workflow::{self, ModelSelection, Role, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -312,31 +313,32 @@ impl Worker {
 
     pub(super) fn send_settings(&self) {
         drop(
-            self.ui.send(Msg::Fact(Fact::Settings(Snapshot {
-                model: self.loop_.model().to_string(),
-                workspace: self.loop_.workspace().to_path_buf(),
-                relay: self.relay.clone(),
-                work: self.loop_.is_work(),
-                goal: self.loop_.is_goal(),
-                effort: self.loop_.effort(),
-                levels: self.levels.clone(),
-                verify: verify_display(self.loop_.verify_commands()),
-                strict: self.loop_.is_strict(),
-                approval: self.loop_.is_approval(),
-                endpoint: self.endpoint.clone(),
-                context_window: self.loop_.pressure_window(),
-                prompt_system: self.loop_.prompt_parts().0,
-                prompt_schemas: self.loop_.prompt_parts().1,
-                prompt_tools: self.loop_.prompt_parts().2,
-                prompt_other: self.loop_.prompt_parts().3,
-                workflow: self.loop_.workflow(),
-                unconfigured: crate::endpoint::resolve(
-                    Some(&self.endpoint),
-                    None,
-                    crate::endpoint::Requirement::ModelAndKey,
-                )
-                .is_err(),
-            }))),
+            self.ui
+                .send(Msg::Fact(Fact::Settings(std::sync::Arc::new(Snapshot {
+                    model: self.loop_.model().to_string(),
+                    workspace: self.loop_.workspace().to_path_buf(),
+                    relay: self.relay.clone(),
+                    work: self.loop_.is_work(),
+                    goal: self.loop_.is_goal(),
+                    effort: self.loop_.effort(),
+                    levels: self.levels.clone(),
+                    verify: verify_display(self.loop_.verify_commands()),
+                    strict: self.loop_.is_strict(),
+                    approval: self.loop_.is_approval(),
+                    endpoint: self.endpoint.clone(),
+                    context_window: self.loop_.pressure_window(),
+                    prompt_system: self.loop_.prompt_parts().0,
+                    prompt_schemas: self.loop_.prompt_parts().1,
+                    prompt_tools: self.loop_.prompt_parts().2,
+                    prompt_other: self.loop_.prompt_parts().3,
+                    workflow: self.loop_.workflow(),
+                    unconfigured: crate::endpoint::resolve(
+                        Some(&self.endpoint),
+                        None,
+                        crate::endpoint::Requirement::ModelAndKey,
+                    )
+                    .is_err(),
+                })))),
         );
     }
 }
@@ -361,7 +363,9 @@ pub(super) fn announce_run_mode(loop_: &Loop<Client>, ui: &UnboundedSender<Msg>)
         crate::WorkKind::Goal => "goal mode: keep going until the objective is met",
         crate::WorkKind::Single => "auto mode: full tools",
     };
-    drop(ui.send(Msg::Fact(Fact::System(text.to_string()))));
+    drop(ui.send(Msg::Fact(Fact::Event(Event::Note {
+        text: text.to_string(),
+    }))));
 }
 
 fn verify_display(commands: &[String]) -> Option<String> {

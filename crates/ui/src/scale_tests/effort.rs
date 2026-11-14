@@ -13,9 +13,9 @@ fn run(app: &App, line: &str) {
 }
 
 fn selection(app: &App, levels: &[Effort]) {
-    let mut snapshot = app.model.peek().snapshot.clone();
+    let mut snapshot = (*app.model.peek().snapshot).clone();
     snapshot.levels = levels.to_vec();
-    app.update(Msg::Fact(Fact::Settings(snapshot)));
+    app.update(Msg::Fact(Fact::Settings(snapshot.into())));
 }
 
 #[test]

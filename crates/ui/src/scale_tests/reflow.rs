@@ -5,7 +5,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use super::super::app::App;
 use super::super::view::root;
 use super::busy_info;
-use summonr_agent::hub::{Fact, Intent, Msg};
+use summonr_agent::hub::{Fact, Msg};
 use summonr_agent::tools::Event;
 
 const ANSWER: &str = "The functions in calc.py:\n\n1. add(a, b) returns the sum\n2. sub(a, b) returns the difference\n3. mul(a, b) returns the product\n4. div(a, b) returns the quotient; exact int division returns an int, otherwise a float; raises ValueError on zero or NaN divisors and never returns infinity for any input";
@@ -17,9 +17,10 @@ fn frames(sizes: &[(u16, u16)]) -> String {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         let (cols, rows) = sizes[0];
         app.resize(cols, rows);
-        app.update(Msg::Intent(Intent::User(
-            "list the functions in calc.py".to_owned(),
-        )));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "list the functions in calc.py".to_owned(),
+            images: Vec::new(),
+        })));
         app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: ANSWER.to_owned(),
         })));

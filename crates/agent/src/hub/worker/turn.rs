@@ -244,7 +244,7 @@ pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &
         ),
         Err(error) => format!("mail failed: {error}"),
     };
-    drop(ui.send(Msg::Fact(Fact::System(note))));
+    drop(ui.send(Msg::Fact(Fact::Event(Event::Note { text: note }))));
 }
 
 #[cfg(test)]

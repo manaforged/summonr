@@ -90,7 +90,9 @@ pub(crate) fn status(prev: Status, msg: &Msg) -> Status {
             prev
         };
     }
-    if let Some(asking) = asking(msg) {
+    if let Msg::Fact(Fact::Event(event)) = msg
+        && let Some(asking) = asking(event)
+    {
         return if asking {
             Status::NeedsYou
         } else if prev == Status::NeedsYou {
@@ -113,12 +115,10 @@ pub(crate) const fn seen(status: Status) -> Status {
     }
 }
 
-fn asking(msg: &Msg) -> Option<bool> {
-    if let Msg::Fact(Fact::Event(Event::Approval { detail, .. })) = msg {
-        return Some(detail.is_some());
+fn asking(event: &Event) -> Option<bool> {
+    match event {
+        Event::Approval { detail, .. } => Some(detail.is_some()),
+        Event::Elicit { form, .. } => Some(form.is_some()),
+        _ => None,
     }
-    if let Msg::Fact(Fact::Event(Event::Elicit { form, .. })) = msg {
-        return Some(form.is_some());
-    }
-    None
 }

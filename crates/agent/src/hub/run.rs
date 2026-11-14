@@ -169,12 +169,7 @@ impl Hub {
         let Some(session) = self.sessions.get_mut(&key) else {
             return;
         };
-        let changed = match &msg {
-            Msg::Fact(Fact::Transcript(lines)) => lines.iter().fold(false, |changed, line| {
-                session.observe(line, viewer.is_some()) | changed
-            }),
-            msg => session.observe(msg, viewer.is_some()),
-        };
+        let changed = session.observe(&msg, viewer.is_some());
         let finished = matches!(msg, Msg::Fact(Fact::Busy(None)));
         match &viewer {
             None => session.stale |= session.replay.working(),

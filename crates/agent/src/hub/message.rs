@@ -1,7 +1,9 @@
 /// What a retryable turn failure ends with; a window offers Retry in its place.
 pub const RETRY_HINT: &str = " · F5 or /retry continues";
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::prefs::Prefs;
 use crate::provider::UserInput;
@@ -18,7 +20,6 @@ pub enum Msg {
 /// Something the world or the worker reports to the interface.
 pub enum Fact {
     Secret(crate::askpass::Request),
-    Receipt(String),
     Calling(String),
     Event(Event),
     Busy(Option<Activity>),
@@ -28,19 +29,16 @@ pub enum Fact {
         steering: usize,
         queued: usize,
     },
-    Pending(Vec<(bool, String)>),
-    System(String),
-    Injected(String),
+    Pending(Arc<[(bool, String)]>),
     Outcome(String),
     Session(String),
-    Cleared,
-    Settings(Snapshot),
+    Settings(Arc<Snapshot>),
     Models {
         request: u64,
         rows: Vec<crate::recent::ModelId>,
-        facts: std::collections::BTreeMap<crate::recent::ModelId, crate::catalog::Model>,
-        groups: std::collections::BTreeMap<String, crate::endpoint::State>,
-        causes: std::collections::BTreeMap<String, String>,
+        facts: Arc<BTreeMap<crate::recent::ModelId, crate::catalog::Model>>,
+        groups: Arc<BTreeMap<String, crate::endpoint::State>>,
+        causes: Arc<BTreeMap<String, String>>,
         pinned: usize,
         recent: usize,
         loading: bool,
@@ -60,10 +58,6 @@ pub enum Fact {
         names: Vec<String>,
         selections: Vec<Option<String>>,
     },
-    Mail {
-        from: String,
-        text: String,
-    },
     Peers(Vec<crate::mail::Agent>),
     Files(Vec<String>),
     Jobs(Vec<(crate::jobs::Record, crate::jobs::Status)>),
@@ -79,7 +73,7 @@ pub enum Fact {
         result: Result<crate::panel::Content, String>,
     },
     Moved(PathBuf),
-    Changed(Vec<String>),
+    Changed(Arc<[String]>),
     Edited(Vec<String>),
     View {
         root: Option<PathBuf>,
@@ -114,7 +108,12 @@ pub enum Fact {
     /// Another window took this session, which has stopped here.
     TakenOver,
     /// A saved conversation in one message, so a view never draws part of it.
-    Transcript(Vec<Msg>),
+    Transcript {
+        /// Whether the view drops what it shows before it draws these events.
+        replace: bool,
+        /// The conversation's events in journal order.
+        events: Vec<Event>,
+    },
     LoginStep {
         text: String,
         url: String,
@@ -130,8 +129,6 @@ pub enum Fact {
 
 /// Something the user asks the model to do.
 pub enum Intent {
-    User(String),
-    Image(crate::provider::Image),
     Reset,
     RunMode(crate::WorkKind),
     OpenLogin(String),

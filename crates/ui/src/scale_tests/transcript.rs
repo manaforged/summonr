@@ -4,7 +4,7 @@ use crate::view::root;
 use sigil::Host;
 use sigil::prelude::HostMode;
 use sigil::terminal::Screen;
-use summonr_agent::hub::{Fact, Intent, Msg};
+use summonr_agent::hub::{Fact, Msg};
 use summonr_agent::tools::Event;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -44,7 +44,10 @@ fn a_long_step_run_mounts_only_the_visible_terminal_window() {
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(100, 24);
-        app.update(Msg::Intent(Intent::User("audit steps".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "audit steps".to_owned(),
+            images: Vec::new(),
+        })));
         for at in 0..60 {
             app.update(Msg::Fact(Fact::Event(Event::Reasoning {
                 text: "next check".to_owned(),

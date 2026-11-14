@@ -1,4 +1,4 @@
-use super::{App, Error, Event, Fact, Intent, Msg, Result, Scenario};
+use super::{App, Error, Event, Fact, Msg, Result, Scenario};
 use summonr_agent::child::Access;
 
 const AGENTS: [(&str, &str, &str); 3] = [
@@ -22,9 +22,10 @@ pub(super) fn seed(app: &App, scenario: Scenario) {
 }
 
 fn agents(app: &App, scenario: Scenario) {
-    app.update(Msg::Intent(Intent::User(String::from(
-        "Run three lightweight, read-only agents.",
-    ))));
+    app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+        text: String::from("Run three lightweight, read-only agents."),
+        images: Vec::new(),
+    })));
     app.update(Msg::Fact(Fact::Event(Event::Reasoning {
         text: String::from("I will inspect the documentation without editing files."),
     })));

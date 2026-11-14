@@ -1,4 +1,5 @@
 use crate::hub::Fact;
+use crate::tools::Event;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -100,9 +101,9 @@ impl Reader {
             }
         });
         if save && let Err(error) = task.await {
-            self.send(Msg::Fact(Fact::System(format!(
-                "save task failed: {error}"
-            ))));
+            self.send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("save task failed: {error}"),
+            })));
         }
     }
 
@@ -168,9 +169,9 @@ impl Reader {
             }
             Cmd::DeleteSession(id) => {
                 match crate::session::remove(&id) {
-                    Ok(name) => {
-                        self.send(Msg::Fact(Fact::System(format!("deleted session {name}"))))
-                    }
+                    Ok(name) => self.send(Msg::Fact(Fact::Event(Event::Note {
+                        text: format!("deleted session {name}"),
+                    }))),
                     Err(error) => self.send(Msg::Fact(Fact::Failed(error.to_string()))),
                 }
                 self.serve(Cmd::ListSessions);
@@ -252,9 +253,9 @@ impl Reader {
                 added,
                 image,
             })),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!(
-                "cannot view {path}: {error}"
-            )))),
+            Err(error) => self.send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("cannot view {path}: {error}"),
+            }))),
         }
     }
 
@@ -283,7 +284,7 @@ impl Reader {
         let dir = root.clone().unwrap_or_else(|| self.workspace.clone());
         let result = crate::hunks::apply(&dir, &path, &hunk, op).map_err(|error| error.to_string());
         if let (Some(note), Ok(_)) = (note, &result) {
-            self.send(Msg::Fact(Fact::System(note)));
+            self.send(Msg::Fact(Fact::Event(Event::Note { text: note })));
         }
         self.send(Msg::Fact(Fact::Review { root, result }));
     }
@@ -315,7 +316,9 @@ impl Reader {
     fn mcp(&self) {
         match crate::mcp::status(&self.workspace, Some(&self.board)) {
             Ok(servers) => self.send(Msg::Fact(Fact::Mcp(servers))),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!("mcp status: {error}")))),
+            Err(error) => self.send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("mcp status: {error}"),
+            }))),
         }
     }
 
@@ -327,13 +330,12 @@ impl Reader {
 
     fn kill(&self, id: &str) {
         match crate::tools::command::kill_job(&self.workspace, id) {
-            Ok(status) => self.send(Msg::Fact(Fact::System(format!(
-                "job {id}: {}",
-                status.label()
-            )))),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!(
-                "job {id} not stopped: {error}"
-            )))),
+            Ok(status) => self.send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("job {id}: {}", status.label()),
+            }))),
+            Err(error) => self.send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("job {id} not stopped: {error}"),
+            }))),
         }
         self.jobs();
     }
@@ -341,9 +343,9 @@ impl Reader {
     pub(super) fn trees(&self) {
         match worktree::status(&self.workspace) {
             Ok(trees) => self.send(Msg::Fact(Fact::Trees(trees))),
-            Err(error) => self.send(Msg::Fact(Fact::System(format!(
-                "worktrees unavailable: {error}"
-            )))),
+            Err(error) => self.send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("worktrees unavailable: {error}"),
+            }))),
         }
     }
 

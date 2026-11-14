@@ -5,9 +5,14 @@ const TAKEN_OVER: &str = "Another window took over this chat";
 impl App {
     pub(crate) fn update(&self, msg: Msg) {
         match msg {
-            Msg::Fact(Fact::Transcript(lines)) => {
-                batch(|| lines.into_iter().for_each(|msg| self.update(msg)))
-            }
+            Msg::Fact(Fact::Transcript { replace, events }) => batch(|| {
+                if replace {
+                    self.update(Msg::Intent(Intent::Reset));
+                }
+                for event in events {
+                    self.update(Msg::Fact(Fact::Event(event)));
+                }
+            }),
             Msg::Fact(Fact::Held(id)) => self.held.set(Some(id)),
             Msg::Fact(Fact::TakenOver) => self.notice.set(Some(Notice {
                 text: TAKEN_OVER.to_owned(),
@@ -177,16 +182,18 @@ impl App {
         }
         if !self.picker.open.peek() {
             batch(|| {
-                self.picker.groups.update(|held| held.extend(groups));
+                self.picker.groups.update(|held| {
+                    held.extend(groups.iter().map(|(name, state)| (name.clone(), *state)))
+                });
                 if self.auth.open.peek() {
                     self.picker.choices.set(Rc::new(rows));
-                    self.picker.facts.set(Rc::new(facts));
+                    self.picker.facts.set(facts);
                 }
             });
             return;
         }
         let snapshot = self.model.peek().snapshot.clone();
-        let current = ModelId::new(snapshot.endpoint, snapshot.model);
+        let current = ModelId::new(snapshot.endpoint.clone(), snapshot.model.clone());
         let selected = !current.model.is_empty();
         let mut counts = [usize::from(selected), pinned, recent];
         if let Some(at) = rows.iter().position(|row| *row == current) {
@@ -199,12 +206,18 @@ impl App {
         }
         let selected = self.picked_model();
         batch(|| {
-            self.picker.facts.set(Rc::new(facts));
+            self.picker.facts.set(facts);
             self.picker.causes.update(|held| {
                 held.retain(|name, _| !groups.contains_key(name));
-                held.extend(causes);
+                held.extend(
+                    causes
+                        .iter()
+                        .map(|(name, cause)| (name.clone(), cause.clone())),
+                );
             });
-            self.picker.groups.update(|held| held.extend(groups));
+            self.picker.groups.update(|held| {
+                held.extend(groups.iter().map(|(name, state)| (name.clone(), *state)))
+            });
             self.picker.choices.set(Rc::new(rows));
             self.picker.recent.set(counts);
         });

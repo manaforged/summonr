@@ -12,14 +12,17 @@ fn models(app: &App, rows: &[(&str, &str)], groups: &[(&str, Reach)]) {
             .iter()
             .map(|(endpoint, id)| ModelId::new(*endpoint, *id))
             .collect(),
-        facts: rows
-            .iter()
-            .map(|(endpoint, id)| (ModelId::new(*endpoint, *id), Model::named(*id)))
-            .collect(),
-        groups: groups
-            .iter()
-            .map(|(name, state)| ((*name).to_owned(), *state))
-            .collect(),
+        facts: std::sync::Arc::new(
+            rows.iter()
+                .map(|(endpoint, id)| (ModelId::new(*endpoint, *id), Model::named(*id)))
+                .collect(),
+        ),
+        groups: std::sync::Arc::new(
+            groups
+                .iter()
+                .map(|(name, state)| ((*name).to_owned(), *state))
+                .collect(),
+        ),
         causes: Default::default(),
         pinned: 0,
         recent: 0,
@@ -70,12 +73,12 @@ fn ready_models_follow_a_late_key_rejection() {
 fn model_completion_uses_the_changed_endpoint() {
     let mut completed = String::new();
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Fact(Fact::Settings(endpoint("first"))));
+        app.update(Msg::Fact(Fact::Settings(endpoint("first").into())));
         app.begin_model_edit();
         models(app, &[("first", "solar"), ("second", "luna")], &[]);
         app.cancel_model_edit();
         app.replace("/model lun".to_owned());
-        app.update(Msg::Fact(Fact::Settings(endpoint("second"))));
+        app.update(Msg::Fact(Fact::Settings(endpoint("second").into())));
         assert!(app.complete(), "the model argument must complete");
         completed = app.draft.peek();
     });
@@ -86,7 +89,7 @@ fn model_completion_uses_the_changed_endpoint() {
 fn a_completed_command_sees_a_late_catalog_update() {
     let mut completed = String::new();
     let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Fact(Fact::Settings(endpoint("first"))));
+        app.update(Msg::Fact(Fact::Settings(endpoint("first").into())));
         app.begin_model_edit();
         models(app, &[("first", "legacy")], &[]);
         app.cancel_model_edit();

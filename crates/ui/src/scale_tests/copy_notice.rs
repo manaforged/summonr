@@ -10,7 +10,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use super::super::app::App;
 use super::super::view::root;
 use super::busy_info;
-use summonr_agent::hub::{Fact, Intent, Msg};
+use summonr_agent::hub::{Fact, Msg};
 use summonr_agent::tools::Event;
 
 const REPLY: &str = "The quick brown fox jumps over the lazy dog";
@@ -37,7 +37,10 @@ fn dragging_across_a_reply_copies_it_and_says_so() {
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(100, 30);
-        app.update(Msg::Intent(Intent::User("Say the pangram".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "Say the pangram".to_owned(),
+            images: Vec::new(),
+        })));
         app.update(Msg::Fact(Fact::Event(Event::Assistant {
             text: REPLY.to_owned(),
         })));

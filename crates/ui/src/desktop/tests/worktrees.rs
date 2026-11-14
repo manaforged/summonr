@@ -62,10 +62,13 @@ fn snapshot(tree: &Path) -> (String, String, String) {
 fn open_in(workspace: PathBuf, chats: Vec<(SessionInfo, bool)>) -> impl FnOnce(&super::super::App) {
     move |app| {
         app.window.sidebar.set(true);
-        app.update(Msg::Fact(Fact::Settings(Snapshot {
-            workspace,
-            ..graded()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            Snapshot {
+                workspace,
+                ..graded()
+            }
+            .into(),
+        )));
         app.update(Msg::Fact(Fact::Sessions(Ok(chats))));
     }
 }

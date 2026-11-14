@@ -80,7 +80,9 @@ fn a_refresh_leaves_the_start_screen_once_the_transcript_has_an_entry() {
         app.resize(160, 40);
         app.refresh();
         assert!(app.splash.peek());
-        app.update(Msg::Fact(Fact::System("checked the workspace".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Note {
+            text: "checked the workspace".to_owned(),
+        })));
         assert!(app.splash.peek(), "the update itself left the start screen");
         app.refresh();
         assert!(!app.splash.peek());

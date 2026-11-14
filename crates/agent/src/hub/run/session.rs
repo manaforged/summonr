@@ -3,12 +3,13 @@ use std::path::PathBuf;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 
-use super::super::replay::ReplayState;
+use super::super::replay::Replay;
 use super::super::{Status, seen, status};
 use super::{Hub, title_from};
-use crate::hub::{Cmd, Fact, Intent, Msg, worker};
+use crate::hub::{Cmd, Fact, Msg, worker};
 use crate::provider::Client;
 use crate::runtime::Loop;
+use crate::tools::Event;
 use crate::workflow::Workflow;
 
 pub(super) struct Session {
@@ -17,7 +18,7 @@ pub(super) struct Session {
     pub(super) workspace: PathBuf,
     pub(super) parent: Option<String>,
     pub(super) status: Status,
-    pub(super) replay: ReplayState,
+    pub(super) replay: Replay,
     pub(super) stale: bool,
     pub(super) cmd: UnboundedSender<Cmd>,
     pub(super) task: JoinHandle<()>,
@@ -37,7 +38,14 @@ impl Session {
         let settled = if active { seen(next) } else { next };
         let mut changed = self.status != settled;
         self.status = settled;
-        if let Msg::Intent(Intent::User(text)) = msg
+        let user = match msg {
+            Msg::Fact(Fact::Event(event)) => Some(event),
+            Msg::Fact(Fact::Transcript { events, .. }) => events
+                .iter()
+                .find(|event| matches!(event, Event::User { .. })),
+            _ => None,
+        };
+        if let Some(Event::User { text, .. }) = user
             && self.title.is_none()
         {
             self.title = Some(text.clone());
@@ -88,7 +96,7 @@ impl Hub {
                 workspace,
                 parent,
                 status: Status::Idle,
-                replay: ReplayState::default(),
+                replay: Replay::default(),
                 stale: false,
                 cmd,
                 task,

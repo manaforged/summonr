@@ -12,7 +12,7 @@ fn cycling_effort_uses_supported_levels() {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        let mut snapshot = app.model.peek().snapshot.clone();
+        let mut snapshot = (*app.model.peek().snapshot).clone();
         snapshot.levels = vec![
             Effort::Low,
             Effort::Medium,
@@ -20,7 +20,9 @@ fn cycling_effort_uses_supported_levels() {
             Effort::XHigh,
             Effort::Max,
         ];
-        app.update(summonr_agent::hub::Msg::Fact(Fact::Settings(snapshot)));
+        app.update(summonr_agent::hub::Msg::Fact(Fact::Settings(
+            snapshot.into(),
+        )));
         let mut stops = Vec::new();
         for _ in 0..4 {
             app.cycle_effort(1);
@@ -52,9 +54,9 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
         app.resize(100, 30);
-        let mut snapshot = app.model.peek().snapshot.clone();
+        let mut snapshot = (*app.model.peek().snapshot).clone();
         snapshot.levels = vec![Effort::Low, Effort::Medium, Effort::High];
-        app.update(Msg::Fact(Fact::Settings(snapshot)));
+        app.update(Msg::Fact(Fact::Settings(snapshot.into())));
         app.replace("unchanged draft".to_owned());
         let mut host = Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
@@ -92,9 +94,9 @@ fn tab_changes_effort_and_shift_tab_requests_approval_with_the_composer_focused(
         assert_eq!(app.model.get().snapshot.effort, Some(Effort::Low));
         assert!(!app.model.get().snapshot.approval);
         assert_eq!(app.draft.peek(), "unchanged draft");
-        let mut snapshot = app.model.peek().snapshot.clone();
+        let mut snapshot = (*app.model.peek().snapshot).clone();
         snapshot.approval = true;
-        app.update(Msg::Fact(Fact::Settings(snapshot)));
+        app.update(Msg::Fact(Fact::Settings(snapshot.into())));
         let shown = screen
             .frame(&mut host, [], (100, 30))
             .expect("approval mode")
@@ -143,9 +145,11 @@ fn tab_cycles_back_to_the_lowest_supported_level() {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, _sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
-        let mut snapshot = app.model.peek().snapshot.clone();
+        let mut snapshot = (*app.model.peek().snapshot).clone();
         snapshot.levels = vec![Effort::Low, Effort::Medium, Effort::High];
-        app.update(summonr_agent::hub::Msg::Fact(Fact::Settings(snapshot)));
+        app.update(summonr_agent::hub::Msg::Fact(Fact::Settings(
+            snapshot.into(),
+        )));
         for _ in 0..3 {
             app.cycle_effort(1);
         }

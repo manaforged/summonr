@@ -18,7 +18,7 @@ pub(super) struct View {
     marks: Vec<Mark>,
     counts: [usize; 3],
     pub(super) groups: BTreeMap<String, State>,
-    pub(super) facts: Rc<BTreeMap<ModelId, Model>>,
+    pub(super) facts: std::sync::Arc<BTreeMap<ModelId, Model>>,
     sections: bool,
     older: bool,
     aged: usize,

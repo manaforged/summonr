@@ -1,6 +1,5 @@
 use crate::ToolState;
-use summonr_agent::hub::{Activity, Msg};
-use summonr_agent::hub::{Fact, Intent};
+use summonr_agent::hub::{Activity, Fact, Intent, Msg};
 use summonr_agent::tools::Event;
 
 use super::{Entry, Model};
@@ -10,6 +9,13 @@ mod child_replay;
 
 fn model() -> Model {
     Model::new(&super::super::profile::info())
+}
+
+fn user(text: &str) -> Msg {
+    Msg::Fact(Fact::Event(Event::User {
+        text: text.to_string(),
+        images: Vec::new(),
+    }))
 }
 
 fn call(model: &mut Model, id: &str, name: &str) {
@@ -85,7 +91,7 @@ fn edits_never_fold_into_a_group() {
 #[test]
 fn inline_commits_each_settled_entry_once_and_restarts_after_reset() {
     let mut model = model();
-    model.apply(Msg::Intent(Intent::User("hello".to_string())));
+    model.apply(user("hello"));
     let first = model.commit_lines();
     assert!(first.contains("hello"), "{first}");
     assert_eq!(
@@ -106,7 +112,7 @@ fn inline_commits_each_settled_entry_once_and_restarts_after_reset() {
     assert!(model.commit_lines().contains("search"));
 
     model.apply(Msg::Intent(Intent::Reset));
-    model.apply(Msg::Intent(Intent::User("again".to_string())));
+    model.apply(user("again"));
     assert!(model.commit_lines().contains("again"));
 }
 
@@ -153,7 +159,7 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
 #[test]
 fn answer_stays_last_after_the_check_receipt_and_goal_verdict() {
     let mut model = model();
-    model.apply(Msg::Intent(Intent::User("make the tests pass".to_string())));
+    model.apply(user("make the tests pass"));
     model.apply(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
     model.apply(Msg::Fact(Fact::Event(Event::Delta {
         text: "Result: 4 passed.".to_string(),
@@ -165,9 +171,11 @@ fn answer_stays_last_after_the_check_receipt_and_goal_verdict() {
     model.apply(Msg::Fact(Fact::Event(Event::Assistant {
         text: "Result: 4 passed.".to_string(),
     })));
-    model.apply(Msg::Fact(Fact::Receipt(
-        "Turn receipt · 3 files read".to_string(),
-    )));
+    let receipt = summonr_agent::Receipt {
+        text: "Turn receipt · 3 files read".to_string(),
+        ..summonr_agent::Receipt::default()
+    };
+    model.apply(Msg::Fact(Fact::Event(Event::Receipt { receipt })));
     model.apply(Msg::Fact(Fact::Outcome("goal achieved".to_string())));
     assert!(
         matches!(model.entries.iter().last(), Some(Entry::Assistant { text, .. }) if text == "Result: 4 passed."),
@@ -280,7 +288,7 @@ fn journal_child_terminals_close_rows_once_without_recharging_usage() {
 #[test]
 fn a_streamed_token_rebuilds_only_the_live_row() {
     let mut model = model();
-    model.apply(Msg::Intent(Intent::User("first".to_string())));
+    model.apply(user("first"));
     model.apply(Msg::Fact(Fact::Busy(Some(Activity::Turn))));
     call(&mut model, "1", "run_command");
     finish(&mut model, "1");

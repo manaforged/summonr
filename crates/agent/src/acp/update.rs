@@ -58,6 +58,9 @@ pub(super) fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) 
         | Event::Unreported { .. }
         | Event::Mail { .. }
         | Event::Steered { .. }
+        | Event::User { .. }
+        | Event::Injected { .. }
+        | Event::Cleared
         | Event::Merged { .. }
         | Event::Delta { .. }
         | Event::Reasoning { .. }

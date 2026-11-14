@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::{App, Facet, Login};
@@ -23,12 +21,14 @@ fn listed(app: &App, rows: Vec<(ModelId, Model)>, groups: &[(&str, Reach)]) {
             .iter()
             .map(|(selection, _)| selection.clone())
             .collect(),
-        facts: rows.into_iter().collect(),
-        groups: groups
-            .iter()
-            .map(|(name, state)| ((*name).to_owned(), *state))
-            .collect(),
-        causes: BTreeMap::new(),
+        facts: std::sync::Arc::new(rows.into_iter().collect()),
+        groups: std::sync::Arc::new(
+            groups
+                .iter()
+                .map(|(name, state)| ((*name).to_owned(), *state))
+                .collect(),
+        ),
+        causes: Default::default(),
         pinned: 0,
         recent: 0,
         loading: false,

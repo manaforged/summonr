@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::hub::{Activity, Fact, Intent, Msg, Snapshot};
@@ -7,51 +9,44 @@ use crate::tools::Event;
 type Roster = (Option<String>, Vec<String>, Vec<Option<String>>);
 
 #[derive(Default)]
-pub(super) struct ReplayState {
+pub(super) struct Replay {
     busy: Option<Activity>,
     asking: Option<Event>,
-    settings: Option<Snapshot>,
+    settings: Option<Arc<Snapshot>>,
     workflow: Option<Roster>,
     mode: Option<crate::WorkKind>,
     queued: Option<(usize, usize)>,
-    pending: Vec<(bool, String)>,
-    changed: Option<Vec<String>>,
+    pending: Arc<[(bool, String)]>,
+    changed: Option<Arc<[String]>>,
     restored: Option<Vec<UserInput>>,
 }
 
-impl ReplayState {
+impl Replay {
     pub(super) fn record(&mut self, msg: &Msg, active: bool) {
-        if let Msg::Fact(Fact::Busy(busy)) = msg {
-            self.busy = *busy;
-            self.asking = None;
-        } else if let Msg::Fact(Fact::Event(
-            event @ (Event::Approval { .. } | Event::Elicit { .. }),
-        )) = msg
-        {
-            self.asking = super::asking(msg)
-                .filter(|asking| *asking)
-                .map(|_| event.clone());
-        } else if let Msg::Fact(Fact::Settings(snapshot)) = msg {
-            self.settings = Some(snapshot.clone());
-        } else if let Msg::Fact(Fact::Workflow {
-            name,
-            names,
-            selections,
-        }) = msg
-        {
-            self.workflow = Some((name.clone(), names.clone(), selections.clone()));
-        } else if let Msg::Intent(Intent::RunMode(mode)) = msg {
-            self.mode = Some(*mode);
-        } else if let Msg::Fact(Fact::Queued { steering, queued }) = msg {
-            self.queued = Some((*steering, *queued));
-        } else if let Msg::Fact(Fact::Pending(rows)) = msg {
-            self.pending = rows.clone();
-        } else if let Msg::Fact(Fact::Changed(paths)) = msg {
-            self.changed = Some(paths.clone());
-        } else if let Msg::Fact(Fact::Restored(inputs)) = msg
-            && !active
-        {
-            self.restored = Some(inputs.clone());
+        match msg {
+            Msg::Fact(Fact::Busy(busy)) => {
+                self.busy = *busy;
+                self.asking = None;
+            }
+            Msg::Fact(Fact::Event(event @ (Event::Approval { .. } | Event::Elicit { .. }))) => {
+                self.asking = super::asking(event)
+                    .filter(|asking| *asking)
+                    .map(|_| event.clone());
+            }
+            Msg::Fact(Fact::Settings(snapshot)) => self.settings = Some(Arc::clone(snapshot)),
+            Msg::Fact(Fact::Workflow {
+                name,
+                names,
+                selections,
+            }) => self.workflow = Some((name.clone(), names.clone(), selections.clone())),
+            Msg::Intent(Intent::RunMode(mode)) => self.mode = Some(*mode),
+            Msg::Fact(Fact::Queued { steering, queued }) => {
+                self.queued = Some((*steering, *queued));
+            }
+            Msg::Fact(Fact::Pending(rows)) => self.pending = Arc::clone(rows),
+            Msg::Fact(Fact::Changed(paths)) => self.changed = Some(Arc::clone(paths)),
+            Msg::Fact(Fact::Restored(inputs)) if !active => self.restored = Some(inputs.clone()),
+            _ => {}
         }
     }
 
@@ -76,7 +71,7 @@ impl ReplayState {
         out.extend(self.mode.map(|mode| Msg::Intent(Intent::RunMode(mode))));
         let (steering, queued) = self.queued.unwrap_or_default();
         out.push(Msg::Fact(Fact::Queued { steering, queued }));
-        out.push(Msg::Fact(Fact::Pending(self.pending.clone())));
+        out.push(Msg::Fact(Fact::Pending(Arc::clone(&self.pending))));
         out.extend(
             self.restored
                 .take()

@@ -28,7 +28,7 @@ impl Picker {
     pub(super) fn new(
         draft: Signal<String>,
         model: Signal<Rc<Model>>,
-        facts: Signal<Rc<Facts>>,
+        facts: Signal<std::sync::Arc<Facts>>,
     ) -> Self {
         let list = List::new();
         let head = derived(move || {

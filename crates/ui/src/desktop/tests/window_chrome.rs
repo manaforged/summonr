@@ -80,17 +80,19 @@ fn the_picker_wheel_scrolls_without_moving_the_selection() {
             app.update(Msg::Fact(Fact::Models {
                 request: 1,
                 rows: names.iter().cloned().map(selection).collect(),
-                facts: names
-                    .iter()
-                    .map(|id| {
-                        (
-                            selection(id.clone()),
-                            summonr_agent::catalog::Model::named(id),
-                        )
-                    })
-                    .collect(),
-                groups: std::collections::BTreeMap::new(),
-                causes: std::collections::BTreeMap::new(),
+                facts: std::sync::Arc::new(
+                    names
+                        .iter()
+                        .map(|id| {
+                            (
+                                selection(id.clone()),
+                                summonr_agent::catalog::Model::named(id),
+                            )
+                        })
+                        .collect(),
+                ),
+                groups: Default::default(),
+                causes: Default::default(),
                 pinned: 0,
                 recent: 0,
                 loading: false,

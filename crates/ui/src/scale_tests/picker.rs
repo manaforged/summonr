@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::super::app::App;
@@ -134,16 +133,17 @@ fn open(app: &App, rows: &[(&str, Option<u64>)], pinned: usize) {
     app.update(Msg::Fact(Fact::Models {
         request: 1,
         rows: rows.iter().map(|(id, _)| selection(id)).collect(),
-        facts: rows
-            .iter()
-            .map(|(id, release)| {
-                let mut model = Model::named(*id);
-                model.release = *release;
-                (selection(id), model)
-            })
-            .collect(),
-        groups: BTreeMap::new(),
-        causes: BTreeMap::new(),
+        facts: std::sync::Arc::new(
+            rows.iter()
+                .map(|(id, release)| {
+                    let mut model = Model::named(*id);
+                    model.release = *release;
+                    (selection(id), model)
+                })
+                .collect(),
+        ),
+        groups: Default::default(),
+        causes: Default::default(),
         pinned,
         recent: 0,
         loading: false,

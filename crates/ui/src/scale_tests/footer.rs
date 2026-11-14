@@ -1,5 +1,5 @@
 use super::{State, busy_info, composer_top, find, frame_with, paint};
-use summonr_agent::hub::{Fact, Intent, Msg};
+use summonr_agent::hub::{Fact, Msg};
 use summonr_agent::tools::Event;
 
 fn footer(lines: &[String]) -> String {
@@ -91,19 +91,25 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
     let unknown = footer(&frame_with(busy_info(), 110, 30, State::Idle, |_| {}));
     assert!(!unknown.contains("ctx"), "{unknown}");
     let known = footer(&frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Fact(Fact::Settings(summonr_agent::hub::Snapshot {
-            model: "stub-model".to_owned(),
-            context_window: Some(200_000),
-            ..summonr_agent::hub::Snapshot::default()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            summonr_agent::hub::Snapshot {
+                model: "stub-model".to_owned(),
+                context_window: Some(200_000),
+                ..summonr_agent::hub::Snapshot::default()
+            }
+            .into(),
+        )));
     }));
     assert!(known.contains("ctx"), "{known}");
     let small = footer(&frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Fact(Fact::Settings(summonr_agent::hub::Snapshot {
-            model: "stub-model".to_owned(),
-            context_window: Some(200_000),
-            ..summonr_agent::hub::Snapshot::default()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            summonr_agent::hub::Snapshot {
+                model: "stub-model".to_owned(),
+                context_window: Some(200_000),
+                ..summonr_agent::hub::Snapshot::default()
+            }
+            .into(),
+        )));
         app.update(Msg::Fact(Fact::Event(Event::Usage {
             prompt_tokens: 1500,
             completion_tokens: 20,
@@ -123,12 +129,15 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
 #[test]
 fn an_unseated_session_shows_no_provider_instead_of_a_model() {
     let lines = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        app.update(Msg::Fact(Fact::Settings(summonr_agent::hub::Snapshot {
-            model: "glm-5.3-flash".to_owned(),
-            endpoint: "zai".to_owned(),
-            unconfigured: true,
-            ..summonr_agent::hub::Snapshot::default()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            summonr_agent::hub::Snapshot {
+                model: "glm-5.3-flash".to_owned(),
+                endpoint: "zai".to_owned(),
+                unconfigured: true,
+                ..summonr_agent::hub::Snapshot::default()
+            }
+            .into(),
+        )));
     });
     let screen = lines.join("\n");
     assert!(screen.contains("no provider"), "{screen}");
@@ -152,9 +161,10 @@ fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
         let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let app = super::super::app::App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(110, 30);
-        app.update(Msg::Intent(Intent::User(
-            "started conversation".to_string(),
-        )));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "started conversation".to_string(),
+            images: Vec::new(),
+        })));
         app.refresh();
         let mut host = sigil::Host::new(sigil::prelude::HostMode::Cell);
         let tree = app.clone();
@@ -283,11 +293,14 @@ fn a_long_workspace_path_takes_the_room_the_footer_leaves() {
     info.workspace = format!("/home/someone/{}checkout-name", "nested/".repeat(20));
     let row = |window: Option<u32>| {
         footer(&frame_with(info.clone(), 110, 30, State::Idle, |app| {
-            app.update(Msg::Fact(Fact::Settings(summonr_agent::hub::Snapshot {
-                model: "stub-model".to_owned(),
-                context_window: window,
-                ..summonr_agent::hub::Snapshot::default()
-            })));
+            app.update(Msg::Fact(Fact::Settings(
+                summonr_agent::hub::Snapshot {
+                    model: "stub-model".to_owned(),
+                    context_window: window,
+                    ..summonr_agent::hub::Snapshot::default()
+                }
+                .into(),
+            )));
             spent(app);
             app.update(Msg::Fact(Fact::Live(vec![
                 live("this", summonr_agent::hub::Status::Working, true),
@@ -346,11 +359,14 @@ fn meter_bar(cells: &[sigil::terminal::Cell], fill: sigil::terminal::Ink) -> Str
 
 fn metered(percent: u32) -> sigil::terminal::Grid {
     paint(busy_info(), 140, 30, State::Idle, |app| {
-        app.update(Msg::Fact(Fact::Settings(summonr_agent::hub::Snapshot {
-            model: "stub-model".to_owned(),
-            context_window: Some(200_000),
-            ..summonr_agent::hub::Snapshot::default()
-        })));
+        app.update(Msg::Fact(Fact::Settings(
+            summonr_agent::hub::Snapshot {
+                model: "stub-model".to_owned(),
+                context_window: Some(200_000),
+                ..summonr_agent::hub::Snapshot::default()
+            }
+            .into(),
+        )));
         app.update(Msg::Fact(Fact::Event(Event::Usage {
             prompt_tokens: 2000 * percent,
             completion_tokens: 0,

@@ -15,15 +15,17 @@ impl Model {
         }
     }
 
-    pub(crate) fn receipt(&mut self, text: &str) {
-        let receipt = match self.entries.last() {
-            Some(Entry::Assistant { text: body, .. }) => {
-                text.strip_prefix(body).map(str::trim_start).unwrap_or(text)
+    fn receipt(&mut self, text: String) {
+        let rest = match self.entries.last() {
+            Some(Entry::Assistant { text: body, .. }) if !text.is_empty() => {
+                text.strip_prefix(body.as_str()).map(str::trim_start)
             }
-            _ => text,
+            _ => None,
         };
-        if !receipt.is_empty() {
-            self.trail(Entry::Receipt(receipt.to_string()));
+        match rest {
+            Some("") => {}
+            Some(rest) => self.trail(Entry::Receipt(rest.to_string())),
+            None => self.trail(Entry::Receipt(text)),
         }
     }
 
@@ -66,6 +68,9 @@ impl Model {
             | Event::Merged { .. }
             | Event::Mail { .. }
             | Event::Steered { .. }
+            | Event::User { .. }
+            | Event::Injected { .. }
+            | Event::Cleared
             | Event::Note { .. }
             | Event::Verify { .. }
             | Event::Receipt { .. } => self.apply_entry(event),
@@ -206,9 +211,17 @@ impl Model {
             ))),
             Event::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Event::Steered { text } => self.entries.push(Entry::User(text)),
+            Event::User { text, images } => {
+                self.entries.push(Entry::User(text));
+                for image in images {
+                    self.entries.push(image_entry(image));
+                }
+            }
+            Event::Injected { text } => self.entries.push(Entry::Injected(text)),
+            Event::Cleared => self.clear(),
             Event::Note { text } => self.entries.push(Entry::System(text)),
             Event::Verify { command, passed } => self.trail(Entry::Verify { command, passed }),
-            Event::Receipt { receipt } => self.trail(Entry::Receipt(receipt.text)),
+            Event::Receipt { receipt } => self.receipt(receipt.text),
             _other => {}
         }
     }

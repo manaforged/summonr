@@ -362,11 +362,14 @@ fn the_window_title_is_the_session_title_without_control_characters() {
 
 #[test]
 fn the_turn_notification_names_how_the_turn_ended() {
-    use summonr_agent::hub::{Fact, Intent, Msg};
+    use summonr_agent::hub::{Fact, Msg};
     let mut seen = Vec::new();
     let _ = frame_with(busy_info(), 110, 30, State::Idle, |app| {
         seen.push(app.ending());
-        app.update(Msg::Intent(Intent::User("next".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "next".to_owned(),
+            images: Vec::new(),
+        })));
         app.update(Msg::Fact(Fact::Failed("provider timed out".to_owned())));
         seen.push(app.ending());
     });

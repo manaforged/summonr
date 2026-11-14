@@ -25,7 +25,10 @@ struct Account {
 pub(super) fn view(app: &App) -> NodeBuilder {
     let query = signal(String::new());
     let snapshot = app.model.peek().snapshot.clone();
-    let using = signal(ModelId::new(snapshot.endpoint, snapshot.model));
+    let using = signal(ModelId::new(
+        snapshot.endpoint.clone(),
+        snapshot.model.clone(),
+    ));
     let paint = app.clone();
     sigil::prelude::column()
         .fill_width()

@@ -9,6 +9,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{Fact, Msg};
 use crate::diff;
 use crate::process::{self, Spec};
+use crate::tools::Event;
 use summonr_core::error::{Error, Result};
 use summonr_core::walk::Walk;
 
@@ -147,9 +148,9 @@ pub(super) fn forward(workspace: &Path, ui: &UnboundedSender<Msg>) {
     let (root, mut watcher) = match started {
         Ok(started) => started,
         Err(error) => {
-            send(Msg::Fact(Fact::System(format!(
-                "workspace watch unavailable: {error}"
-            ))));
+            send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("workspace watch unavailable: {error}"),
+            })));
             return;
         }
     };
@@ -168,19 +169,19 @@ pub(super) fn forward(workspace: &Path, ui: &UnboundedSender<Msg>) {
         for event in events {
             match event {
                 Ok(event) => paths.extend(relative(&root, &event)),
-                Err(error) => send(Msg::Fact(Fact::System(format!(
-                    "workspace watch failed: {error}"
-                )))),
+                Err(error) => send(Msg::Fact(Fact::Event(Event::Note {
+                    text: format!("workspace watch failed: {error}"),
+                }))),
             }
         }
         let changed = unignored(&root, paths);
         let dirs = changed.iter().map(|path| root.join(path));
         if let Err(error) = watch(&mut watcher, dirs.filter(|dir| dir.is_dir()).collect()) {
-            send(Msg::Fact(Fact::System(format!(
-                "workspace watch failed: {error}"
-            ))));
+            send(Msg::Fact(Fact::Event(Event::Note {
+                text: format!("workspace watch failed: {error}"),
+            })));
         }
-        if !changed.is_empty() && ui.send(Msg::Fact(Fact::Changed(changed))).is_err() {
+        if !changed.is_empty() && ui.send(Msg::Fact(Fact::Changed(changed.into()))).is_err() {
             return;
         }
     }

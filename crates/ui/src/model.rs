@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 use image::load_from_memory;
@@ -68,14 +69,14 @@ pub(super) struct Model {
     pub(super) rounds: usize,
     pub(super) speed: Speed,
     pub(super) queued: (usize, usize),
-    pub(super) pending: Vec<(bool, String)>,
+    pub(super) pending: Arc<[(bool, String)]>,
     pub(super) busy_since: Option<(Activity, Instant)>,
     pub(super) doing: Option<Doing>,
     pub(super) agents: Vec<Agent>,
     pub(super) agents_hidden: BTreeSet<String>,
     pub(super) status_view: StatusView,
     pub(super) prefs: Prefs,
-    pub(super) snapshot: Snapshot,
+    pub(super) snapshot: Arc<Snapshot>,
     pub(super) pick: Option<summonr_agent::endpoint::Origin>,
     pub(super) peers: Vec<summonr_agent::mail::Agent>,
 }
@@ -158,20 +159,20 @@ impl Model {
             rounds: 0,
             speed: Speed::default(),
             queued: (0, 0),
-            pending: Vec::new(),
+            pending: Arc::default(),
             busy_since: None,
             doing: None,
             agents: Vec::new(),
             agents_hidden: BTreeSet::new(),
             status_view: StatusView::Closed,
             prefs: info.prefs.clone(),
-            snapshot: Snapshot {
+            snapshot: Arc::new(Snapshot {
                 model: info.model.clone(),
                 relay: info.relay.clone(),
                 strict: info.strict,
                 endpoint: info.endpoint.clone(),
                 ..Snapshot::default()
-            },
+            }),
             peers: Vec::new(),
             pick: info.pick,
         }
@@ -182,21 +183,14 @@ impl Model {
             Msg::Intent(Intent::Bye) => return false,
             Msg::Fact(Fact::Live(live)) => self.live = live,
             Msg::Fact(Fact::Event(event)) => self.apply_event(event),
-            msg @ (Msg::Intent(Intent::User(_))
-            | Msg::Intent(Intent::Image(_))
-            | Msg::Fact(Fact::Receipt(_))
-            | Msg::Fact(Fact::System(_))
-            | Msg::Fact(Fact::Injected(_))
-            | Msg::Fact(Fact::Approval(_))
+            msg @ (Msg::Fact(Fact::Approval(_))
             | Msg::Fact(Fact::Outcome(_))
-            | Msg::Fact(Fact::Mail { .. })
             | Msg::Fact(Fact::Failed(_))) => self.entry(msg),
             msg @ (Msg::Fact(Fact::Session(_))
             | Msg::Fact(Fact::Calling(_))
             | Msg::Fact(Fact::Busy(_))
             | Msg::Fact(Fact::Queued { .. })
             | Msg::Fact(Fact::Pending(_))
-            | Msg::Fact(Fact::Cleared)
             | Msg::Intent(Intent::Reset)
             | Msg::Intent(Intent::RunMode(_))
             | Msg::Fact(Fact::Settings(_))) => self.status(msg),
@@ -232,7 +226,7 @@ impl Model {
             | Msg::Fact(Fact::Workflow { .. })
             | Msg::Intent(Intent::Resume(_))
             | Msg::Fact(Fact::Replayed)
-            | Msg::Fact(Fact::Transcript(_))
+            | Msg::Fact(Fact::Transcript { .. })
             | Msg::Fact(Fact::Held(_))
             | Msg::Fact(Fact::TakenOver)
             | Msg::Fact(Fact::LoginStep { .. })
@@ -245,14 +239,8 @@ impl Model {
 
     fn entry(&mut self, msg: Msg) {
         match msg {
-            Msg::Intent(Intent::User(text)) => self.entries.push(Entry::User(text)),
-            Msg::Intent(Intent::Image(image)) => self.entries.push(image_entry(image)),
-            Msg::Fact(Fact::Receipt(text)) => self.receipt(&text),
-            Msg::Fact(Fact::System(text)) => self.entries.push(Entry::System(text)),
-            Msg::Fact(Fact::Injected(text)) => self.entries.push(Entry::Injected(text)),
             Msg::Fact(Fact::Approval(text)) => self.approval_note(text),
             Msg::Fact(Fact::Outcome(text)) => self.trail(Entry::System(text)),
-            Msg::Fact(Fact::Mail { from, text }) => self.entries.push(Entry::Mail { from, text }),
             Msg::Fact(Fact::Failed(text)) => {
                 self.set_busy(None);
                 self.entries.push(Entry::Error(text));
@@ -273,11 +261,11 @@ impl Model {
             Msg::Fact(Fact::Busy(busy)) => self.set_busy(busy),
             Msg::Fact(Fact::Queued { steering, queued }) => self.queued = (steering, queued),
             Msg::Fact(Fact::Pending(rows)) => self.pending = rows,
-            Msg::Fact(Fact::Cleared) => self.clear(),
             Msg::Intent(Intent::Reset) => self.reset(),
             Msg::Intent(Intent::RunMode(mode)) => {
-                self.snapshot.work = mode == summonr_agent::WorkKind::Steps;
-                self.snapshot.goal = mode == summonr_agent::WorkKind::Goal;
+                let snapshot = Arc::make_mut(&mut self.snapshot);
+                snapshot.work = mode == summonr_agent::WorkKind::Steps;
+                snapshot.goal = mode == summonr_agent::WorkKind::Goal;
             }
             Msg::Fact(Fact::Settings(snapshot)) => {
                 if (&snapshot.endpoint, &snapshot.model)

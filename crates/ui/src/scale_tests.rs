@@ -2,7 +2,7 @@ use sigil::Host;
 use sigil::app::cell_width;
 use sigil::prelude::HostMode;
 use sigil::terminal::Screen;
-use summonr_agent::hub::{Fact, Intent};
+use summonr_agent::hub::Fact;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::app::App;
@@ -98,7 +98,10 @@ fn paint_steps(
         let (commands, _receiver) = unbounded_channel();
         let app = App::new(base, workspace.path().to_owned(), commands);
         app.resize(cols, rows);
-        app.update(Msg::Intent(Intent::User("Review the change".to_owned())));
+        app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+            text: "Review the change".to_owned(),
+            images: Vec::new(),
+        })));
         if state == State::Tool {
             app.update(Msg::Fact(Fact::Event(Event::ToolCall {
                 id: "t1".to_owned(),
@@ -358,7 +361,7 @@ fn a_cleared_transcript_shows_the_note_in_place_of_the_prompt() {
         80,
         24,
         |_| {},
-        &[&|app: &App| app.update(Msg::Fact(Fact::Cleared))],
+        &[&|app: &App| app.update(Msg::Fact(Fact::Event(summonr_agent::Event::Cleared)))],
     );
     let last = shots.last().map(String::as_str).unwrap_or_default();
     assert!(

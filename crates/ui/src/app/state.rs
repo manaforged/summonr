@@ -10,7 +10,7 @@ pub(crate) struct ModelPicker {
     pub(crate) choices: Signal<Rc<Vec<ModelId>>>,
     pub(crate) shown: Signal<Rc<Vec<ModelId>>>,
     pub(crate) facts:
-        Signal<Rc<std::collections::BTreeMap<ModelId, summonr_agent::catalog::Model>>>,
+        Signal<std::sync::Arc<std::collections::BTreeMap<ModelId, summonr_agent::catalog::Model>>>,
     pub(crate) default: Signal<Option<ModelId>>,
     pub(crate) groups: Signal<std::collections::BTreeMap<String, State>>,
     pub(crate) causes: Signal<std::collections::BTreeMap<String, String>>,
@@ -31,7 +31,7 @@ impl ModelPicker {
     pub(super) fn new() -> Self {
         let list = List::new();
         let choices = signal(Rc::<Vec<ModelId>>::default());
-        let facts = signal(Rc::<
+        let facts = signal(std::sync::Arc::<
             std::collections::BTreeMap<ModelId, summonr_agent::catalog::Model>,
         >::default());
         let groups = signal(std::collections::BTreeMap::<String, State>::new());

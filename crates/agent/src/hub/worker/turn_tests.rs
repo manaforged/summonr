@@ -140,7 +140,7 @@ fn blank_enter_says_why_when_only_shell_and_slash_lines_wait() {
     assert!(steered.is_empty());
     assert!(notes.iter().any(|msg| matches!(
         msg,
-        Msg::Fact(Fact::System(text)) if text.contains("after the turn")
+        Msg::Fact(Fact::Event(crate::Event::Note { text })) if text.contains("after the turn")
     )));
 }
 
@@ -308,7 +308,7 @@ fn identical_pending_rows_follow_the_steering_queue() {
             _other => None,
         })
         .last();
-    assert_eq!(rows, Some(vec![(true, "same".to_string())]));
+    assert_eq!(rows.as_deref(), Some(&[(true, "same".to_string())][..]));
 }
 
 #[tokio::test]
@@ -322,7 +322,7 @@ async fn a_goal_with_verify_off_takes_no_gates_from_the_check_file() {
     drop(tokio::time::timeout(std::time::Duration::from_secs(2), worker.goal("ship it")).await);
     let notes: Vec<String> = std::iter::from_fn(|| inbox.try_recv().ok())
         .filter_map(|msg| match msg {
-            Msg::Fact(Fact::System(text)) => Some(text),
+            Msg::Fact(Fact::Event(crate::Event::Note { text })) => Some(text),
             _msg => None,
         })
         .collect();

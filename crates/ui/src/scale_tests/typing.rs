@@ -1,7 +1,7 @@
 use sigil::Host;
 use sigil::events::{Event, KeyPhase, LogicalKey};
 use sigil::terminal::Screen;
-use summonr_agent::hub::Intent;
+use summonr_agent::hub::{Fact, Msg};
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::{App, Overlay};
@@ -55,9 +55,10 @@ fn shift_or_alt_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
             let app = App::new(busy_info(), workspace.path().to_owned(), commands);
             assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
             app.resize(160, 40);
-            app.update(summonr_agent::hub::Msg::Intent(Intent::User(
-                "Earlier message".to_owned(),
-            )));
+            app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+                text: "Earlier message".to_owned(),
+                images: Vec::new(),
+            })));
             app.replace("first".to_owned());
             let mut host = Host::new(sigil::prelude::HostMode::Cell);
             let tree = app.clone();

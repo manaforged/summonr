@@ -28,9 +28,10 @@ fn topic(app: &super::super::App) {
     };
     app.update(Msg::Fact(Fact::Sessions(Ok(vec![(info, true)]))));
     app.update(Msg::Fact(Fact::Session(TOPIC.to_owned())));
-    app.update(Msg::Intent(summonr_agent::hub::Intent::User(
-        TITLE.to_owned(),
-    )));
+    app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+        text: TITLE.to_owned(),
+        images: Vec::new(),
+    })));
     app.update(Msg::Fact(Fact::Diff(
         changed("HEAD", &[("src/parse.rs", 4, 1)]),
         None,

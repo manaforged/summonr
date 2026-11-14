@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, PoisonError};
 
 use crate::hub::Fact;
+use crate::tools::Event;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Cmd, Msg};
@@ -37,7 +38,7 @@ impl InputQueue {
         let rows = self.pending_rows();
         if rows != self.announced {
             self.announced.clone_from(&rows);
-            drop(ui.send(Msg::Fact(Fact::Pending(rows))));
+            drop(ui.send(Msg::Fact(Fact::Pending(rows.into()))));
         }
         let steering = self.steering.lock().map_or(0, |queue| queue.len());
         let held = self
@@ -125,7 +126,7 @@ impl InputQueue {
         self.deferred
             .extend(self.followups.drain(..).map(Cmd::Submit));
         self.deferred.push_back(command);
-        drop(ui.send(Msg::Fact(Fact::System(note))));
+        drop(ui.send(Msg::Fact(Fact::Event(Event::Note { text: note }))));
         self.announce(ui);
     }
 
@@ -140,11 +141,15 @@ impl InputQueue {
                 if self.followups.is_empty() && self.deferred.is_empty() && steerable(&input) =>
             {
                 steer(&self.steering, [input], workspace);
-                drop(ui.send(Msg::Fact(Fact::System(SENT_NOW.to_string()))));
+                drop(ui.send(Msg::Fact(Fact::Event(Event::Note {
+                    text: SENT_NOW.to_string(),
+                }))));
             }
             Cmd::Steer(input) => {
                 self.followups.push_back(input);
-                drop(ui.send(Msg::Fact(Fact::System(QUEUED_LATER.to_string()))));
+                drop(ui.send(Msg::Fact(Fact::Event(Event::Note {
+                    text: QUEUED_LATER.to_string(),
+                }))));
             }
             Cmd::Queue(input) => self.followups.push_back(input),
             Cmd::Submit(input) => {
@@ -159,7 +164,9 @@ impl InputQueue {
                     steer(&self.steering, now, workspace);
                     SENT_NOW
                 };
-                drop(ui.send(Msg::Fact(Fact::System(note.to_string()))));
+                drop(ui.send(Msg::Fact(Fact::Event(Event::Note {
+                    text: note.to_string(),
+                }))));
             }
             Cmd::Dequeue => {
                 let mut pending = self.take_sent();

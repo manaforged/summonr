@@ -5,9 +5,10 @@ use super::in_window;
 use summonr_agent::hub::{Cmd, Fact, Msg};
 
 fn edited(app: &super::super::App, recent: &[&str]) {
-    app.update(Msg::Intent(summonr_agent::hub::Intent::User(
-        "edit".to_owned(),
-    )));
+    app.update(Msg::Fact(Fact::Event(summonr_agent::Event::User {
+        text: "edit".to_owned(),
+        images: Vec::new(),
+    })));
     app.update(Msg::Fact(Fact::Diff(
         changed("HEAD", &[("src/a.rs", 10, 2), ("src/b.rs", 3, 1)]),
         None,

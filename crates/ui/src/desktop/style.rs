@@ -164,17 +164,7 @@ pub(super) fn text(role: Text, content: impl Into<TextContent>) -> TextBuilder {
 /// The GUI view's theme: the backdrop color with small lifts toward the text color.
 pub(crate) fn gui(palette: crate::theme::Palette) -> sigil::prelude::Theme {
     let mut theme = crate::theme::style(palette);
-    let backdrop = if palette.base.a == 0 {
-        sigil::terminal::caps()
-            .and_then(|caps| caps.background())
-            .unwrap_or(sigil::prelude::Color {
-                a: 255,
-                ..palette.base
-            })
-    } else {
-        palette.base
-    };
-    let backdrop = sigil::prelude::Color { a: 255, ..backdrop };
+    let backdrop = crate::theme::backdrop(palette);
     let lift = |amount: f32| crate::canvas::blend(backdrop, palette.text, amount);
     theme.gray.steps = [
         backdrop,

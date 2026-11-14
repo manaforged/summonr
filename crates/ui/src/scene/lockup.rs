@@ -80,7 +80,7 @@ fn plan(cols: u16, rows: u16, facts: &[(&str, String)]) -> Plan {
     let [body_x, body_y, card_x, card_y, card_width] = layout(cols, rows, body_width, body_rows);
     let [width, _] = size.cells().map(|cells| cells * scale);
     let text_x = body_x + width + GAP + scale;
-    let text_y = body_y + body_rows.saturating_sub(fit.text_rows);
+    let text_y = body_y + body_rows.saturating_sub(fit.text_rows) / 2;
     let logo = summonr_agent::splash::logo().len() as u16;
     Plan {
         size,
@@ -106,7 +106,9 @@ pub(crate) fn window_area(cols: u16, rows: u16, facts: &[(&str, String)]) -> [u1
 /// The one solid colour the lockup card and composer share, when `splash` has no glass.
 pub(crate) fn panel(splash: Splash) -> Option<Color> {
     match splash {
-        Splash::Plain | Splash::Motes | Splash::Atmosphere => Some(ground(splash)),
+        Splash::Plain | Splash::Motes | Splash::Atmosphere => {
+            Some(crate::theme::backdrop(palette()))
+        }
         Splash::Off | Splash::Classic | Splash::Sky => None,
     }
 }
@@ -115,7 +117,7 @@ pub(crate) fn panel(splash: Splash) -> Option<Color> {
 pub(crate) fn ground(splash: Splash) -> Color {
     match splash {
         Splash::Sky => stage().plate,
-        Splash::Atmosphere => stage().void,
+        Splash::Atmosphere => crate::theme::backdrop(palette()),
         Splash::Off | Splash::Classic | Splash::Plain | Splash::Motes => palette().base,
     }
 }

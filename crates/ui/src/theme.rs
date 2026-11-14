@@ -275,6 +275,19 @@ fn backdrop_light() -> bool {
     })
 }
 
+/// The opaque colour behind the UI: the theme base, or the colour the terminal reports when the base is see-through.
+#[must_use]
+pub(crate) fn backdrop(palette: Palette) -> sigil::prelude::Color {
+    let backdrop = if palette.base.a == 0 {
+        sigil::terminal::caps()
+            .and_then(|caps| caps.background())
+            .unwrap_or(palette.base)
+    } else {
+        palette.base
+    };
+    sigil::prelude::Color { a: 255, ..backdrop }
+}
+
 #[must_use]
 pub(super) fn palette() -> Palette {
     ACTIVE.with(Cell::get)

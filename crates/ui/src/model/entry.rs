@@ -1,3 +1,9 @@
+use std::borrow::Cow;
+use std::fmt::Write as _;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::{Component, Path, PathBuf};
+
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -40,6 +46,7 @@ pub(crate) struct Call {
     pub(crate) state: ToolState,
     pub(crate) output: String,
     pub(crate) expanded: bool,
+    pub(crate) compacted: bool,
     pub(crate) patch: Option<String>,
 }
 
@@ -51,12 +58,87 @@ impl Call {
             state,
             output,
             expanded: false,
+            compacted: false,
             patch: None,
         }
     }
+
+    pub(crate) fn compact_read(&mut self, workspace: &Path) {
+        if self.expanded || self.patch.is_some() || !matches!(self.state, ToolState::Ok) {
+            return;
+        }
+        let Some((header, body)) = self.output.split_once('\n') else {
+            return;
+        };
+        if body.is_empty()
+            || !header.starts_with(self.arg.as_str())
+            || header.contains("already shown")
+            || body.contains("[truncated ")
+            || body.contains("[invalid UTF-8 replaced]")
+            || summonr_agent::tools::read_span(header).is_none()
+            || !read_path(workspace, header).is_some_and(|path| path.is_file())
+        {
+            return;
+        }
+        self.output.truncate(header.len());
+        self.output.shrink_to_fit();
+        self.compacted = true;
+    }
+
+    pub(crate) fn resolved_output(&self, workspace: &Path) -> Cow<'_, str> {
+        if !self.compacted || workspace.as_os_str().is_empty() {
+            return Cow::Borrowed(&self.output);
+        }
+        rehydrate_read(workspace, &self.output)
+            .map(Cow::Owned)
+            .unwrap_or(Cow::Borrowed(&self.output))
+    }
 }
 
-pub(crate) fn entry_markdown(entry: &Entry) -> String {
+fn read_path(workspace: &Path, header: &str) -> Option<PathBuf> {
+    if workspace.as_os_str().is_empty() {
+        return None;
+    }
+    let rel = header.split("  lines ").next()?.trim();
+    if rel.is_empty() {
+        return None;
+    }
+    let path = Path::new(rel);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(workspace.join(path))
+}
+
+fn rehydrate_read(workspace: &Path, header: &str) -> Option<String> {
+    let (from, to) = summonr_agent::tools::read_span(header)?;
+    if from == 0 || to < from {
+        return None;
+    }
+    let path = read_path(workspace, header)?;
+    let reader = BufReader::new(File::open(path).ok()?);
+    let mut out = String::with_capacity(header.len() + (to - from + 1) * 64);
+    out.push_str(header);
+    let mut kept = 0_usize;
+    for (index, line) in reader.lines().enumerate() {
+        let number = index + 1;
+        if number > to {
+            break;
+        }
+        let line = line.ok()?;
+        if number >= from {
+            write!(out, "\n{number}:{line}").expect("write to String");
+            kept += 1;
+        }
+    }
+    (kept > 0).then_some(out)
+}
+
+pub(crate) fn entry_markdown_in(entry: &Entry, workspace: &Path) -> String {
     match entry {
         Entry::User(text) => format!("### You\n{text}"),
         Entry::Thinking(text) => format!("> **Thinking**\n> {}", text.replace('\n', "\n> ")),
@@ -64,7 +146,10 @@ pub(crate) fn entry_markdown(entry: &Entry) -> String {
         Entry::Assistant { text, .. } => text.clone(),
         Entry::Tool { name, calls } => calls
             .iter()
-            .map(|call| tool_markdown(name, &call.arg, &call.state, &call.output))
+            .map(|call| {
+                let output = call.resolved_output(workspace);
+                tool_markdown(name, &call.arg, &call.state, &output)
+            })
             .collect::<Vec<_>>()
             .join("\n"),
         Entry::Verify { command, passed } => {

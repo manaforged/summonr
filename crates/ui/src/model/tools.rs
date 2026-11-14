@@ -76,12 +76,15 @@ impl Model {
             ToolState::Failed
         };
         if let Some(index) = self.tools.remove(id)
-            && let Some(Entry::Tool { calls, .. }) = self.entries.get_mut(index)
+            && let Some(Entry::Tool { name, calls }) = self.entries.get_mut(index)
             && let Some(call) = calls.iter_mut().find(|call| call.id == id)
         {
             call.state = state;
             call.output = output;
             call.patch = patch;
+            if summonr_agent::tools::Builtin::is(name, summonr_agent::tools::Builtin::Read) {
+                call.compact_read(&self.workspace);
+            }
         }
         self.doing = Some(Doing::Thinking);
     }
@@ -170,7 +173,7 @@ impl Model {
         self.entries
             .iter()
             .filter(|entry| !(hidden && matches!(entry, Entry::Thinking(_))))
-            .map(entry_markdown)
+            .map(|entry| entry_markdown_in(entry, &self.workspace))
             .collect::<Vec<_>>()
             .join("\n\n")
     }

@@ -180,6 +180,40 @@ pub(crate) fn call_output(
     Some(wrap(view))
 }
 
+fn task_tool_card(
+    name: &str,
+    call: &Call,
+    tools: ToolOutput,
+    app: &App,
+    index: usize,
+    at: usize,
+) -> Option<NodeBuilder> {
+    if !Builtin::is(name, Builtin::Task) {
+        return None;
+    }
+    if let Some(card) = super::children::task_card(app, &call.id) {
+        return Some(card);
+    }
+    let full = call.expanded || tools == ToolOutput::Full;
+    let hidden = tools == ToolOutput::Hidden && !call.expanded;
+    if let Some(card) = super::children::receipt_card(call, full, hidden, app) {
+        return Some(card.pointer_up(flip(app, index, at)));
+    }
+    (call.arg.is_empty() && !matches!(call.state, ToolState::Failed))
+        .then(|| super::children::starting_card(app.ticks))
+}
+
+fn resolve_card_output(call: &Call, hidden: bool, full: bool, roots: &[String], app: &App) -> String {
+    let resolved =
+        (!hidden && full && call.compacted).then(|| call.resolved_output(&app.workspace()));
+    let raw_output = resolved.as_deref().unwrap_or(&call.output);
+    preview::plain(raw_output)
+        .lines()
+        .map(|line| workspace_relative(line, roots))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub(super) fn tool_card(
     name: &str,
     call: &Call,
@@ -189,31 +223,15 @@ pub(super) fn tool_card(
     index: usize,
     at: usize,
 ) -> NodeBuilder {
-    if Builtin::is(name, Builtin::Task)
-        && let Some(card) = super::children::task_card(app, &call.id)
-    {
+    if let Some(card) = task_tool_card(name, call, tools, app, index, at) {
         return card;
     }
     let full = call.expanded || tools == ToolOutput::Full;
     let hidden = tools == ToolOutput::Hidden && !call.expanded;
-    if Builtin::is(name, Builtin::Task)
-        && let Some(card) = super::children::receipt_card(call, full, hidden, app)
-    {
-        return card.pointer_up(flip(app, index, at));
-    }
-    if Builtin::is(name, Builtin::Task)
-        && call.arg.is_empty()
-        && !matches!(call.state, ToolState::Failed)
-    {
-        return super::children::starting_card(app.ticks);
-    }
-    let shown = workspace_relative(&call.arg, &app.roots());
+    let roots = app.roots();
+    let shown = workspace_relative(&call.arg, &roots);
     let (verb, arg) = (tool_label(name), shown.as_str());
-    let output = preview::plain(&call.output)
-        .lines()
-        .map(|line| workspace_relative(line, &app.roots()))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let output = resolve_card_output(call, hidden, full, &roots, app);
     let detail = detail(name, call, &output);
     let card = sigil::prelude::column()
         .fill_width()
@@ -261,7 +279,10 @@ fn group_row(
     app: &App,
     index: usize,
 ) -> NodeBuilder {
-    let output = preview::plain(&call.output);
+    let expanded = call.expanded || tools == ToolOutput::Full;
+    let resolved = (expanded && call.compacted).then(|| call.resolved_output(&app.workspace()));
+    let raw_output = resolved.as_deref().unwrap_or(&call.output);
+    let output = preview::plain(raw_output);
     let shown = workspace_relative(&call.arg, &app.roots());
     let (verb, arg) = (tool_label(name), shown.as_str());
     let detail = match call.state {
@@ -273,7 +294,6 @@ fn group_row(
     };
     let line =
         branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, at));
-    let expanded = call.expanded || tools == ToolOutput::Full;
     let column = sigil::prelude::column()
         .fill_width()
         .gap(Space::None)

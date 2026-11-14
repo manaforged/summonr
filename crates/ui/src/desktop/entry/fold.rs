@@ -265,7 +265,8 @@ fn step_row(step: &Step<'_>, app: &App, layout: summonr_agent::prefs::DiffLayout
     if !step.call.expanded {
         return column;
     }
-    let output = preview::plain(&step.call.output);
+    let resolved = step.call.resolved_output(&app.workspace());
+    let output = preview::plain(&resolved);
     match call_output(step.name, step.call, &output, true, layout, app) {
         Some(body) => column.child(body),
         None => column,

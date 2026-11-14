@@ -7,7 +7,7 @@ use regex::{Regex, RegexBuilder, escape};
 
 use super::app::App;
 use super::canvas;
-use super::model::{Entry, Model, entry_markdown};
+use super::model::{Entry, Model, entry_markdown_in};
 use super::ui::{Dialog, Hints, Key, List, Size, filter_field, pick};
 use sigil::prelude::{NodeBuilder, Signal};
 use sigil::prelude::{container, signal};
@@ -157,7 +157,7 @@ impl Picker {
                     Entry::User(text) | Entry::Thinking(text) | Entry::Assistant { text, .. } => {
                         text.clone()
                     }
-                    _ => entry_markdown(entry),
+                    _ => entry_markdown_in(entry, &model.workspace),
                 };
                 snippet(&pattern, &text).map(|preview| (index, preview))
             })

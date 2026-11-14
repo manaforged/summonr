@@ -337,3 +337,57 @@ fn a_trailing_entry_after_a_non_answer_goes_last() {
         Some(Entry::Receipt(text)) if text == "second"
     ));
 }
+
+#[test]
+fn compacted_read_rehydrates_for_resolve_transcript_and_search() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body: String = (1..=40)
+        .map(|line| {
+            if line == 25 {
+                "pub fn line_25_needle() -> usize { 25 }\n".to_string()
+            } else {
+                format!("pub fn row_{line}() -> usize {{ {line} }}\n")
+            }
+        })
+        .collect();
+    std::fs::write(dir.path().join("sample.rs"), &body).expect("write");
+    let formatted: String = (1..=40)
+        .map(|line| {
+            if line == 25 {
+                "25:pub fn line_25_needle() -> usize { 25 }".to_string()
+            } else {
+                format!("{line}:pub fn row_{line}() -> usize {{ {line} }}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let full = format!("sample.rs  lines 1-40/40\n{formatted}");
+    let mut model = model();
+    model.workspace = dir.path().to_path_buf();
+    model.apply(Msg::Fact(Fact::Event(Event::ToolCall {
+        id: "r1".to_string(),
+        name: "read".to_string(),
+        arguments: r#"{"path":"sample.rs"}"#.to_string(),
+    })));
+    model.apply(Msg::Fact(Fact::Event(Event::ToolResult {
+        id: "r1".to_string(),
+        success: true,
+        mutated: false,
+        output: full.clone(),
+        millis: None,
+        patch: None,
+    })));
+    let Some(Entry::Tool { calls, .. }) = model.entries.last() else {
+        panic!("expected tool entry");
+    };
+    assert!(calls[0].compacted);
+    assert_eq!(calls[0].output, "sample.rs  lines 1-40/40");
+    assert_eq!(calls[0].resolved_output(&model.workspace).as_ref(), full);
+    assert!(model.transcript().contains("line_25_needle"));
+    sigil::reactive::Owner::scope("read-compaction-search", || {
+        let picker = super::super::search::Picker::new();
+        picker.start("line_25_needle");
+        let rows = picker.rows(&model).expect("search rows");
+        assert_eq!(rows.len(), 1);
+    });
+}

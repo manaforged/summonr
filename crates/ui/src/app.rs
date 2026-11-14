@@ -239,7 +239,9 @@ impl Attachment {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
-        let model = signal(Rc::new(Model::new(&info)));
+        let mut initial = Model::new(&info);
+        initial.workspace = workspace.clone();
+        let model = signal(Rc::new(initial));
         let picker = ModelPicker::new();
         let draft = signal(String::new());
         let caret = signal(0);

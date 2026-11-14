@@ -19,7 +19,7 @@ mod children;
 mod entry;
 mod event;
 
-pub(crate) use entry::{Call, Entry, decode, entry_markdown, preview};
+pub(crate) use entry::{Call, Entry, decode, entry_markdown_in, preview};
 pub(crate) use state::{Agent, Doing, Entries, View};
 mod state;
 mod tools;
@@ -41,6 +41,7 @@ impl StatusView {
 #[derive(Clone)]
 pub(super) struct Model {
     pub(super) session: String,
+    pub(super) workspace: PathBuf,
     pub(super) live: Vec<summonr_agent::hub::Live>,
     pub(super) entries: Entries,
     committed: usize,
@@ -121,7 +122,7 @@ impl Model {
             if !stable {
                 break;
             }
-            out.push_str(&entry_markdown(&self.entries[index]));
+            out.push_str(&entry_markdown_in(&self.entries[index], &self.workspace));
             self.committed += 1;
         }
         out
@@ -130,6 +131,7 @@ impl Model {
     pub(super) fn new(info: &Info) -> Self {
         Self {
             session: info.session.clone(),
+            workspace: PathBuf::new(),
             live: Vec::new(),
             entries: Entries::default(),
             committed: 0,
@@ -284,6 +286,9 @@ impl Model {
                     self.pick = None;
                 }
                 self.snapshot = snapshot;
+                if !self.snapshot.workspace.as_os_str().is_empty() {
+                    self.workspace = self.snapshot.workspace.clone();
+                }
             }
             _msg => unreachable!("apply routes only status messages"),
         }

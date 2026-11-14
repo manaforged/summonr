@@ -135,6 +135,8 @@ mod usage;
 #[cfg(test)]
 mod finish_tests;
 #[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
 mod permission_tests;
 #[cfg(test)]
 mod repeat_tests;
@@ -187,7 +189,7 @@ impl<P: Provider> Loop<P> {
         self.tools.set_model_images(images);
         let mut input = self.expand_mcp(input, &mut events, &mut emit).await?;
         self.tools.fold_unseen_images(&mut input).await?;
-        Box::pin(self.admit(&mut input, trigger == Trigger::User, &mut emit)).await?;
+        Box::pin(self.admit(&mut input, &mut emit)).await?;
         if let Some(note) = self.style.take_note() {
             input.text = format!("{note}\n\n{}", input.text);
         }
@@ -208,7 +210,7 @@ impl<P: Provider> Loop<P> {
         let cap = crate::limits::limits().stop_hook_streak;
         let mut streak = 0;
         loop {
-            let (latest, finished) = match Box::pin(self.run_timed(events, emit)).await {
+            let latest = match Box::pin(self.run_timed(events, emit)).await {
                 Ok(ran) => ran,
                 Err(error) => {
                     if let Some(failure) = error.provider_failure() {
@@ -225,9 +227,6 @@ impl<P: Provider> Loop<P> {
                 Some(earlier) => joined(earlier, latest),
                 None => latest,
             };
-            if !finished {
-                return Ok(turn);
-            }
             let Some(reason) = Box::pin(self.stop_hook(&turn, active, emit)).await else {
                 return Ok(turn);
             };
@@ -251,7 +250,7 @@ impl<P: Provider> Loop<P> {
         &mut self,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<(Turn, bool)> {
+    ) -> Result<Turn> {
         let progress = self.work_progress()?;
         self.push_event(events, emit, Event::Work { progress })?;
         self.measure_baseline(events, emit).await?;
@@ -271,19 +270,17 @@ impl<P: Provider> Loop<P> {
         }
         self.sync_usage(emit);
         match result {
-            Ok(result) => Ok((result?, true)),
+            Ok(result) => result,
             Err(_timeout) => {
-                let turn = self
-                    .abort_turn(
-                        Abort::time_limit(),
-                        events,
-                        emit,
-                        &mut usage,
-                        rounds,
-                        &mut pre,
-                    )
-                    .await?;
-                Ok((turn, false))
+                self.abort_turn(
+                    Abort::time_limit(),
+                    events,
+                    emit,
+                    &mut usage,
+                    rounds,
+                    &mut pre,
+                )
+                .await
             }
         }
     }

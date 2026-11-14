@@ -30,11 +30,7 @@ impl<P: Provider> Loop<P> {
         if self.session.depth() > 0 {
             return Ok(None);
         }
-        let source = Start::Compact.name();
-        let payload = json!({ "source": source, "model": self.model });
-        let heard = self
-            .hook(HookEvent::SessionStart, Some(source), payload)
-            .await;
+        let heard = self.session_start(Start::Compact).await;
         self.hook_notes(HookEvent::SessionStart, &heard.notes, events, emit)?;
         Ok(context_note(&heard.context))
     }

@@ -133,6 +133,7 @@ impl<P: Provider> Loop<P> {
             fallbacks: VecDeque::new(),
             compact_tokens: None,
             hooks: crate::hooks::with_plugins(config.hooks.clone(), &crate::plugins::enabled()),
+            pending_hooks: super::hooks::Pending::default(),
             mcp_wanted: false,
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),

@@ -72,15 +72,19 @@ impl Worker {
         self.send_settings();
         self.send_diff(false).await;
         self.reader.watch();
+        self.loop_.begin().await;
         let mut reason = crate::hooks::End::Other;
         while let Some(command) = self.next().await {
-            let quit = matches!(command, Cmd::Quit);
+            let quit = matches!(command, Cmd::Quit)
+                || matches!(&command, Cmd::Command(line)
+                    if crate::parse_command(line) == Some(crate::SlashCommand::Exit));
             if !self.dispatch(command).await {
                 if quit {
                     reason = crate::hooks::End::Exit;
                 }
                 break;
             }
+            self.loop_.begin().await;
         }
         for note in self.loop_.end(reason).await {
             self.system(&note);

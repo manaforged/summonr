@@ -5,8 +5,9 @@ use summonr_core::error::{ProviderFailure, ProviderFailureKind};
 pub enum Start {
     Startup,
     Resume,
-    Fork,
+    Clear,
     Compact,
+    Fork,
 }
 
 impl Start {
@@ -16,8 +17,9 @@ impl Start {
         match self {
             Self::Startup => "startup",
             Self::Resume => "resume",
-            Self::Fork => "fork",
+            Self::Clear => "clear",
             Self::Compact => "compact",
+            Self::Fork => "fork",
         }
     }
 }

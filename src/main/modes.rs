@@ -20,8 +20,10 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
         )));
     }
     let input = summonr_agent::attach(loop_.workspace(), &prompt)?;
-    announce(&loop_, args.json);
-    let turn = complete(&mut loop_, input, args.json).await?;
+    open(&mut loop_, args.json).await;
+    let ran = complete(&mut loop_, input, args.json).await;
+    close(&loop_, args.json).await;
+    let turn = ran?;
     if !args.json {
         println!();
     }
@@ -45,9 +47,15 @@ pub(super) async fn goal(mut loop_: Loop<Client>, args: &Args, objective: &str) 
 }
 
 async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
-    announce(&loop_, args.json);
+    open(&mut loop_, args.json).await;
+    let code = drive(&mut loop_, args, &job).await;
+    close(&loop_, args.json).await;
+    code
+}
+
+async fn drive(loop_: &mut Loop<Client>, args: &Args, job: &Job) -> Result<i32> {
     let code = loop {
-        let (prompt, step) = match loop_.next_action(&job)? {
+        let (prompt, step) = match loop_.next_action(job)? {
             NextAction::Done(code) => break code,
             NextAction::Run { prompt, step } => (prompt, step),
         };
@@ -60,9 +68,9 @@ async fn work(mut loop_: Loop<Client>, args: &Args, job: Job) -> Result<i32> {
                 job.check(index).as_deref(),
             );
         }
-        let turn = complete(&mut loop_, prompt.into(), args.json).await?;
+        let turn = complete(loop_, prompt.into(), args.json).await?;
         if turn.aborted {
-            return stop(&mut loop_, job.aborted(), args.json).await;
+            return stop(loop_, job.aborted(), args.json).await;
         }
         if let Some((index, total)) = step {
             step_outcome(args.json, index, total, &turn, &loop_.work_progress()?);
@@ -97,11 +105,19 @@ fn step_outcome(json: bool, index: usize, total: usize, turn: &Turn, after: &Wor
     }
 }
 
-fn announce(loop_: &Loop<Client>, json: bool) {
+async fn open(loop_: &mut Loop<Client>, json: bool) {
     if json {
         print_json(&Event::Session {
             id: loop_.session_id(),
         });
+    }
+    loop_.begin().await;
+}
+
+async fn close(loop_: &Loop<Client>, json: bool) {
+    let emit = printer(json);
+    for text in loop_.close().await {
+        emit(&Event::Note { text });
     }
 }
 

@@ -4,7 +4,10 @@ use super::*;
 use crate::durable::id::Call;
 use crate::hooks::{Dialect, Hook, HookEvent, Notice, Permission, Verdict};
 
+mod late;
 mod life;
+
+pub(super) use late::Pending;
 
 pub(super) type Screened = (Call, Option<String>);
 
@@ -67,6 +70,10 @@ impl<P: Provider> Loop<P> {
             env: self.tools.imported_env(),
         };
         for hook in hooks {
+            if hook.background {
+                self.pending_hooks.spawn(hook.clone(), &call);
+                continue;
+            }
             let heard = crate::hooks::run(hook, &call).await;
             let stop = event == HookEvent::PreTool && heard.blocked.is_some();
             verdict.merge(heard);

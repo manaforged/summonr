@@ -145,7 +145,7 @@ impl Matcher {
     }
 }
 
-/// One hook command with its dialect, matcher, and time limit.
+/// One hook command with its dialect, matcher, time limit, and whether it runs in the background.
 #[derive(Clone, Debug)]
 pub struct Hook {
     pub command: String,
@@ -153,16 +153,20 @@ pub struct Hook {
     pub matcher: Option<Matcher>,
     pub root: Option<PathBuf>,
     pub timeout: Option<Duration>,
+    pub background: bool,
 }
 
 impl Hook {
-    fn plain(command: String, dialect: Dialect) -> Self {
+    /// A hook that runs `command` in `dialect` for every subject, inline, with the default time limit.
+    #[must_use]
+    pub const fn plain(command: String, dialect: Dialect) -> Self {
         Self {
             command,
             dialect,
             matcher: None,
             root: None,
             timeout: None,
+            background: false,
         }
     }
     /// The command hook in one Claude Code `hooks.json` handler; `None` for another type.
@@ -174,6 +178,7 @@ impl Hook {
         Some(Self {
             matcher,
             timeout: handler["timeout"].as_f64().and_then(seconds),
+            background: handler["async"] == true,
             ..Self::plain(handler["command"].as_str()?.to_string(), Dialect::Claude)
         })
     }

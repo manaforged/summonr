@@ -2,7 +2,7 @@ use super::*;
 use crate::hooks::{Dialect, Hook, HookEvent};
 use crate::provider::{Client, ToolFunction, ToolKind};
 
-fn session(workspace: &Path, home: &Path) -> Loop<Client> {
+pub(super) fn session(workspace: &Path, home: &Path) -> Loop<Client> {
     let client = Client::new("k", "http://127.0.0.1:9/v1").unwrap();
     let driver = super::super::configure::open_driver(home, workspace, "m", "system").unwrap();
     Loop::open(client, "m", workspace, "system", driver).unwrap()
@@ -31,16 +31,9 @@ fn command(text: &str) -> ToolCall {
 }
 
 pub(super) fn hooked(loop_: &mut Loop<Client>, event: HookEvent, dialect: Dialect, command: &str) {
-    loop_.hooks.push(
-        event,
-        Hook {
-            command: command.to_string(),
-            dialect,
-            matcher: None,
-            root: None,
-            timeout: None,
-        },
-    );
+    loop_
+        .hooks
+        .push(event, Hook::plain(command.to_string(), dialect));
 }
 
 async fn delete_outside(

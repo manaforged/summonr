@@ -16,6 +16,8 @@ enum HookEntry {
         matcher: Option<String>,
         #[serde(default)]
         timeout: Option<f64>,
+        #[serde(default, rename = "async")]
+        background: bool,
     },
 }
 
@@ -28,9 +30,11 @@ impl HookEntry {
                 dialect,
                 matcher,
                 timeout,
+                background,
             } => Hook {
                 matcher: matcher.as_deref().and_then(Matcher::parse),
                 timeout: timeout.and_then(seconds),
+                background,
                 ..Hook::plain(command, dialect)
             },
         }

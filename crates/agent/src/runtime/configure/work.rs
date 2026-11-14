@@ -67,6 +67,7 @@ impl<P: Provider> Loop<P> {
         self.tools.forget_approval();
         self.outputs_cleared = false;
         self.herdr.retarget(&self.session.id().to_string());
+        self.pending_hooks.reopen(crate::hooks::Start::Fork);
         Ok(())
     }
 

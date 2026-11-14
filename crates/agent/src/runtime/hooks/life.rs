@@ -1,3 +1,4 @@
+use super::late::Opening;
 use super::*;
 use crate::hooks::{End, Failure, Start};
 use summonr_core::error::ProviderFailure;
@@ -6,23 +7,20 @@ impl<P: Provider> Loop<P> {
     pub(in crate::runtime) async fn admit(
         &mut self,
         input: &mut UserInput,
-        typed: bool,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        let mut heard = Verdict::default();
         if self.turn_started == 0 {
             self.turn_started = summonr_core::clock::now();
-            heard.merge(self.opened().await);
         }
-        if typed {
-            let prompt = input
-                .source
-                .as_ref()
-                .map_or(&input.text, |source| &source.text)
-                .clone();
-            let payload = json!({ "prompt": prompt });
-            heard.merge(self.hook(HookEvent::Prompt, None, payload).await);
-        }
+        let mut heard = self.take_opening().await;
+        let prompt = input
+            .source
+            .as_ref()
+            .map_or(&input.text, |source| &source.text)
+            .clone();
+        let payload = json!({ "prompt": prompt });
+        heard.merge(self.hook(HookEvent::Prompt, None, payload).await);
+        heard.context.extend(self.pending_hooks.take_late());
         for note in &heard.notes {
             emit(&note_event(HookEvent::Prompt, note));
         }
@@ -37,12 +35,39 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
+    /// Runs the `session_start` hooks now if they are due; their context waits for the next prompt.
+    pub async fn begin(&mut self) {
+        let start = match &self.pending_hooks.opening {
+            Opening::Fresh => self.source(),
+            Opening::Due(start) => *start,
+            Opening::Held(_) | Opening::Done => return,
+        };
+        let heard = self.opened(start).await;
+        self.pending_hooks.opening = Opening::Held(heard);
+    }
+
+    async fn take_opening(&mut self) -> Verdict {
+        self.begin().await;
+        match std::mem::replace(&mut self.pending_hooks.opening, Opening::Done) {
+            Opening::Held(heard) => heard,
+            Opening::Fresh | Opening::Due(_) | Opening::Done => Verdict::default(),
+        }
+    }
+
+    pub(crate) async fn clear(&mut self) -> Result<Vec<String>> {
+        let notes = self.end(End::Clear).await;
+        self.clear_history()?;
+        self.pending_hooks.reopen(Start::Clear);
+        self.begin().await;
+        Ok(notes)
+    }
+
     pub(in crate::runtime) fn set_subagent(&mut self, agent: &str) {
         let id = self.session_id();
         self.hooks.set_subagent(id, agent.to_string());
     }
 
-    async fn opened(&self) -> Verdict {
+    async fn opened(&self, start: Start) -> Verdict {
         if let Some(agent) = self.hooks.subagent() {
             let mut started = self
                 .hook(HookEvent::SubagentStart, Some(&agent.name), json!({}))
@@ -54,16 +79,18 @@ impl<P: Provider> Loop<P> {
         if self.session.depth() > 0 {
             return Verdict::default();
         }
-        let start = self.start();
-        let payload = json!({ "source": start.name(), "model": self.model });
-        let mut started = self
-            .hook(HookEvent::SessionStart, Some(start.name()), payload)
-            .await;
+        let mut started = self.session_start(start).await;
         started.blocked = None;
         started
     }
 
-    fn start(&self) -> Start {
+    pub(in crate::runtime) async fn session_start(&self, start: Start) -> Verdict {
+        let payload = json!({ "source": start.name(), "model": self.model });
+        self.hook(HookEvent::SessionStart, Some(start.name()), payload)
+            .await
+    }
+
+    fn source(&self) -> Start {
         if self.session.turns() == 0 {
             Start::Startup
         } else if self.session.parent().is_some() {
@@ -116,8 +143,12 @@ impl<P: Provider> Loop<P> {
         );
     }
 
-    /// Runs the `session_end` hooks for `reason` and returns their notes for the user.
-    pub async fn end(&self, reason: End) -> Vec<String> {
+    /// Runs the `session_end` hooks with reason `other` and returns their notes for the user.
+    pub async fn close(&self) -> Vec<String> {
+        self.end(End::Other).await
+    }
+
+    pub(crate) async fn end(&self, reason: End) -> Vec<String> {
         if self.session.depth() > 0 {
             return Vec::new();
         }

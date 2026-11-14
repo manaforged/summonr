@@ -95,6 +95,7 @@ impl Worker {
                 Some(self.login(&name).await)
             }
             crate::SlashCommand::Compact => self.compact().await.then_some(true),
+            crate::SlashCommand::Clear => Some(self.clear().await),
             crate::SlashCommand::Goal => Some(self.goal(argument.unwrap_or_default()).await),
             crate::SlashCommand::Swarm => Some(self.swarm(argument.unwrap_or_default()).await),
             crate::SlashCommand::Retry => Some(self.retry().await),
@@ -117,7 +118,6 @@ impl Worker {
                 self.workflow(argument);
                 true
             }
-            crate::SlashCommand::Clear => self.clear(),
             crate::SlashCommand::Stop => self.stop_all(),
             crate::SlashCommand::Status => self.session(),
             crate::SlashCommand::Usage => self.usage(argument),
@@ -193,12 +193,17 @@ impl Worker {
         }
     }
 
-    pub(in crate::hub::worker) fn clear(&mut self) -> bool {
-        match self.loop_.clear_history() {
-            Ok(()) => drop(
-                self.ui
-                    .send(Msg::Fact(Fact::Event(crate::tools::Event::Cleared))),
-            ),
+    pub(in crate::hub::worker) async fn clear(&mut self) -> bool {
+        match self.loop_.clear().await {
+            Ok(notes) => {
+                drop(
+                    self.ui
+                        .send(Msg::Fact(Fact::Event(crate::tools::Event::Cleared))),
+                );
+                for note in notes {
+                    self.system(&note);
+                }
+            }
             Err(error) => self.fail(&error.to_string()),
         }
         true

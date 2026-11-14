@@ -152,6 +152,7 @@ pub struct Loop<P> {
     checkpoints: Option<crate::checkpoint::Checkpoints>,
     fallbacks: VecDeque<(P, crate::endpoint::Endpoint)>,
     hooks: crate::hooks::Hooks,
+    pending_hooks: hooks::Pending,
     compact_tokens: Option<u32>,
     mcp_wanted: bool,
     mcp_board: crate::mcp::Board,

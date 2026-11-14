@@ -211,22 +211,3 @@ pub(crate) fn servers(workspace: &Path) -> Result<Found> {
     }
     Ok(found)
 }
-
-pub(crate) fn scan(text: &str, open: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(start) = rest.find(open) {
-        let after = &rest[start + open.len()..];
-        let Some(end) = after.find('}') else {
-            break;
-        };
-        out.push_str(&rest[..start]);
-        match resolve(&after[..end]) {
-            Some(value) => out.push_str(&value),
-            None => out.push_str(&rest[start..start + open.len() + end + 1]),
-        }
-        rest = &after[end + 1..];
-    }
-    out.push_str(rest);
-    out
-}

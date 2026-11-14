@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::{Plugin, Source, enabled};
 use crate::mcp::{Offer, OfferKind};
-use crate::skills::{self, Meta, SEPARATOR};
+use crate::skills::{self, Body, Meta, Piece, SEPARATOR, Scope};
 use summonr_core::error::Result;
 use summonr_core::text::Frontmatter;
 
@@ -47,19 +47,13 @@ impl Command {
         format!("/{}", self.plugin.scoped(&self.name))
     }
 
-    pub(crate) fn render(
-        &self,
-        arguments: &str,
-        workspace: &Path,
-        session: Option<&str>,
-    ) -> String {
-        let filled = skills::fill(&self.template, arguments, &self.meta.arguments);
-        content(
-            &filled,
-            (!self.folder).then_some(&self.plugin),
-            None,
-            workspace,
-            session,
+    pub(crate) fn render(&self, arguments: &str, workspace: &Path, session: Option<&str>) -> Body {
+        let plugin = (!self.folder).then_some(&self.plugin);
+        Body::render(
+            &self.template,
+            Some((arguments, self.meta.arguments.as_slice())),
+            Scope::of(&self.plugin.dir, workspace),
+            |text| content(text, plugin, None, workspace, session),
         )
     }
 }
@@ -122,13 +116,13 @@ pub(crate) fn named(line: &str, workspace: &Path) -> bool {
         .is_some()
 }
 
-/// Expands a slash command or skill for `session`; with no arguments, `previous` is the task.
+/// Expands a slash command or skill for `session`, its text scrubbed; with no arguments, `previous` is the task.
 pub(crate) fn expand(
     input: &str,
     workspace: &Path,
     previous: Option<&str>,
     session: Option<&str>,
-) -> Result<Option<String>> {
+) -> Result<Option<Body>> {
     let text = input.trim_start();
     let (head, rest) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
     if crate::parse_command(head).is_some() {
@@ -141,13 +135,18 @@ pub(crate) fn expand(
         "" => previous.unwrap_or_default().trim(),
         given => given,
     };
-    let text = match (skills::typed(workspace, name), find(head, workspace)) {
+    let mut body = match (skills::typed(workspace, name), find(head, workspace)) {
         (Some(skill), Some(command)) if skill.alias => command.render(task, workspace, session),
         (Some(skill), _) => skill.render(task, workspace, session)?,
         (None, Some(command)) => command.render(task, workspace, session),
         (None, None) => return Ok(None),
     };
-    Ok(Some(crate::secret::shield::scrub_found(&text, workspace)))
+    for piece in &mut body.pieces {
+        if let Piece::Text(text) = piece {
+            *text = crate::secret::shield::scrub_found(text, workspace);
+        }
+    }
+    Ok(Some(body))
 }
 
 pub(crate) fn offers(workspace: &Path) -> Vec<Offer> {

@@ -42,7 +42,17 @@ Booleans take `true`, `false`, `yes`, `no`, `on`, `off`, `1`, or `0`. When you t
 - When no placeholder takes the arguments, they are added at the end as `ARGUMENTS: <args>`.
 - `${CLAUDE_SKILL_DIR}` is the skill's directory, `${CLAUDE_PROJECT_DIR}` is the workspace, and `${CLAUDE_SESSION_ID}` is the session id. These are also filled when the model loads the skill.
 
-Argument text goes in once and is not read again for `$` placeholders. `/NAME` with no arguments takes the session's current task as its arguments. When a skill and a command have the same name, the skill runs. summonr does not run `` !`cmd` `` or ` ```! ` blocks and does not attach `@file` references. They reach the model as text.
+Argument text goes in once and is not read again for `$` placeholders. `/NAME` with no arguments takes the session's current task as its arguments. When a skill and a command have the same name, the skill runs.
+
+A body can pull in live context before the model sees it, when you type `/NAME` and when the model loads the skill:
+
+- `` !`cmd` `` at the start of a line or after a space runs `cmd` and puts its output in place of the block. After any other character, as in `` KEY=!`cmd` ``, it stays as text.
+- A fenced block that opens with ` ```! ` runs its lines as one script and puts the output in place of the block.
+- `@path` attaches that file after the body, the way `@path` does in a prompt. `@"path with spaces"` must name a file; a bare `@word` that names no file stays as text.
+
+summonr finds the blocks once, in the file as written. Command output and argument text are not read again for blocks, and `$ARGUMENTS`, `$N`, and `$name` are not filled inside a block; the `${CLAUDE_*}` placeholders are. Each block runs as a `run_command` call would, in the workspace, with the same policy, timeout, and output limits. The block never asks for approval: a command that the policy denies or that needs approval stops the whole invocation with `Shell command permission check failed for pattern "..."`. A command that exits non-zero stops it with `Shell command failed for pattern "..."` and the output. Exit code 1 from one `grep`, `rg`, `egrep`, `fgrep`, `find`, `diff`, `test`, `[`, `git diff`, or `git grep` counts as a result. Append `|| true` to another command that can exit non-zero. `@path` reads go through the `read` tool's rules, so a protected path such as `.env` stops the invocation. Command output and attached files are scrubbed for secrets.
+
+Skills and commands under the workspace's `.summonr/` and `.claude/` run their blocks only in a trusted session. With `--no-trust`, each block is replaced with `[shell command execution disabled by policy]`. User and plugin skills and commands run their blocks in every session.
 
 A command is a Markdown file under `commands/` in `.summonr/`, `.claude/`, `~/.summonr/`, or `~/.claude/`. A file in a subfolder is named by its path, with `:` between the parts: `.claude/commands/frontend/component.md` runs as `/frontend:component`. Commands take the same frontmatter as skills, except `name`.
 

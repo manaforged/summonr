@@ -6,11 +6,12 @@ use summonr_core::text::Frontmatter;
 
 mod fill;
 mod found;
+mod inject;
 mod meta;
 
-pub(crate) use fill::fill;
 pub(crate) use found::plugin_files;
 use found::{Found, found};
+pub(crate) use inject::{Body, Piece, Scope};
 pub(crate) use meta::Meta;
 
 const SKILL: &str = "SKILL.md";
@@ -218,7 +219,7 @@ pub(crate) fn load(
     set: Option<&Set>,
     name: &str,
     session: Option<&str>,
-) -> Result<String> {
+) -> Result<Body> {
     let name = name.trim();
     if !reference(name) {
         return Err(Error::Tool(
@@ -250,7 +251,7 @@ pub(crate) fn load(
             std::fs::read_to_string(&skill.file)
                 .ok()
                 .filter(|text| !text.trim().is_empty())
-                .map(|text| skill.content(&text, workspace, session))
+                .map(|text| skill.body(&text, None, workspace, session))
         })
         .ok_or_else(|| Error::Tool(format!("skill `{name}` is not installed")))
 }
@@ -268,7 +269,7 @@ impl Typed {
         arguments: &str,
         workspace: &Path,
         session: Option<&str>,
-    ) -> Result<String> {
+    ) -> Result<Body> {
         let name = &self.skill.name;
         let text = std::fs::read_to_string(&self.skill.file)
             .map_err(|error| Error::Tool(format!("skill `{name}`: {error}")))?;
@@ -276,8 +277,8 @@ impl Typed {
         if body.is_empty() {
             return Err(Error::Tool(format!("skill `{name}` is not installed")));
         }
-        let filled = fill(body, arguments, &self.skill.meta.arguments);
-        Ok(self.skill.content(&filled, workspace, session))
+        let arguments = (arguments, self.skill.meta.arguments.as_slice());
+        Ok(self.skill.body(body, Some(arguments), workspace, session))
     }
 }
 

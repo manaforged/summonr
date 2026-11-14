@@ -310,3 +310,60 @@ fn read_pages_share_the_output_budget_without_hiding_later_lines() {
         "later source lines were hidden: {later}"
     );
 }
+
+fn load_skill(dir: &std::path::Path, tools: &ToolRegistry, body: &str) -> String {
+    let skill = dir.join(".claude/skills/probe-inject");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), body).unwrap();
+    let name = serde_json::json!({ "name": "probe-inject" });
+    outcome_of(tools, "skill", name)
+}
+
+#[test]
+fn a_trusted_skill_gets_each_block_output_in_place_of_the_block() {
+    let (dir, mut tools) = workspace(&[]);
+    tools.set_trust(true);
+    let body = "Branch: !`echo probe-out`\n```!\necho fenced-out\n```\nKEY=!`echo kept`";
+    let text = load_skill(dir.path(), &tools, body);
+    assert!(text.starts_with("Branch: probe-out\n"), "{text}");
+    assert!(text.contains("\nfenced-out\n"), "{text}");
+    assert!(!text.contains("```!"), "{text}");
+    assert!(text.contains("KEY=!`echo kept`"), "{text}");
+}
+
+#[test]
+fn a_refused_or_failed_block_stops_the_whole_skill() {
+    let (dir, mut tools) = workspace(&[]);
+    tools.set_trust(true);
+    let refused = load_skill(
+        dir.path(),
+        &tools,
+        "Secret plan\n!`dd if=/dev/zero of=/dev/null count=1`",
+    );
+    assert!(
+        refused.contains("Shell command permission check failed for pattern \"!`dd if=/dev/zero of=/dev/null count=1`\""),
+        "{refused}"
+    );
+    let failed = load_skill(dir.path(), &tools, "Secret plan\n!`exit 3`");
+    assert!(failed.contains("command failed for pattern"), "{failed}");
+    assert!(!refused.contains("Secret plan") && !failed.contains("Secret plan"));
+}
+
+#[test]
+fn an_untrusted_workspace_skill_never_runs_its_blocks() {
+    let (dir, tools) = workspace(&[]);
+    let text = load_skill(dir.path(), &tools, "Mark: !`touch ran.txt`");
+    assert_eq!(text, "Mark: [shell command execution disabled by policy]");
+    assert!(!dir.path().join("ran.txt").exists());
+}
+
+#[test]
+fn a_skill_attaches_a_workspace_file_but_not_a_protected_one() {
+    let files = [("notes.txt", "probe notes"), (".env", "API_KEY=probe-77")];
+    let (dir, tools) = workspace(&files);
+    let text = load_skill(dir.path(), &tools, "Read @notes.txt");
+    assert!(text.contains("--- notes.txt ---\nprobe notes"), "{text}");
+    let refused = load_skill(dir.path(), &tools, "Read @.env");
+    assert!(refused.contains("protected path"), "{refused}");
+    assert!(!refused.contains("probe-77"), "{refused}");
+}

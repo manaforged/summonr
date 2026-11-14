@@ -78,7 +78,7 @@ pub fn call_label(name: &str, arguments: &str) -> String {
             )
         },
         |(alias, _)| {
-            let target = alias.split_once("__").map_or_else(
+            let target = alias.split_once(super::SEPARATOR).map_or_else(
                 || alias.clone(),
                 |(server, tool)| format!("{server}:{tool}"),
             );
@@ -102,7 +102,7 @@ fn declared(item: &Tool) -> ToolDefinition {
 
 fn deferred(link: &Arc<Link>, policy: &Policy) -> bool {
     allowed(link, policy)
-        .map(|item| serde_json::to_vec(&declared(item)).map_or(0, |bytes| bytes.len()))
+        .map(|item| crate::provider::encoded_len(&declared(item)))
         .sum::<usize>()
         > crate::limits::limits().mcp_defer_bytes
 }

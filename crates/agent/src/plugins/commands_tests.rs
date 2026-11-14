@@ -5,6 +5,20 @@ fn command(dir: &Path, template: &str) -> Command {
     Command::new(&plugin, "echo".to_string(), &Frontmatter::parse(template)).unwrap()
 }
 
+fn written(body: Result<Option<Body>>) -> Option<String> {
+    body.unwrap().map(|body| body.written())
+}
+
+fn fill(template: &str, arguments: &str, names: &[String]) -> String {
+    Body::render(
+        template,
+        Some((arguments, names)),
+        Scope::User,
+        str::to_owned,
+    )
+    .written()
+}
+
 #[test]
 fn argument_text_is_never_rescanned_but_path_variables_still_fill() {
     let dir = tempfile::tempdir().unwrap();
@@ -13,6 +27,7 @@ fn argument_text_is_never_rescanned_but_path_variables_still_fill() {
         dir.path(),
         None,
     );
+    let rendered = rendered.written();
     let root = dir.path().display();
     assert_eq!(
         rendered,
@@ -25,7 +40,10 @@ fn the_plugin_root_expands_in_the_template_only() {
     let dir = tempfile::tempdir().unwrap();
     let rendered =
         command(dir.path(), "Run ${CLAUDE_PLUGIN_ROOT}/bin/lint $0").render("x", dir.path(), None);
-    assert_eq!(rendered, format!("Run {}/bin/lint x", dir.path().display()));
+    assert_eq!(
+        rendered.written(),
+        format!("Run {}/bin/lint x", dir.path().display())
+    );
 }
 
 #[test]
@@ -33,7 +51,7 @@ fn the_session_id_fills_a_command() {
     let dir = tempfile::tempdir().unwrap();
     let rendered =
         command(dir.path(), "Log to ${CLAUDE_SESSION_ID}.log").render("", dir.path(), Some("s-9"));
-    assert_eq!(rendered, "Log to s-9.log");
+    assert_eq!(rendered.written(), "Log to s-9.log");
 }
 
 #[test]
@@ -41,7 +59,7 @@ fn a_quoted_argument_binds_as_one_word() {
     let dir = tempfile::tempdir().unwrap();
     let rendered =
         command(dir.path(), "say $0 then $1").render("\"hello world\" next", dir.path(), None);
-    assert_eq!(rendered, "say hello world then next");
+    assert_eq!(rendered.written(), "say hello world then next");
 }
 
 #[test]
@@ -54,7 +72,12 @@ fn a_project_command_file_expands_with_its_arguments() {
         "---\ndescription: check a crate\n---\nRun the tests for $0, then report: $ARGUMENTS",
     )
     .unwrap();
-    let expanded = expand("/ship-check summonr fast", workspace.path(), None, None).unwrap();
+    let expanded = written(expand(
+        "/ship-check summonr fast",
+        workspace.path(),
+        None,
+        None,
+    ));
     assert_eq!(
         expanded.as_deref(),
         Some("Run the tests for summonr, then report: summonr fast")
@@ -79,13 +102,11 @@ fn a_workspace_secret_never_reaches_the_prompt_through_a_command_or_a_skill() {
     )
     .unwrap();
     assert_eq!(
-        expand("/deploy staging", root, None, None)
-            .unwrap()
-            .as_deref(),
+        written(expand("/deploy staging", root, None, None)).as_deref(),
         Some("Deploy with [secret] to staging")
     );
     assert_eq!(
-        expand("/release", root, None, None).unwrap().as_deref(),
+        written(expand("/release", root, None, None)).as_deref(),
         Some("Sign with [secret]")
     );
 }
@@ -93,7 +114,7 @@ fn a_workspace_secret_never_reaches_the_prompt_through_a_command_or_a_skill() {
 #[test]
 fn placeholders_follow_the_claude_code_substitution_rules() {
     let names = vec!["issue".to_string(), "branch".to_string()];
-    let filled = skills::fill(
+    let filled = fill(
         "$ARGUMENTS[1] then $0, missing $5, \\$1.00, \\\\$0, $issue on $branch$ARGUMENTSx",
         "\"a b\" c",
         &names,
@@ -102,18 +123,18 @@ fn placeholders_follow_the_claude_code_substitution_rules() {
         filled,
         "c then a b, missing $5, $1.00, \\\\a b, a b on c\"a b\" cx"
     );
-    let unnamed = skills::fill("$issue_id and $branch", "only", &names);
+    let unnamed = fill("$issue_id and $branch", "only", &names);
     assert_eq!(unnamed, "$issue_id and ");
 }
 
 #[test]
 fn arguments_no_placeholder_takes_are_appended() {
     assert_eq!(
-        skills::fill("Review it. Cost $9.", "the parser", &[]),
+        fill("Review it. Cost $9.", "the parser", &[]),
         "Review it. Cost $9.\n\nARGUMENTS: the parser"
     );
-    assert_eq!(skills::fill("Review it.", "", &[]), "Review it.");
-    assert_eq!(skills::fill("Review $0.", "the parser", &[]), "Review the.");
+    assert_eq!(fill("Review it.", "", &[]), "Review it.");
+    assert_eq!(fill("Review $0.", "the parser", &[]), "Review the.");
 }
 
 #[test]
@@ -128,13 +149,12 @@ fn a_command_in_a_subfolder_is_named_by_its_folder_path() {
         "---\nargument-hint: [name]\n---\nBuild $0",
     )
     .unwrap();
-    let expanded = expand(
+    let expanded = written(expand(
         "/probe-front:probe-deep:probe-widget Card",
         workspace.path(),
         None,
         None,
-    )
-    .unwrap();
+    ));
     assert_eq!(expanded.as_deref(), Some("Build Card"));
     let offered = offers(workspace.path());
     let offer = offered
@@ -184,7 +204,10 @@ fn the_manifest_commands_key_replaces_the_default_folder() {
     assert_eq!(status.meta.model.as_deref(), Some("probe-model"));
     assert_eq!(status.meta.allowed_tools, ["Read"]);
     assert_eq!(status.qualified(), "/probe-kit:status");
-    assert_eq!(status.render("prod", root, None), "Status of prod");
+    assert_eq!(
+        status.render("prod", root, None).written(),
+        "Status of prod"
+    );
 }
 
 #[test]
@@ -198,7 +221,48 @@ fn a_command_that_is_not_user_invocable_does_not_run() {
     )
     .unwrap();
     assert_eq!(
-        expand("/probe-hidden", workspace.path(), None, None).unwrap(),
+        written(expand("/probe-hidden", workspace.path(), None, None)),
         None
     );
+}
+
+#[test]
+fn a_typed_command_gets_its_block_output_and_keeps_arguments_out_of_the_shell() {
+    let workspace = tempfile::tempdir().unwrap();
+    let folder = workspace.path().join(".summonr/commands");
+    std::fs::create_dir_all(&folder).unwrap();
+    let template = "Status: !`echo typed-out $ARGUMENTS` for $0";
+    std::fs::write(folder.join("probe-shell.md"), template).unwrap();
+    let body = expand("/probe-shell main", workspace.path(), None, None)
+        .unwrap()
+        .unwrap();
+    let policy = crate::policy::Policy::builtin();
+    let mut tools =
+        crate::tools::ToolRegistry::with_policy_and_search(workspace.path(), policy, None).unwrap();
+    tools.set_trust(true);
+    let input = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.inject(&body))
+        .unwrap();
+    assert_eq!(input.text, "Status: typed-out for main");
+}
+
+#[test]
+fn the_session_id_fills_a_skill_the_model_loads_or_a_person_types() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let dir = workspace.path().join(".claude/skills/probe-log");
+    std::fs::create_dir_all(&dir).expect("skill directory");
+    std::fs::write(dir.join("SKILL.md"), "Log to logs/${CLAUDE_SESSION_ID}.log").expect("skill");
+    let load = |session| {
+        skills::load(workspace.path(), None, "probe-log", session)
+            .expect("load")
+            .written()
+    };
+    assert_eq!(load(Some("s-7")), "Log to logs/s-7.log");
+    let typed = written(expand("/probe-log", workspace.path(), None, Some("s-7")));
+    assert_eq!(typed.as_deref(), Some("Log to logs/s-7.log"));
+    assert_eq!(load(None), "Log to logs/${CLAUDE_SESSION_ID}.log");
 }

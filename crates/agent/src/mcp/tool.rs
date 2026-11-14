@@ -13,7 +13,7 @@ pub(super) struct Tool {
 impl Tool {
     pub(super) fn parse(server: &str, item: &Value) -> Option<Self> {
         let name = item.get("name")?.as_str()?.to_string();
-        let alias = summonr_core::text::clean_name(&format!("{server}__{name}"), "_-", '_', 64);
+        let alias = super::clean(&format!("{server}{}{name}", super::SEPARATOR), 64);
         Some(Self {
             alias,
             description: item

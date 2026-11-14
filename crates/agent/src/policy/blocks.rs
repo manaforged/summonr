@@ -88,6 +88,23 @@ pub(crate) fn reads_only(command: &str) -> bool {
     })
 }
 
+/// Whether `command` is one search or comparison, whose exit code 1 reports a result rather than a failure.
+pub(crate) fn benign_exit(command: &str) -> bool {
+    let root = Path::new("/");
+    let steps = walk::walk(command, root, root, &[]);
+    let [step] = steps.as_slice() else {
+        return false;
+    };
+    let benign = &rules().benign_exit;
+    step.verb().is_some_and(|verb| {
+        benign.contains(&verb)
+            || step
+                .argv()
+                .get(1)
+                .is_some_and(|sub| benign.contains(&format!("{verb} {sub}")))
+    })
+}
+
 pub(super) fn write_block(steps: &[Step], workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
     steps
         .iter()

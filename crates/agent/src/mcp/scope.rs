@@ -149,13 +149,16 @@ fn plugins(workspace: &Path, entries: &mut BTreeMap<String, Sourced>) -> BTreeMa
         .collect();
     let mut legacy = BTreeMap::new();
     for plugin in crate::plugins::enabled() {
-        let map = plugin.mcp();
+        let servers = plugin.mcp_servers();
         legacy.extend(
-            map.keys()
-                .map(|server| (plugin.legacy_mcp_name(server), plugin.mcp_name(server))),
+            servers
+                .iter()
+                .map(|server| (plugin.legacy_mcp_name(&server.key), server.name.clone())),
         );
-        let named = |server: &str| plugin.mcp_name(server);
-        let found = plugin.servers(map, named, workspace, |entry: &mut Entry| {
+        let named = servers
+            .into_iter()
+            .map(|server| (server.name, server.config));
+        let found = plugin.servers(named, workspace, |entry: &mut Entry| {
             entry
                 .command
                 .iter_mut()

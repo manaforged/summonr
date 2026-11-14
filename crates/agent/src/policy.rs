@@ -336,7 +336,7 @@ mod shell;
 mod verbs;
 
 use blocks::*;
-pub(crate) use blocks::{grant_from_error, reads_only, write_denied};
+pub(crate) use blocks::{benign_exit, grant_from_error, reads_only, write_denied};
 use paths::*;
 use shell::*;
 

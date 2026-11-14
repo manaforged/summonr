@@ -1,9 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use super::super::{HOOKS, LSP, MCP, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json};
-use crate::mcp::scan;
+use super::super::{
+    HOOKS, LSP, MCP, McpServer, Plugin, Source, UNSUPPORTED, USER_CONFIG, is_json, scan,
+};
 
 const COMPONENTS: [&str; 5] = ["skills", "agents", HOOKS, MCP.key, LSP.key];
 const MANIFEST_SKIPPED: [(&str, &str); 5] = [
@@ -139,9 +140,9 @@ fn sorted(names: impl Iterator<Item = String>) -> Vec<String> {
 
 pub(super) fn servers(plugin: &Plugin) -> Vec<String> {
     plugin
-        .mcp()
-        .keys()
-        .map(|server| plugin.mcp_name(server))
+        .mcp_servers()
+        .into_iter()
+        .map(|server| server.name)
         .collect()
 }
 
@@ -166,9 +167,10 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
             .map(|key| format!("${{user_config.{key}}}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let table = format!("mcp.{}", plugin.mcp_name(&server));
+        let table = format!("mcp.{}", server.name);
         lines.push(format!(
-            "warning\tmcp {server} uses {tokens}; set [{table}.user_config] or env in [{table}]"
+            "warning\tmcp {} uses {tokens}; set [{table}.user_config] or env in [{table}]",
+            server.key
         ));
     }
     lines
@@ -176,17 +178,19 @@ fn settings(plugin: &Plugin, manifest: &Value) -> Vec<String> {
 
 pub(super) fn settings_servers(plugin: &Plugin) -> BTreeSet<String> {
     config_needs(plugin)
-        .into_keys()
-        .map(|server| plugin.mcp_name(&server))
+        .into_iter()
+        .map(|(server, _)| server.name)
         .collect()
 }
 
-fn config_needs(plugin: &Plugin) -> BTreeMap<String, Vec<String>> {
+fn config_needs(plugin: &Plugin) -> Vec<(McpServer, Vec<String>)> {
     plugin
-        .mcp()
+        .mcp_servers()
         .into_iter()
-        .filter_map(|(server, entry)| {
-            let keys: Vec<String> = config_keys(&entry.to_string()).into_iter().collect();
+        .filter_map(|server| {
+            let keys: Vec<String> = config_keys(&server.config.to_string())
+                .into_iter()
+                .collect();
             (!keys.is_empty()).then_some((server, keys))
         })
         .collect()

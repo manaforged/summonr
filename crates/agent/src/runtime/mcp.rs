@@ -44,11 +44,11 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<UserInput> {
         if !crate::mcp::wanted(&input.text) {
-            return self.expand_command(input);
+            return self.expand_command(input).await;
         }
         self.settle_mcp(events, emit).await?;
         let Some(hub) = self.mcp.clone() else {
-            return self.expand_command(input);
+            return self.expand_command(input).await;
         };
         let head = input.text.split_whitespace().next().unwrap_or_default();
         let offered = crate::mcp::offers(&self.workspace)
@@ -57,15 +57,15 @@ impl<P: Provider> Loop<P> {
         let input = if offered {
             input
         } else {
-            self.expand_command(input)?
+            self.expand_command(input).await?
         };
         hub.expand(input).await
     }
 
-    fn expand_command(&self, input: UserInput) -> Result<UserInput> {
+    async fn expand_command(&self, input: UserInput) -> Result<UserInput> {
         let previous = self.session.objective().ok();
         let session = self.session_id();
-        let Some(text) = crate::plugins::commands::expand(
+        let Some(body) = crate::plugins::commands::expand(
             &input.text,
             &self.workspace,
             previous.as_deref(),
@@ -74,13 +74,16 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(input);
         };
+        let expanded = self.tools.inject(&body).await?;
         let source = input.source.unwrap_or(crate::provider::Source {
             text: input.text,
             images: input.images.len(),
         });
+        let mut images = input.images;
+        images.extend(expanded.images);
         Ok(UserInput {
-            text,
-            images: input.images,
+            text: expanded.text,
+            images,
             source: Some(source),
         })
     }

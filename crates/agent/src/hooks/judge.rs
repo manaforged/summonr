@@ -215,11 +215,7 @@ pub(super) fn judge(dialect: Dialect, event: HookEvent, outcome: &Outcome) -> Ve
         }
         Stdout::Plain(_) | Stdout::Invalid(_) => {}
     }
-    let reason = if outcome.stderr.is_empty() {
-        format!("exited with {:?}", outcome.code)
-    } else {
-        outcome.stderr.clone()
-    };
+    let reason = outcome.reason();
     match outcome.code {
         Some(0) => {}
         Some(2) if ignores_exit(event) => {}

@@ -50,7 +50,7 @@ impl Chat for Wire {
         if !call.tools.is_empty() {
             if call.tools_json.is_some() {
                 body["tools"] = Value::Null;
-            } else if let Ok(tools) = serde_json::to_value(call.tools) {
+            } else if let Ok(tools) = crate::provider::ToolsJson::value(call.tools) {
                 body["tools"] = tools;
             }
         }

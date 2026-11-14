@@ -1,9 +1,7 @@
 use std::path::Path;
 
-use tokio::io::AsyncWriteExt;
-
 use super::{Content, Panel, program};
-use crate::process::{Cap, Env, Spec, Tail};
+use crate::process::{Cap, Env, Spec};
 
 /// The A2UI `action` message for a pressed button, as a panel command reads it on stdin.
 #[must_use]
@@ -54,37 +52,23 @@ pub(crate) async fn output(
 ) -> Result<String, String> {
     let limits = crate::limits::limits();
     let max = limits.panel_output_bytes;
-    let mut child = process.child;
-    let group = process.group;
-    let feed = feed(process.stdin, input);
-    let mut stdout = Tail::spawn(Some(process.stdout), Cap::Head(max + 1));
-    let mut stderr = Tail::spawn(process.stderr, Cap::Tail(limits.mcp_stderr_tail_bytes));
-    let work = async {
-        let (status, ()) = tokio::join!(child.wait(), feed);
-        let status = status.map_err(|error| error.to_string())?;
-        drop(stdout.settle().await);
-        drop(stderr.settle().await);
-        Ok::<_, String>(status)
-    };
-    let finished = crate::limits::within(limits.panel_timeout(), "the command", work).await;
-    drop(group);
-    let status = finished.map_err(|error| error.to_string())??;
-    if !status.success() {
-        let reason = stderr.text();
-        return Err(match reason.trim() {
-            "" => format!("exited with {:?}", status.code()),
-            reason => reason.to_string(),
-        });
+    let keep = (Cap::Head(max + 1), Cap::Tail(limits.mcp_stderr_tail_bytes));
+    let input = input.unwrap_or_default();
+    let ran = crate::process::finish(
+        process,
+        input.as_bytes(),
+        keep,
+        limits.panel_timeout(),
+        "the command",
+    )
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+    if ran.code != Some(0) {
+        return Err(ran.reason());
     }
-    let output = stdout.text();
-    if output.len() > max {
+    if ran.stdout.len() > max {
         return Err(format!("printed more than {max} bytes"));
     }
-    Ok(output)
-}
-
-async fn feed(mut stdin: tokio::process::ChildStdin, input: Option<String>) {
-    if let Some(input) = input {
-        drop(stdin.write_all(input.as_bytes()).await);
-    }
+    Ok(ran.stdout)
 }

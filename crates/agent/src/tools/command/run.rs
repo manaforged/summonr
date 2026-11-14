@@ -12,6 +12,7 @@ use super::proc::{
 
 const LOG_READ_BYTES: usize = 512 * 1024;
 const COMMAND_LOG_PREFIX: &str = "command-";
+const EXIT: &str = "exit ";
 
 #[derive(Clone, Copy)]
 pub(super) enum Wait {
@@ -144,7 +145,7 @@ impl ToolRegistry {
         Ok(ToolOutput {
             success: code == 0,
             mutated: may_write(command),
-            ..ToolOutput::ok(format!("exit {code}{note}\n{text}").trim_end().to_string())
+            ..ToolOutput::ok(format!("{EXIT}{code}{note}\n{text}").trim_end().to_string())
         })
     }
 
@@ -242,4 +243,20 @@ fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {
 
 fn may_write(command: &str) -> bool {
     !crate::policy::reads_only(command)
+}
+
+/// The output of `command` without its bare status line, or `None` when it failed; exit 1 passes for a search or comparison.
+pub(in crate::tools) fn passed(command: &str, output: &ToolOutput) -> Option<String> {
+    let (first, rest) = output
+        .text
+        .split_once('\n')
+        .unwrap_or((output.text.as_str(), ""));
+    let code = first.strip_prefix(EXIT).and_then(|code| {
+        let digits = code.find(|ch: char| ch != '-' && !ch.is_ascii_digit());
+        code[..digits.unwrap_or(code.len())].parse::<i32>().ok()
+    });
+    let ok = output.success || (code == Some(1) && crate::policy::benign_exit(command));
+    let bare = code.is_some_and(|code| first == format!("{EXIT}{code}"));
+    let text = if bare { rest } else { output.text.as_str() };
+    ok.then(|| text.to_owned())
 }

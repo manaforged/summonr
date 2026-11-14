@@ -69,7 +69,7 @@ pub(crate) use client::input_cap;
 pub(crate) use client::{response_failure, unreachable_message};
 pub(crate) use reasoning::{EffortField, Off, Reasoning, Scale, Spec, Step, levels};
 pub use request::dollars;
-pub(crate) use request::{CompletionRequest, ToolsJson};
+pub(crate) use request::{CompletionRequest, ToolsJson, encoded_len};
 pub use request::{CountStyle, compact};
 pub use summonr_types::Effort;
 pub(crate) use summonr_types::Partial;
@@ -107,3 +107,4 @@ mod stall_tests;
 #[cfg(test)]
 #[path = "provider/image_tests.rs"]
 mod image_tests;
+

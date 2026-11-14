@@ -94,6 +94,24 @@ impl ToolRegistry {
         self.allows(kind.spec().run)
     }
 
+    pub(super) fn available(&self, kind: Builtin) -> Result<()> {
+        let name = kind.name();
+        if self.only.as_ref().is_some_and(|only| !only.contains(&kind)) {
+            return Err(Error::Denied(format!(
+                "tool `{name}` is not one of this agent's tools"
+            )));
+        }
+        if self.enabled(kind) {
+            Ok(())
+        } else if kind == Builtin::Task {
+            Err(Error::Tool(format!("unknown tool `{name}`")))
+        } else {
+            Err(Error::Denied(format!(
+                "tool `{name}` is unavailable in the current mode"
+            )))
+        }
+    }
+
     fn probed(&self) -> (bool, bool) {
         *self.probed.get_or_init(|| {
             (
@@ -134,6 +152,10 @@ enum Fill {
 }
 
 impl Fill {
+    fn parse(token: Value) -> Option<Self> {
+        serde_json::from_value(token).ok()
+    }
+
     fn value(self) -> u64 {
         let limits = crate::limits::limits();
         let count = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
@@ -156,9 +178,7 @@ fn fill_text(text: &str) -> String {
         out.push_str(&rest[..open]);
         let after = &rest[open + 1..];
         let token = after.find('}').map(|close| &after[..close]);
-        match token
-            .and_then(|token| serde_json::from_value::<Fill>(Value::String(token.to_string())).ok())
-        {
+        match token.and_then(|token| Fill::parse(Value::String(token.to_string()))) {
             Some(fill) => {
                 out.push_str(&fill.value().to_string());
                 rest = &after[token.map_or(0, str::len) + 1..];
@@ -177,9 +197,7 @@ fn fill_schema(value: &mut Value) -> bool {
     match value {
         Value::Object(map) => {
             if map.len() == 1
-                && let Some(fill) = map
-                    .get("fill")
-                    .and_then(|token| serde_json::from_value::<Fill>(token.clone()).ok())
+                && let Some(fill) = map.get("fill").cloned().and_then(Fill::parse)
             {
                 *value = Value::from(fill.value());
                 return true;

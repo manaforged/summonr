@@ -28,6 +28,15 @@ mod tool;
 
 pub use config::Launch as McpLaunch;
 
+/// Joins an MCP server name to the name of one of its tools or prompts.
+pub(crate) const SEPARATOR: &str = "__";
+
+/// Spells `name` in `A-Z`, `a-z`, `0-9`, `_` and `-`, other characters becoming `_`, cut to `max`.
+#[must_use]
+pub(crate) fn clean(name: &str, max: usize) -> String {
+    summonr_core::text::clean_name(name, "_-", '_', max)
+}
+
 /// Parses one `KEY=VALUE` environment variable or header.
 pub fn pair(raw: &str) -> summonr_core::error::Result<(String, String)> {
     raw.split_once('=')
@@ -37,7 +46,6 @@ pub fn pair(raw: &str) -> summonr_core::error::Result<(String, String)> {
             summonr_core::error::Error::Config(format!("expected KEY=VALUE, got `{raw}`"))
         })
 }
-pub(crate) use config::scan;
 pub use defer::call_label;
 pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
 pub(crate) use expand::wanted;

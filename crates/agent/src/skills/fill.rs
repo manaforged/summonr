@@ -11,11 +11,31 @@ enum Slot {
     Named(usize),
 }
 
-/// `template` with `$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, and declared `$name` filled; unused arguments are appended.
-pub(crate) fn fill(template: &str, arguments: &str, names: &[String]) -> String {
+/// `parts` filled as one template with `$ARGUMENTS`, `$ARGUMENTS[N]`, `$N`, and declared `$name`; unused arguments go after the last part.
+pub(super) fn fill_parts(parts: &[&str], arguments: &str, names: &[String]) -> Vec<String> {
     let words = crate::policy::shell_words(arguments);
-    let mut out = String::with_capacity(template.len() + arguments.len());
     let mut received = false;
+    let mut out: Vec<String> = parts
+        .iter()
+        .map(|part| fill_one(part, (arguments, words.as_slice()), names, &mut received))
+        .collect();
+    if !received
+        && !arguments.is_empty()
+        && let Some(last) = out.last_mut()
+    {
+        last.push_str(LABEL);
+        last.push_str(arguments);
+    }
+    out
+}
+
+fn fill_one(
+    template: &str,
+    (arguments, words): (&str, &[String]),
+    names: &[String],
+    received: &mut bool,
+) -> String {
+    let mut out = String::with_capacity(template.len() + arguments.len());
     let mut rest = template;
     while let Some(at) = rest.find(SIGIL) {
         let before = &rest[..at];
@@ -42,17 +62,13 @@ pub(crate) fn fill(template: &str, arguments: &str, names: &[String]) -> String 
         };
         if let Some(value) = value {
             out.push_str(value);
-            received = true;
+            *received = true;
         } else {
             out.push(SIGIL);
             out.push_str(token);
         }
     }
     out.push_str(rest);
-    if !received && !arguments.is_empty() {
-        out.push_str(LABEL);
-        out.push_str(arguments);
-    }
     out
 }
 

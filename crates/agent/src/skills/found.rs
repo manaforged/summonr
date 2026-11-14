@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use summonr_core::dirs::summonr_home;
 
+use super::inject::{Body, Scope};
 use super::meta::Meta;
 use super::{DEPTH, FLAT, SEPARATOR, SKILL, valid};
 use crate::plugins::Plugin;
@@ -46,15 +47,24 @@ impl Found {
         self.name == name || self.alias.as_deref() == Some(name)
     }
 
-    /// The file's text with the plugin, project, skill folder, and session placeholders filled.
-    pub(super) fn content(&self, text: &str, workspace: &Path, session: Option<&str>) -> String {
-        crate::plugins::commands::content(
-            text,
-            self.plugin.as_ref(),
-            self.file.parent(),
-            workspace,
-            session,
-        )
+    /// `text` as this skill's body, with `arguments` and the plugin, project, skill folder, and session placeholders filled.
+    pub(super) fn body(
+        &self,
+        text: &str,
+        arguments: Option<(&str, &[String])>,
+        workspace: &Path,
+        session: Option<&str>,
+    ) -> Body {
+        let scope = Scope::of(&self.file, workspace);
+        Body::render(text, arguments, scope, |text| {
+            crate::plugins::commands::content(
+                text,
+                self.plugin.as_ref(),
+                self.file.parent(),
+                workspace,
+                session,
+            )
+        })
     }
 }
 

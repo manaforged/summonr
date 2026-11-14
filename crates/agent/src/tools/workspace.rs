@@ -18,7 +18,7 @@ mod spans;
 pub(in crate::tools) mod write;
 
 pub(crate) use apply_patch::patch_files;
-pub(crate) use image::{IMAGES_MAX_BYTES, attach, image_type};
+pub(crate) use image::{IMAGES_MAX_BYTES, attach, attachments, image_type, joined};
 use list::{format_directory, format_tree};
 
 impl ToolRegistry {
@@ -261,13 +261,18 @@ impl ToolRegistry {
         format_directory(path, &dir, base)
     }
 
-    pub(super) fn skill(&self, args: &Value) -> Result<String> {
-        crate::skills::load(
+    pub(super) async fn skill(&self, args: &Value) -> Result<ToolOutput> {
+        let body = crate::skills::load(
             &self.workspace,
             self.skill_set.as_ref(),
             object_string(args, "name")?,
             self.session_id().as_deref(),
-        )
+        )?;
+        let input = self.inject(&body).await?;
+        Ok(ToolOutput {
+            images: input.images,
+            ..ToolOutput::ok(input.text)
+        })
     }
 }
 

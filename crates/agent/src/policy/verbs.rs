@@ -239,6 +239,7 @@ pub(crate) struct Rules {
     #[serde(skip)]
     index: HashMap<String, usize>,
     pub(crate) inquiry_flags: BTreeSet<String>,
+    pub(crate) benign_exit: BTreeSet<String>,
     pub(crate) text_hazards: Vec<TextHazard>,
     pub(crate) wrappers: HashMap<String, BTreeSet<String>>,
     pub(crate) shell: Shell,

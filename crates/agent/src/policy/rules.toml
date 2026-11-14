@@ -1,4 +1,5 @@
 inquiry_flags = ["--version", "--help"]
+benign_exit = ["grep", "rg", "egrep", "fgrep", "find", "diff", "test", "[", "git diff", "git grep"]
 
 text_hazards = [
     { text = "drop database", reason = "it drops database objects" },

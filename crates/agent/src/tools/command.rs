@@ -21,6 +21,7 @@ use native_search::native_search_args;
 pub(crate) use proc::{ProcessGroup, command_env, stop_groups};
 use proc::{background_result, stop_job};
 use run::Wait;
+pub(in crate::tools) use run::passed;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Rewrite {

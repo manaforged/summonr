@@ -16,7 +16,7 @@ mod hooks;
 pub(crate) mod lsp;
 pub mod manage;
 
-pub(crate) use expand::{USER_CONFIG, Unset, Vars, expand, hook_env};
+pub(crate) use expand::{USER_CONFIG, Unset, Vars, expand, hook_env, scan};
 pub(crate) use manage::off::{unknown_off, warn_unknown_off};
 
 pub(super) const MANIFEST: &str = ".claude-plugin/plugin.json";
@@ -44,6 +44,14 @@ pub(crate) struct Merge {
     pub(crate) file: &'static str,
     pub(crate) key: &'static str,
     wrapped: bool,
+}
+
+/// One MCP server a plugin declares: its key in the plugin, its summonr name, and its config.
+#[derive(Clone, Debug)]
+pub(crate) struct McpServer {
+    pub(crate) key: String,
+    pub(crate) name: String,
+    pub(crate) config: Value,
 }
 
 /// One value a manifest component key declares.
@@ -175,12 +183,7 @@ impl Plugin {
 
     /// The MCP server name Claude Code gives `server`, which also prefixes its tools.
     pub(crate) fn mcp_name(&self, server: &str) -> String {
-        summonr_core::text::clean_name(
-            &format!("plugin_{}_{server}", self.name),
-            "_-",
-            '_',
-            usize::MAX,
-        )
+        crate::mcp::clean(&format!("plugin_{}_{server}", self.name), usize::MAX)
     }
 
     /// The `<plugin>-<server>` name earlier releases used, still read from config keys.
@@ -226,20 +229,32 @@ impl Plugin {
         servers
     }
 
+    /// Every MCP server this plugin declares, in key order, with the name summonr gives it.
+    pub(crate) fn mcp_servers(&self) -> Vec<McpServer> {
+        self.mcp()
+            .into_iter()
+            .map(|(key, config)| McpServer {
+                name: self.mcp_name(&key),
+                key,
+                config,
+            })
+            .collect()
+    }
+
     pub(crate) fn servers<T: DeserializeOwned>(
         &self,
-        map: BTreeMap<String, Value>,
-        name: impl Fn(&str) -> String,
+        named: impl IntoIterator<Item = (String, Value)>,
         workspace: &Path,
         fields: impl Fn(&mut T) -> Vec<&mut String>,
     ) -> Vec<(String, T)> {
-        map.into_iter()
-            .filter_map(|(server, entry)| {
+        named
+            .into_iter()
+            .filter_map(|(name, entry)| {
                 let mut entry = T::deserialize(entry).ok()?;
                 for text in fields(&mut entry) {
                     *text = expand(text, &self.vars(workspace));
                 }
-                Some((name(&server), entry))
+                Some((name, entry))
             })
             .collect()
     }

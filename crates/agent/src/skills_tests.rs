@@ -20,7 +20,7 @@ fn skill_catalog_and_loading_use_the_same_root_precedence() {
     );
     assert!(!catalog.contains("A lower-priority source"), "{catalog}");
     assert!(
-        super::load(workspace.path(), None, "probe-precedence", None)
+        load(workspace.path(), None, "probe-precedence", None)
             .expect("skill body")
             .contains("Z preferred source")
     );
@@ -72,12 +72,12 @@ fn claude_code_skills_join_the_catalog_and_load() {
         "{catalog}"
     );
     assert!(
-        super::load(workspace.path(), None, "probe-user-skill", None)
+        load(workspace.path(), None, "probe-user-skill", None)
             .unwrap()
             .contains("user body")
     );
     assert!(
-        super::load(workspace.path(), None, "probe-project-skill", None)
+        load(workspace.path(), None, "probe-project-skill", None)
             .unwrap()
             .contains("project body")
     );
@@ -109,28 +109,13 @@ fn a_skill_with_no_arguments_runs_on_the_previous_task() {
         crate::plugins::commands::expand(line, workspace.path(), Some("make it simple"), None)
             .expect("slash expansion")
             .expect("skill found")
+            .written()
     };
     assert_eq!(expand("/probe-task"), "Run on: make it simple");
     assert_eq!(
         expand("/probe-task review the api"),
         "Run on: review the api"
     );
-}
-
-#[test]
-fn the_session_id_fills_a_skill_the_model_loads_or_a_person_types() {
-    let workspace = tempfile::tempdir().expect("workspace");
-    let dir = workspace.path().join(".claude/skills/probe-log");
-    std::fs::create_dir_all(&dir).expect("skill directory");
-    std::fs::write(dir.join("SKILL.md"), "Log to logs/${CLAUDE_SESSION_ID}.log").expect("skill");
-    let loaded = super::load(workspace.path(), None, "probe-log", Some("s-7")).expect("load");
-    assert_eq!(loaded, "Log to logs/s-7.log");
-    let typed = crate::plugins::commands::expand("/probe-log", workspace.path(), None, Some("s-7"))
-        .expect("slash expansion")
-        .expect("skill found");
-    assert_eq!(typed, "Log to logs/s-7.log");
-    let unknown = super::load(workspace.path(), None, "probe-log", None).expect("load");
-    assert_eq!(unknown, "Log to logs/${CLAUDE_SESSION_ID}.log");
 }
 
 fn skill(root: &std::path::Path, path: &str, about: &str) {
@@ -153,7 +138,7 @@ fn a_skill_in_a_folder_lists_under_it_and_loads_by_its_own_name() {
         "{catalog}"
     );
     assert!(
-        super::load(workspace.path(), None, "probe-rust", None)
+        load(workspace.path(), None, "probe-rust", None)
             .expect("skill body")
             .contains("Rust review")
     );
@@ -171,7 +156,7 @@ fn two_skills_with_one_name_in_two_folders_both_list_by_folder() {
         .collect();
     assert_eq!(names, ["probe-ops:probe-deploy", "probe-web:probe-deploy"]);
     assert!(
-        super::load(workspace.path(), None, "probe-web:probe-deploy", None)
+        load(workspace.path(), None, "probe-web:probe-deploy", None)
             .expect("skill body")
             .contains("Web deploy")
     );
@@ -209,7 +194,7 @@ fn a_skill_set_shows_its_folders_and_refuses_a_left_out_skill() {
     assert!(catalog.contains("probe-rust"), "{catalog}");
     assert!(!catalog.contains("probe-panel"), "{catalog}");
     assert!(!catalog.contains("probe-other"), "{catalog}");
-    let refused = super::load(workspace.path(), Some(&lean), "probe-panel", None)
+    let refused = load(workspace.path(), Some(&lean), "probe-panel", None)
         .expect_err("left out of the set")
         .to_string();
     assert!(refused.contains("not in skill set `lean`"), "{refused}");
@@ -251,8 +236,19 @@ fn write(path: &std::path::Path, text: &str) {
     std::fs::write(path, text).expect("skill body");
 }
 
+fn load(
+    workspace: &std::path::Path,
+    set: Option<&super::Set>,
+    name: &str,
+    session: Option<&str>,
+) -> summonr_core::error::Result<String> {
+    super::load(workspace, set, name, session).map(|body| body.written())
+}
+
 fn typed(workspace: &std::path::Path, line: &str) -> Option<String> {
-    crate::plugins::commands::expand(line, workspace, None, None).expect("slash expansion")
+    crate::plugins::commands::expand(line, workspace, None, None)
+        .expect("slash expansion")
+        .map(|body| body.written())
 }
 
 #[test]
@@ -315,7 +311,7 @@ fn a_plugin_skill_answers_to_its_plugin_name_beside_a_same_named_user_skill() {
         Some("local body")
     );
     assert!(
-        super::load(workspace.path(), None, "probe-fancy", None)
+        load(workspace.path(), None, "probe-fancy", None)
             .unwrap()
             .contains("fancy body")
     );
@@ -340,7 +336,7 @@ fn invocation_flags_split_the_model_catalog_from_the_slash_menu() {
     let catalog = super::catalog(workspace.path(), None).unwrap_or_default();
     assert!(!catalog.contains("probe-manual"), "{catalog}");
     assert!(catalog.contains("probe-quiet: quiet"), "{catalog}");
-    let refused = super::load(workspace.path(), None, "probe-manual", None)
+    let refused = load(workspace.path(), None, "probe-manual", None)
         .expect_err("model invocation is off")
         .to_string();
     assert!(refused.contains("/probe-manual"), "{refused}");
@@ -355,7 +351,7 @@ fn invocation_flags_split_the_model_catalog_from_the_slash_menu() {
     );
     assert_eq!(typed(workspace.path(), "/probe-quiet now"), None);
     assert!(
-        super::load(workspace.path(), None, "probe-quiet", None)
+        load(workspace.path(), None, "probe-quiet", None)
             .unwrap()
             .contains("quiet body")
     );

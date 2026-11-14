@@ -171,6 +171,12 @@ impl std::io::Write for Tally {
     }
 }
 
+/// The byte length of `value` as compact JSON, or 0 when it does not serialize.
+pub(crate) fn encoded_len(value: &impl serde::Serialize) -> usize {
+    let mut tally = Tally::default();
+    serde_json::to_writer(&mut tally, value).map_or(0, |()| tally.len)
+}
+
 fn tally(model: &str, system: Option<&str>, tools: &[ToolDefinition]) -> std::io::Result<Tally> {
     use std::io::Write;
     let mut tally = Tally::default();
@@ -193,10 +199,8 @@ pub(crate) struct ToolsJson {
 impl ToolsJson {
     #[must_use]
     pub(crate) fn encode(tools: &[ToolDefinition]) -> Self {
-        let mut tally = Tally::default();
-        let len = serde_json::to_writer(&mut tally, tools).map_or(0, |()| tally.len);
         Self {
-            len,
+            len: encoded_len(&tools),
             sorted: std::sync::OnceLock::new(),
         }
     }
@@ -208,9 +212,14 @@ impl ToolsJson {
 
     pub(crate) fn sorted(&self, tools: &[ToolDefinition]) -> &[u8] {
         self.sorted.get_or_init(|| {
-            serde_json::to_value(tools)
+            Self::value(tools)
                 .and_then(|value| serde_json::to_vec(&value))
                 .unwrap_or_default()
         })
+    }
+
+    /// The key-sorted JSON value of `tools`, the form every wire sends.
+    pub(crate) fn value(tools: &[ToolDefinition]) -> serde_json::Result<serde_json::Value> {
+        serde_json::to_value(tools)
     }
 }

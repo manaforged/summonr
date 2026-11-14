@@ -112,14 +112,9 @@ impl<P: Provider> Loop<P> {
         {
             return None;
         }
-        let (tool, input) = seen(call);
-        let payload = json!({
-            "id": call.id,
-            "tool": tool,
-            "arguments": input,
-            "success": success,
-            "output": text,
-        });
+        let (tool, mut payload) = tool_payload(call);
+        payload["success"] = json!(success);
+        payload["output"] = json!(text);
         let mut heard = self
             .hook_where(HookEvent::PostTool, Some(&tool), payload.clone(), |hook| {
                 success || hook.dialect == Dialect::Summonr
@@ -140,12 +135,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Screen> {
-        let (tool, input) = seen(call);
-        let payload = json!({
-            "id": call.id,
-            "tool": tool,
-            "arguments": input,
-        });
+        let (tool, payload) = tool_payload(call);
         let heard = self.hook(HookEvent::PreTool, Some(&tool), payload).await;
         self.resolve_pre_tool(heard, call, events, emit).await
     }
@@ -288,6 +278,12 @@ pub(super) fn blocked(reason: &str) -> Error {
 
 pub(super) fn arguments(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or_else(|_invalid| json!(text))
+}
+
+fn tool_payload(call: &ToolCall) -> (String, Value) {
+    let (tool, input) = seen(call);
+    let payload = json!({ "id": call.id, "tool": tool, "arguments": input });
+    (tool, payload)
 }
 
 fn seen(call: &ToolCall) -> (String, Value) {

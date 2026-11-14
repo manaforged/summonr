@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use super::config::Helper;
 use super::scope::Scope;
-use crate::process::Env;
+use crate::process::{Cap, Env};
 use summonr_core::error::{Error, Result};
 
 const SERVER_NAME: &str = "CLAUDE_CODE_MCP_SERVER_NAME";
@@ -26,14 +26,16 @@ pub(super) async fn headers(
     }
     let what = format!("mcp {name} headersHelper");
     let limits = crate::limits::limits();
+    let max = limits.hook_output_max_bytes;
     let ran = crate::process::finish(
         crate::process::start(spec)?,
         &[],
-        limits.hook_output_max_bytes,
+        (Cap::Head(max), Cap::Head(max)),
         limits.mcp_headers_helper(),
         what.clone(),
     )
-    .await??;
+    .await??
+    .trimmed();
     if ran.code != Some(0) {
         return Err(Error::Config(format!(
             "{what} exited with {:?}: {}",

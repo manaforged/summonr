@@ -13,6 +13,7 @@ pub use summonr_types::{Abort, Hold, Kept, ToolOutput, progress_text};
 pub use summonr_types::{AbortCode, Event, StepState};
 mod catalog;
 mod dedup;
+mod inject;
 pub(crate) use catalog::shaped;
 pub use catalog::{Builtin, readonly, retired_op};
 pub use dedup::{compact_read, read_span, rehydrate_read};
@@ -73,6 +74,7 @@ pub(crate) struct ToolRegistry {
     only: Option<Vec<Builtin>>,
     standalone: bool,
     task_list: bool,
+    trust: bool,
 }
 
 pub(crate) fn needed_grant(result: &Result<ToolOutput>) -> Option<Grant> {
@@ -128,6 +130,7 @@ impl ToolRegistry {
             only: None,
             standalone: false,
             task_list: true,
+            trust: false,
         })
     }
 
@@ -162,6 +165,7 @@ impl ToolRegistry {
         child.background = self.background;
         child.language = self.language;
         child.skills = self.skills;
+        child.trust = self.trust;
         child.search.clone_from(&self.search);
         child.browser.clone_from(&self.browser);
         child.set_session(session);
@@ -263,18 +267,10 @@ impl ToolRegistry {
 
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {
         let (name, op) = normalize(call);
-        match Builtin::live(name) {
-            Some(kind) if self.only.as_ref().is_some_and(|only| !only.contains(&kind)) => Err(
-                Error::Denied(format!("tool `{name}` is not one of this agent's tools")),
-            ),
-            Some(kind) if self.enabled(kind) => {
-                self.fit_output(self.dispatch(kind, name, op, call).await)
-            }
-            Some(kind) if kind != Builtin::Task => Err(Error::Denied(format!(
-                "tool `{name}` is unavailable in the current mode"
-            ))),
-            Some(_) | None => Err(Error::Tool(format!("unknown tool `{name}`"))),
-        }
+        let kind =
+            Builtin::live(name).ok_or_else(|| Error::Tool(format!("unknown tool `{name}`")))?;
+        self.available(kind)?;
+        self.fit_output(self.dispatch(kind, name, op, call).await)
     }
 
     async fn dispatch(
@@ -299,7 +295,7 @@ impl ToolRegistry {
             Builtin::Search => self.search_cancellable(args).await.map(ToolOutput::ok),
             Builtin::Edit => self.edit_file(args).await,
             Builtin::Write => self.write_file(args).await,
-            Builtin::Skill => self.skill(args).map(ToolOutput::ok),
+            Builtin::Skill => self.skill(args).await,
             Builtin::RunCommand => self.run_command(args).await,
             Builtin::Monitor => self.monitor(args).await,
             Builtin::Todo => parse_todo(args).map(ToolOutput::ok),

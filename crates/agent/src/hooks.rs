@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::path::Path;
 
+use crate::process::Cap;
+
 mod judge;
 
 pub(crate) use judge::Verdict;
@@ -35,9 +37,11 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
         .unwrap_or_else(|| crate::limits::limits().job_wait());
     let max = crate::limits::limits().hook_output_max_bytes;
     let what = format!("hook `{}`", hook.command);
-    crate::process::finish(process, body.to_string().as_bytes(), max, limit, what)
+    let keep = (Cap::Head(max), Cap::Head(max));
+    crate::process::finish(process, body.to_string().as_bytes(), keep, limit, what)
         .await
         .map_err(|error| error.to_string())?
+        .map(crate::process::Ran::trimmed)
         .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
 }
 

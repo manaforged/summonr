@@ -8,7 +8,6 @@ use serde::de::value::{Error, StrDeserializer};
 use Argument::{Bare, Text, Value};
 
 const PROMPT_PREFIX: &str = "mcp__";
-const PROMPT_SEPARATOR: &str = "__";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -210,7 +209,7 @@ pub(crate) fn prompt_head(head: &str) -> Option<PromptHead<'_>> {
     let name = head.strip_prefix('/')?;
     if let Some(joined) = name.strip_prefix(PROMPT_PREFIX) {
         return joined
-            .contains(PROMPT_SEPARATOR)
+            .contains(crate::mcp::SEPARATOR)
             .then_some(PromptHead::Joined(joined));
     }
     let (server, prompt) = name.split_once(':')?;
@@ -220,7 +219,7 @@ pub(crate) fn prompt_head(head: &str) -> Option<PromptHead<'_>> {
 /// The `/mcp__server__prompt` spelling of a server name: characters outside `A-Z`, `a-z`, `0-9`, `_`, `-` become `_`.
 #[must_use]
 pub(crate) fn prompt_server(server: &str) -> String {
-    summonr_core::text::clean_name(server, "_-", '_', usize::MAX)
+    crate::mcp::clean(server, usize::MAX)
 }
 
 /// The prompt that `joined` names after `server`'s spelling and the separator.
@@ -228,7 +227,7 @@ pub(crate) fn prompt_server(server: &str) -> String {
 pub(crate) fn joined_prompt<'a>(joined: &'a str, server: &str) -> Option<&'a str> {
     joined
         .strip_prefix(prompt_server(server).as_str())?
-        .strip_prefix(PROMPT_SEPARATOR)
+        .strip_prefix(crate::mcp::SEPARATOR)
         .filter(|prompt| !prompt.is_empty())
 }
 

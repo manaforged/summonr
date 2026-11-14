@@ -64,8 +64,10 @@ pub(super) fn of(plugin: &Plugin, workspace: &Path) -> Vec<Server> {
     let fill = |text: String| expand(&text, &vars);
     plugin
         .servers(
-            plugin.merged(LSP),
-            |server| plugin.scoped(server),
+            plugin
+                .merged(LSP)
+                .into_iter()
+                .map(|(server, entry)| (plugin.scoped(&server), entry)),
             workspace,
             |_entry: &mut Entry| Vec::new(),
         )

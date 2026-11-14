@@ -234,6 +234,7 @@ pub(super) fn build(
     loop_.apply_endpoint(endpoint);
     loop_.set_images(images, summonr_agent::vision_endpoint()?);
     loop_.set_modules(&switches)?;
+    loop_.set_trust(args.trust);
     configure(loop_, args, check)
 }
 

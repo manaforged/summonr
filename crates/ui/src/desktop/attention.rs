@@ -102,7 +102,7 @@ impl App {
             );
             drop(tokio::task::spawn_blocking(move || {
                 let sent = sigil::app::notify::Notification::new(title, body)
-                    .app_name("Summonr")
+                    .app_name(crate::DISPLAY)
                     .send();
                 if let Err(error) = sent {
                     drop(out.send(error.to_string()));

@@ -1,5 +1,8 @@
 #![recursion_limit = "256"]
 
+/// The product id: binary, client and author name.
+pub const PRODUCT: &str = "summonr";
+
 pub mod acp;
 pub mod askpass;
 pub mod catalog;

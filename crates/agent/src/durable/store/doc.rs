@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::{Durability, forget, lock, memo, write};
-use crate::config::tilde;
+use crate::config::{invalid, tilde};
 use summonr_core::error::{Error, ErrorKind, Result};
 
 pub(crate) trait Codec {
@@ -71,8 +71,7 @@ impl<T: Serialize + DeserializeOwned> Codec for Json<T> {
     type Value = T;
 
     fn decode(path: &Path, text: &str) -> Result<T> {
-        serde_json::from_str(text)
-            .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))
+        serde_json::from_str(text).map_err(|error| invalid(path, error))
     }
 }
 
@@ -86,7 +85,7 @@ impl<T: Serialize + DeserializeOwned> Codec for Toml<T> {
     type Value = T;
 
     fn decode(path: &Path, text: &str) -> Result<T> {
-        toml::from_str(text).map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))
+        toml::from_str(text).map_err(|error| invalid(path, error))
     }
 }
 

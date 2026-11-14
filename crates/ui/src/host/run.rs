@@ -11,8 +11,6 @@ use tokio::task::JoinHandle;
 use super::edit::{edit, edit_external, editor};
 use super::*;
 
-const DISPLAY_NAME: &str = "Summonr";
-
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -55,7 +53,7 @@ pub(crate) fn run(
             region.borrow().as_ref().map_or(8, App::inline_rows)
         })),
     };
-    let config = sigil::AppConfig::new("summonr")
+    let config = sigil::AppConfig::new(crate::PRODUCT)
         .quit_on_ctrl_c(false)
         .terminal()
         .inline(inline)
@@ -219,7 +217,7 @@ impl App {
                     .to_string()
             })
             .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| DISPLAY_NAME.to_string())
+            .unwrap_or_else(|| crate::DISPLAY.to_string())
     }
 }
 
@@ -286,7 +284,8 @@ impl Pump {
         }
         if self.busy == Some(true) && !busy && !focused() && notify.turns() {
             drop(bell(Some(&format!(
-                "{DISPLAY_NAME} · {}: {}",
+                "{} · {}: {}",
+                crate::DISPLAY,
                 app.place(),
                 app.ending()
             ))));

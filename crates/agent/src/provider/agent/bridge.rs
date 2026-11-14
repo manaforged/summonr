@@ -4,7 +4,7 @@ use super::super::Message;
 use super::frame::CallParams;
 use crate::rpc::{self, Ask, Frame};
 
-pub(super) const SERVER: &str = "summonr";
+pub(super) const SERVER: &str = crate::PRODUCT;
 
 pub(super) fn mcp(message: &Value, tools: &[Value]) -> Value {
     let Ok(Frame::Request { id, method, params }) = rpc::frame(message.clone()) else {

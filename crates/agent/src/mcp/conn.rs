@@ -80,7 +80,7 @@ impl Conn {
         };
         let (journal, name) = (&conn.journal, conn.server.as_str());
         let mut hear = |notice: Notice<'_>| drop(logged(journal, name, notice));
-        let agreed = handshake::initialize(&mut conn.client, "summonr", &mut hear).await?;
+        let agreed = handshake::initialize(&mut conn.client, crate::PRODUCT, &mut hear).await?;
         conn.stateless = agreed.is_none();
         if let Some(mut result) = agreed {
             conn.instructions = result
@@ -175,7 +175,7 @@ impl Conn {
                 json!({
                     "io.modelcontextprotocol/protocolVersion": STATELESS,
                     "io.modelcontextprotocol/clientCapabilities": {},
-                    "io.modelcontextprotocol/clientInfo": {"name": "summonr", "version": env!("CARGO_PKG_VERSION")}
+                    "io.modelcontextprotocol/clientInfo": {"name": crate::PRODUCT, "version": env!("CARGO_PKG_VERSION")}
                 }),
             );
         }

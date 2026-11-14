@@ -2,8 +2,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Deserializer};
 
-use super::{File, OAuth, tilde};
-use summonr_core::error::{Error, Result};
+use super::{File, OAuth, invalid, tilde};
+use summonr_core::error::Result;
 use summonr_types::endpoint::Wire;
 
 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -15,10 +15,6 @@ pub(super) fn wire<'de, D: Deserializer<'de>>(
         .map(|name| Wire::parse(&name).unwrap_or_default()))
 }
 
-fn bad(path: &Path, message: &str) -> Error {
-    Error::Config(format!("{}: {message}", tilde(path)))
-}
-
 pub(super) const RETIRED: &[&str] = &["last_endpoint", "plan_mode", "ban_comments", "ban_tests"];
 
 pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
@@ -27,7 +23,7 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
             text.get(..span.start)
                 .map_or(1, |head| head.matches('\n').count() + 1)
         });
-        bad(
+        invalid(
             path,
             &format!(
                 "line {line}: {}; fix that line, or move the file aside to start fresh",
@@ -41,9 +37,9 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     for key in RETIRED {
         table.remove(*key);
     }
-    table
-        .try_into()
-        .map_err(|error: toml::de::Error| bad(path, &error.message().trim().replace('\n', "; ")))
+    table.try_into().map_err(|error: toml::de::Error| {
+        invalid(path, &error.message().trim().replace('\n', "; "))
+    })
 }
 
 pub(super) fn warn_unknown(path: &Path, file: &File) {
@@ -94,13 +90,13 @@ pub(super) fn validate(path: &Path, file: &File) -> Result<()> {
         .as_deref()
         .is_some_and(|theme| !crate::prefs::known_theme(theme))
     {
-        return Err(bad(path, "`theme` must be space, nord, dawn, or auto"));
+        return Err(invalid(path, "`theme` must be space, nord, dawn, or auto"));
     }
     if file
         .fps
         .is_some_and(|fps| !(crate::prefs::FPS_MIN..=crate::prefs::FPS_MAX).contains(&fps))
     {
-        return Err(bad(
+        return Err(invalid(
             path,
             &format!(
                 "`fps` must be a whole number from {} to {}",
@@ -112,19 +108,22 @@ pub(super) fn validate(path: &Path, file: &File) -> Result<()> {
     if let Some(other) = file.secrets.as_deref().map(str::trim)
         && !matches!(other, "" | "file" | "keychain")
     {
-        return Err(bad(
+        return Err(invalid(
             path,
             &format!("secrets must be \"file\" or \"keychain\", not `{other}`"),
         ));
     }
     if file.lsp.module.is_some() && file.lsp.command.is_some() {
-        return Err(bad(path, "[lsp] accepts `module` or `command`, not both"));
+        return Err(invalid(
+            path,
+            "[lsp] accepts `module` or `command`, not both",
+        ));
     }
     if let Some(module) = file.lsp.module.as_deref() {
         crate::language::named(module)?;
     }
     if file.lsp.command.as_ref().is_some_and(Vec::is_empty) {
-        return Err(bad(path, "[lsp] command must not be empty"));
+        return Err(invalid(path, "[lsp] command must not be empty"));
     }
     Ok(())
 }

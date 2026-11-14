@@ -33,9 +33,8 @@ impl store::Codec for Models {
     type Value = Vec<(ModelId, Option<Effort>)>;
 
     fn decode(path: &Path, text: &str) -> Result<Self::Value> {
-        let rows: Vec<String> = serde_json::from_str(text).map_err(|error| {
-            summonr_core::error::Error::Config(format!("{}: {error}", crate::config::tilde(path)))
-        })?;
+        let rows: Vec<String> =
+            serde_json::from_str(text).map_err(|error| crate::config::invalid(path, error))?;
         Ok(rows
             .iter()
             .filter_map(|row| {

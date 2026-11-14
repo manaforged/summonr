@@ -84,7 +84,7 @@ impl Splash<'_> {
 
     #[must_use]
     pub(crate) fn facts(&self) -> Vec<(&'static str, String)> {
-        let mut rows = vec![("summonr", self.version.to_string())];
+        let mut rows = vec![(crate::PRODUCT, self.version.to_string())];
         let model = match self.relay {
             Some(relay) => format!("{} · {relay}", self.model),
             None => self.model.to_string(),

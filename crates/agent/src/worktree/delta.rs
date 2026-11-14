@@ -70,9 +70,9 @@ fn seal(path: &Path, head: &str, snapshot: &str) -> Result<()> {
     let commit = diff::git_env(
         path,
         &[
-            ("GIT_AUTHOR_NAME", OsStr::new("summonr")),
+            ("GIT_AUTHOR_NAME", OsStr::new(crate::PRODUCT)),
             ("GIT_AUTHOR_EMAIL", OsStr::new("summonr@localhost")),
-            ("GIT_COMMITTER_NAME", OsStr::new("summonr")),
+            ("GIT_COMMITTER_NAME", OsStr::new(crate::PRODUCT)),
             ("GIT_COMMITTER_EMAIL", OsStr::new("summonr@localhost")),
         ],
         &["commit-tree", snapshot, "-p", head, "-m", "summonr delta"],

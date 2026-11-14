@@ -19,7 +19,6 @@ const OVERLAP: f32 = 5.0;
 const NEEDS_YOU: &str = "Needs you";
 const NEW_THREAD: &str = "New thread";
 const THREADS: &str = "Threads";
-const SUMMONR: &str = "Summonr";
 
 /// The threads that joined the thread `id` started, newest first.
 pub(super) struct Topic {
@@ -193,8 +192,8 @@ fn stack(agents: &[Option<Friend>]) -> NodeBuilder {
 fn own() -> NodeBuilder {
     let icon = super::brand::badge(ICON)
         .role(sigil::prelude::Role::Image)
-        .label(SUMMONR);
-    sigil::widgets::tooltip(SUMMONR).child(icon).into()
+        .label(crate::DISPLAY);
+    sigil::widgets::tooltip(crate::DISPLAY).child(icon).into()
 }
 
 /// The pane's thread tabs, shown once its topic has two threads, and a New thread button.

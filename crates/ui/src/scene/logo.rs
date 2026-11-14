@@ -206,7 +206,7 @@ pub(crate) fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {
         |relay| format!("{} · {relay}", model.snapshot.model),
     );
     let mut facts = vec![
-        ("summonr", app.info.version.clone()),
+        (crate::PRODUCT, app.info.version.clone()),
         ("model", shown_model),
         (
             "session",

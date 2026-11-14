@@ -76,7 +76,7 @@ impl Mail {
     }
 }
 
-pub const KIND: &str = "summonr";
+pub const KIND: &str = crate::PRODUCT;
 
 pub(super) fn default_kind() -> String {
     KIND.to_string()

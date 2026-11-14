@@ -61,7 +61,10 @@ pub fn run(
     host::run::run(loop_, workspace, info, ui_tx, ui_rx, factory)
 }
 
-const PRODUCT: &str = "summonr";
+const PRODUCT: &str = summonr_agent::PRODUCT;
+
+/// The product name as people read it in titles and menus.
+pub(crate) const DISPLAY: &str = "Summonr";
 
 fn tool_error(error: impl std::error::Error + Send + Sync + 'static) -> Error {
     Error::caused(ErrorKind::Tool, error)

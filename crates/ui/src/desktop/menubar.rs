@@ -106,7 +106,7 @@ fn bar() -> Menu {
         .separator()
         .standard(StandardItem::BringAllToFront);
     Menu::new()
-        .submenu("Summonr", summonr)
+        .submenu(crate::DISPLAY, summonr)
         .submenu("File", items(&FILE))
         .submenu("Edit", edit)
         .submenu("View", items(&VIEW))

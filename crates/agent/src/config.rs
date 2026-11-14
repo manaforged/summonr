@@ -206,12 +206,23 @@ const fn events_on() -> bool {
     true
 }
 
+const NAME: &str = "config.toml";
+
 pub(crate) fn path() -> Result<PathBuf> {
-    Ok(summonr_home()?.join("config.toml"))
+    Ok(summonr_home()?.join(NAME))
 }
 
 pub(crate) fn file() -> Result<Arc<File>> {
     doc::<Parsed>(&path()?).current()
+}
+
+/// The workspace `.summonr/config.toml` under `root`, empty when it is not a file.
+pub(crate) fn workspace(root: &Path) -> Result<Arc<File>> {
+    let path = summonr_core::dirs::workspace(root).join(NAME);
+    if !path.is_file() {
+        return Ok(Arc::default());
+    }
+    doc::<Parsed>(&path).current()
 }
 
 struct Parsed;
@@ -234,7 +245,7 @@ impl store::Codec for Edit {
 
     fn decode(path: &Path, text: &str) -> Result<DocumentMut> {
         text.parse::<DocumentMut>()
-            .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))
+            .map_err(|error| invalid(path, error))
     }
 }
 
@@ -280,6 +291,11 @@ mod decode;
 mod edit;
 use decode::{decode, validate, warn_unknown};
 pub use edit::tilde;
+
+/// A config error that names `path` with the home directory as `~`.
+pub(crate) fn invalid(path: &Path, error: impl std::fmt::Display) -> Error {
+    Error::Config(format!("{}: {error}", tilde(path)))
+}
 
 pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
     if matches!(word, "~" | "$HOME" | "${HOME}") {

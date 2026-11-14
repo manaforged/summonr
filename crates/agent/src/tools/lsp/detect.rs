@@ -139,18 +139,14 @@ pub(in crate::tools) fn available(workspace: &Path) -> bool {
 }
 
 pub(super) fn workspace_module(workspace: &Path) -> Result<Option<String>> {
-    let path = summonr_core::dirs::workspace(workspace).join("config.toml");
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let config = crate::config::parse(&path)?;
+    let config = crate::config::workspace(workspace)?;
     if config.lsp.command.is_some() {
         return Err(Error::Config(
             "workspace .summonr/config.toml cannot set [lsp] command; use a curated module or put the command in ~/.summonr/config.toml"
                 .to_string(),
         ));
     }
-    Ok(config.lsp.module)
+    Ok(config.lsp.module.clone())
 }
 
 pub(super) fn built(module: &language::Module) -> Result<Launch> {

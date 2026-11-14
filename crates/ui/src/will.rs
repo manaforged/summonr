@@ -7,7 +7,10 @@ use crate::canvas::rgb;
 
 /// Will's paints for one tint on one theme.
 #[derive(Clone, Copy)]
-#[cfg_attr(not(feature = "gui"), expect(dead_code))]
+#[cfg_attr(
+    not(feature = "gui"),
+    expect(dead_code, reason = "only the desktop paints Will's edge and shade")
+)]
 pub(crate) struct Ink {
     pub(crate) edge: Color,
     pub(crate) mid: Color,
